@@ -11,7 +11,7 @@
 }
 
 .shell.is-collapsed {
-  --side-w: 76px;
+  --side-w: 88px;
 }
 
 .wallpaper {
@@ -1160,4 +1160,8 @@ textarea.field {
     transition: none;
     transform: none !important;
   }
+}
+
+.shell.is-collapsed .sidebar {
+  overflow: visible;
 }

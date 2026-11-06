@@ -31,7 +31,11 @@
           ],
           "state": "active"
         },
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "trafficLightPosition": {
+          "x": 24,
+          "y": 26
+        }
       }
     ],
     "security": {
