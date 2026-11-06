@@ -60,8 +60,13 @@ export function RitualGate({ active }: { active: boolean }) {
       setClosed(false)
       setManual(true)
     }
+    const lock = () => setLaunching(true)
     window.addEventListener(EVENT, on)
-    return () => window.removeEventListener(EVENT, on)
+    window.addEventListener('ps:lock', lock)
+    return () => {
+      window.removeEventListener(EVENT, on)
+      window.removeEventListener('ps:lock', lock)
+    }
   }, [])
 
   if (loaded && decided.current === null) decided.current = active && needsRitual(today) && !skippedToday()

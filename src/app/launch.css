@@ -286,11 +286,10 @@
 
 :root[data-launch] .shell {
   transform: scale(0.985);
-  filter: brightness(0.7);
 }
 
 .shell {
-  transition: grid-template-columns 240ms var(--ease), background 300ms var(--ease-out), transform 1000ms cubic-bezier(0.2, 0.8, 0.2, 1), filter 1000ms ease;
+  transition: grid-template-columns 240ms var(--ease), background 300ms var(--ease-out), transform 900ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .ln-pick {
@@ -451,6 +450,8 @@
 }
 
 .ln-card.is-form {
+  height: auto;
+  min-height: 152px;
   cursor: default;
   border-style: solid;
   gap: 10px;
@@ -516,5 +517,213 @@
 @media (max-height: 760px) {
   .ln-card {
     height: 136px;
+  }
+}
+
+.ln-pick {
+  grid-template-areas: 'ask' 'stage' 'help';
+}
+
+.ln-ask {
+  grid-area: ask;
+}
+
+.ln-cards,
+.ln-lock {
+  grid-area: stage;
+}
+
+.ln-help {
+  grid-area: help;
+}
+
+.ln-cards {
+  transition: opacity 260ms ease, transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1), filter 260ms ease;
+}
+
+.ln.is-locking .ln-cards {
+  opacity: 0;
+  transform: scale(0.94);
+  pointer-events: none;
+}
+
+.ln.is-locking .ln-help {
+  opacity: 0;
+}
+
+.ln-lock {
+  align-self: center;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 18px;
+  row-gap: 14px;
+  align-items: center;
+  width: min(440px, 86vw);
+  padding: 22px 22px 16px;
+  border: 1px solid color-mix(in srgb, var(--pc, #c9b28a) 55%, rgba(255, 255, 255, 0.12));
+  border-radius: 20px;
+  background:
+    radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--pc, #c9b28a) 30%, transparent), transparent 62%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+  box-shadow: 0 30px 80px -30px color-mix(in srgb, var(--pc, #c9b28a) 50%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  color: var(--ink);
+  -webkit-app-region: no-drag;
+  animation: ln-lock-in 460ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes ln-lock-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+}
+
+.ln-lock-mark {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.ln-lock-body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ln-lock-name {
+  font-family: var(--font-display);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.ln-lock-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 5px 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.34);
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+
+.ln-lock-field:focus-within {
+  border-color: color-mix(in srgb, var(--pc, #c9b28a) 80%, white);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pc, #c9b28a) 28%, transparent);
+}
+
+.ln-lock.is-bad .ln-lock-field {
+  border-color: #e0605a;
+  animation: ln-shake 420ms cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+@keyframes ln-shake {
+  20%,
+  60% {
+    transform: translateX(-7px);
+  }
+  40%,
+  80% {
+    transform: translateX(7px);
+  }
+}
+
+.ln-lock-icon {
+  flex: none;
+  fill: none;
+  stroke: rgba(243, 236, 226, 0.6);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.ln-lock-field input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  outline: none;
+}
+
+.ln-lock-field input::placeholder {
+  letter-spacing: 0;
+  color: rgba(243, 236, 226, 0.4);
+}
+
+.ln-lock-go {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--ink);
+  color: #0b0a0c;
+  cursor: pointer;
+  transition: transform 160ms ease, opacity 160ms ease;
+}
+
+.ln-lock-go svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ln-lock-go:hover:not(:disabled) {
+  transform: translateX(2px);
+}
+
+.ln-lock-go:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.ln-lock-msg {
+  min-height: 15px;
+  font-size: 12px;
+  color: #ef8a84;
+}
+
+.ln-lock-back {
+  grid-column: 1 / -1;
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 0;
+  background: none;
+  color: rgba(243, 236, 226, 0.55);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ln-lock-back:hover {
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ln-lock,
+  .ln.is-pick .ln-card,
+  .ln.is-lock.is-bad .ln-lock-field {
+    animation: none;
+  }
+  .ln.is-pick .ln-card {
+    opacity: 1;
+    transform: none;
   }
 }
