@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissões mínimas: janela principal, arrastar pela barra e comandos do app. Sem shell nem sistema de arquivos livre. Abrir links externos no navegador padrão (opener). Mostrar a janela só depois de pintada. Notificações do sistema (lembretes do Trabalho).",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "opener:default",
+    "core:window:allow-show",
+    "notification:default"
+  ]
+}
