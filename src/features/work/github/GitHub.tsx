@@ -5,9 +5,8 @@ import { CompanyMark, coStyle } from '../brand'
 import { Icon } from '../icons'
 import type { Scope } from '../logic'
 import { createItem } from '../store'
-import type { Company, WorkState } from '../types'
-import { checkOf, getGh, gh, noreply, setGh, useGhSettings, type Branches, type Dashboard, type GhAccount, type Issue, type LocalRepo, type Pr, type Repo } from './api'
-import { PrSheet } from './PrSheet'
+import { PERSONAL_ID, type Company, type WorkState } from '../types'
+import { checkOf, dropBoard, getGh, gh, loadBoard, noreply, openPr, setGh, useBoards, useGhSettings, type Branches, type GhAccount, type Issue, type LocalRepo, type Pr, type Repo } from './api'
 import './github.css'
 
 const rel = (iso: string) => {
@@ -18,22 +17,17 @@ const rel = (iso: string) => {
   return `${Math.round(h / 24)} d`
 }
 
-const boards = new Map<string, { at: number; data: Dashboard }>()
-
 function useDashboard(login: string | null) {
-  const [data, setData] = useState<Dashboard | null>(() => (login ? boards.get(login)?.data ?? null : null))
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const list = useBoards(login ? [login] : [])
+  const data = list[0]?.data ?? null
   const load = async (force = false) => {
     if (!login) return
-    const hit = boards.get(login)
-    if (hit && !force && Date.now() - hit.at < 90_000) return setData(hit.data)
     setBusy(true)
     setErr(null)
     try {
-      const d = await gh.dashboard(login)
-      boards.set(login, { at: Date.now(), data: d })
-      setData(d)
+      await loadBoard(login, force)
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     } finally {
@@ -41,7 +35,6 @@ function useDashboard(login: string | null) {
     }
   }
   useEffect(() => {
-    setData(login ? boards.get(login)?.data ?? null : null)
     void load()
   }, [login])
   return { data, err, busy, reload: () => load(true) }
@@ -60,7 +53,6 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
     }
   })
   const [switching, setSwitching] = useState<string | null>(null)
-  const [sheet, setSheet] = useState<{ login: string; repo: string; number: number; review: boolean } | null>(null)
   const [setup, setSetup] = useState(false)
   const seg = useRef<HTMLDivElement>(null)
   const [pill, setPill] = useState<{ x: number; w: number } | null>(null)
@@ -75,17 +67,19 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
 
   const companies = state.companies
   const logins = (accounts ?? []).map((a) => a.login)
-  const scoped = scope !== 'all' ? s.stations[scope] : null
+  const locked = scope !== 'all' && scope !== PERSONAL_ID
+  const scoped = locked ? s.stations[scope] : null
   const only = (scoped && logins.includes(scoped) ? scoped : null) ?? (picked && logins.includes(picked) ? picked : null) ?? logins.find((l) => Object.values(s.stations).includes(l)) ?? logins[0] ?? null
   const pick = (l: string) => {
     setPicked(l)
     try {
       localStorage.setItem('ps.github.account', l)
     } catch {}
+    if (scope === PERSONAL_ID) setGh({ stations: { ...s.stations, [PERSONAL_ID]: l } })
     if (accounts && accounts.find((a) => a.active)?.login !== l) void makeActive(l)
   }
   const owned = companies.filter((c) => only && s.stations[c.id] === only)
-  const visible = scope === 'all' ? owned : owned.filter((c) => c.id === scope)
+  const visible = scope === 'all' ? owned : companies.filter((c) => c.id === scope && only && (scope === PERSONAL_ID || s.stations[c.id] === only)).map((c) => c)
   const tint = owned[0] ?? null
   const active = accounts?.find((a) => a.active)?.login ?? null
   useLayoutEffect(() => {
@@ -110,6 +104,11 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
     <div className="gh">
       {accounts && accounts.length > 0 && (
         <section className="gh-accts reveal" style={{ ['--i' as string]: 0 }} aria-label="Contas do GitHub">
+          {locked ? (
+            <span className="gh-locked">
+              Perfil {companies.find((c) => c.id === scope)?.name}: só o GitHub desta estação
+            </span>
+          ) : (
           <div className="gh-acct-seg" role="tablist" aria-label="Conta do GitHub" ref={seg}>
             {pill && <i className="gh-acct-pill" style={{ transform: `translateX(${pill.x}px)`, width: pill.w }} aria-hidden="true" />}
             {accounts.map((a) => {
@@ -123,7 +122,6 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
                   style={st[0] ? coStyle(st[0]) : undefined}
                   data-login={a.login}
                   onClick={() => pick(a.login)}
-                  disabled={scope !== 'all' && !!scoped && scoped !== a.login}
                 >
                   <img src={`https://github.com/${a.login}.png?size=48`} alt="" />
                   <span>
@@ -134,6 +132,7 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
               )
             })}
           </div>
+          )}
           <div className="gh-active">
             <span className={`gh-term ${switching ? 'is-busy' : ''}`}>
               <i aria-hidden="true" />
@@ -179,7 +178,7 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
         )
       })()}
 
-      {(setup || !linked || err || (accounts && accounts.length === 0)) && (
+      {(setup || !linked || err || (accounts && accounts.length === 0) || (locked && !scoped)) && (
       <section className="gh-stations reveal" style={{ ['--i' as string]: 1 }}>
         <header className="gh-h">
           <span className="gh-k">Estações</span>
@@ -246,27 +245,18 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
         <Station
           key={`${only}-${c.id}`}
           company={c}
-          login={s.stations[c.id]}
+          login={c.id === PERSONAL_ID && scope === PERSONAL_ID && only ? only : s.stations[c.id]}
           index={i}
           state={state}
-          onNewPr={() => setPr({ company: c, login: s.stations[c.id] })}
-          onOpen={(p, review) => setSheet({ login: s.stations[c.id], repo: p.repository.nameWithOwner, number: p.number, review })}
+          onNewPr={() => setPr({ company: c, login: only ?? s.stations[c.id] })}
+          onOpen={(p, review) => openPr({ login: only ?? s.stations[c.id], repo: p.repository.nameWithOwner, number: p.number, review })}
         />
       ))}
 
       {only && <Guardian companies={companies} login={only} key={`g-${only}`} />}
 
       {pr && <NewPr company={pr.company} login={pr.login} onClose={() => setPr(null)} />}
-      {sheet && (
-        <PrSheet
-          login={sheet.login}
-          repo={sheet.repo}
-          number={sheet.number}
-          review={sheet.review}
-          onClose={() => setSheet(null)}
-          onChanged={() => boards.delete(sheet.login)}
-        />
-      )}
+
     </div>
   )
 }
@@ -520,7 +510,7 @@ function NewPr({ company, login, onClose }: { company: Company; login: string; o
     try {
       const r = await gh.createPr(login, repo, head, base, title, body, draft)
       setMade(r)
-      boards.delete(login)
+      dropBoard(login)
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     } finally {

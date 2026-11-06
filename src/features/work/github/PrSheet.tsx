@@ -2,7 +2,7 @@ import { useEffect, useState, type CSSProperties, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { openExternal } from '../../../shared/openExternal'
 import { Icon } from '../icons'
-import { gh, type CheckCtx, type PrDetail } from './api'
+import { dropBoard, gh, type CheckCtx, type OpenPr, type PrDetail } from './api'
 
 const rel = (iso: string) => {
   const m = Math.round((Date.now() - Date.parse(iso)) / 60000)
@@ -254,4 +254,15 @@ export function PrSheet({ login, repo, number, review, onClose, onChanged }: { l
     </div>,
     document.body,
   )
+}
+
+export function PrHost() {
+  const [p, setP] = useState<OpenPr | null>(null)
+  useEffect(() => {
+    const on = (e: Event) => setP((e as CustomEvent<OpenPr>).detail)
+    window.addEventListener('gh:open-pr', on)
+    return () => window.removeEventListener('gh:open-pr', on)
+  }, [])
+  if (!p) return null
+  return <PrSheet key={`${p.repo}#${p.number}`} login={p.login} repo={p.repo} number={p.number} review={p.review} onClose={() => setP(null)} onChanged={() => dropBoard(p.login)} />
 }

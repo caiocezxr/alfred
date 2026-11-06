@@ -8,6 +8,7 @@ import { Capture } from './Capture'
 import { Cockpit, HojePanel } from './Copilot'
 import { Delivered } from './Delivered'
 import { GitHubView } from './github/GitHub'
+import { PrHost } from './github/PrSheet'
 import { DialogHost } from './Dialogs'
 import { Drawer } from './Drawer'
 import { Icon } from './icons'
@@ -269,6 +270,7 @@ export default function Work() {
       </div>
 
       <Drawer state={state} today={today} />
+      <PrHost />
       <DialogHost state={state} scope={validScope} />
       {toast &&
         createPortal(

@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import { useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { api, isTauri } from '../../../shared/db/api'
 
 export type GhAccount = { login: string; active: boolean; ok: boolean; scopes: string }
@@ -162,3 +162,92 @@ export function useGhSettings() {
 
 export const checkOf = (p: Pr): Check => p.commits.nodes[0]?.commit.statusCheckRollup?.state ?? null
 export const noreply = (d: Dashboard['viewer']) => `${d.databaseId}+${d.login}@users.noreply.github.com`
+
+const boards = new Map<string, { at: number; data: Dashboard }>()
+const loadingBoards = new Map<string, Promise<Dashboard>>()
+let boardVer = 0
+const boardSubs = new Set<() => void>()
+const boardEmit = () => {
+  boardVer++
+  boardSubs.forEach((f) => f())
+}
+
+export const boardOf = (login: string) => boards.get(login)?.data ?? null
+
+export function dropBoard(login: string) {
+  boards.delete(login)
+  boardEmit()
+}
+
+export async function loadBoard(login: string, force = false): Promise<Dashboard> {
+  const hit = boards.get(login)
+  if (hit && !force && Date.now() - hit.at < 180_000) return hit.data
+  const running = loadingBoards.get(login)
+  if (running) return running
+  const p = gh
+    .dashboard(login)
+    .then((d) => {
+      boards.set(login, { at: Date.now(), data: d })
+      boardEmit()
+      return d
+    })
+    .finally(() => loadingBoards.delete(login))
+  loadingBoards.set(login, p)
+  return p
+}
+
+export function useBoards(logins: string[]) {
+  useSyncExternalStore(
+    (fn) => {
+      boardSubs.add(fn)
+      return () => boardSubs.delete(fn)
+    },
+    () => boardVer,
+  )
+  const key = [...new Set(logins)].sort().join(',')
+  useEffect(() => {
+    if (!key) return
+    const run = () => key.split(',').forEach((l) => void loadBoard(l).catch(() => {}))
+    run()
+    const id = window.setInterval(run, 180_000)
+    return () => window.clearInterval(id)
+  }, [key])
+  return key ? key.split(',').map((l) => ({ login: l, data: boardOf(l) })) : []
+}
+
+export type LivePr = { pr: Pr; login: string; review: boolean }
+
+export function livePrs(list: { login: string; data: Dashboard | null }[]): LivePr[] {
+  const out: LivePr[] = []
+  for (const { login, data } of list) {
+    if (!data) continue
+    for (const pr of data.mine.nodes) out.push({ pr, login, review: false })
+    for (const pr of data.review.nodes) out.push({ pr, login, review: true })
+  }
+  return out
+}
+
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+export function linkPr(item: { ticket?: string | null; url?: string | null }, prs: LivePr[]): LivePr | null {
+  if (item.url) {
+    const hit = prs.find((p) => p.pr.url === item.url)
+    if (hit) return hit
+  }
+  const raw = item.ticket?.trim()
+  if (!raw) return null
+  const t = raw.replace(/^#/, '')
+  if (t.length < 2) return null
+  const re = new RegExp(`(^|[^A-Za-z0-9])${esc(t)}([^A-Za-z0-9]|$)`, 'i')
+  return prs.find((p) => !p.review && (re.test(p.pr.title) || re.test(p.pr.headRefName))) ?? prs.find((p) => re.test(p.pr.title) || re.test(p.pr.headRefName)) ?? null
+}
+
+export type OpenPr = { login: string; repo: string; number: number; review: boolean }
+
+export function openPr(p: OpenPr) {
+  window.dispatchEvent(new CustomEvent<OpenPr>('gh:open-pr', { detail: p }))
+}
+
+export const prOpen = (l: LivePr): OpenPr => ({ login: l.login, repo: l.pr.repository.nameWithOwner, number: l.pr.number, review: l.review })
+
+export const CHECK_SHORT: Record<string, string> = { SUCCESS: 'checks ok', FAILURE: 'checks falhando', ERROR: 'checks com erro', PENDING: 'checks rodando', EXPECTED: 'checks esperando' }

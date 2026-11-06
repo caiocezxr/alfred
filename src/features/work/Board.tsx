@@ -3,6 +3,7 @@ import { CompanyMark, coStyle } from './brand'
 import { Icon } from './icons'
 import { boardColumns, checklistFor, crossesDelivery, dueLabel, dueState, fmtDur, isPost, itemTimeMs, label, parseCapture, pendingChecks, shortDay, slaFor, ticketUrl, type Scope, type Sla } from './logic'
 import { Roll } from './Roll'
+import { CHECK_SHORT, checkOf, linkPr, livePrs, openPr, prOpen, useBoards, useGhSettings, type LivePr } from './github/api'
 import {
   createItem, doMove, openDialog, openItemFrom, openTicket, readUi, reorderColumn, requestMove, resume, select, setFocus, toggleTimer, useWork, writeUi,
 } from './store'
@@ -81,6 +82,18 @@ export function Board({ state, today, scope }: { state: WorkState; today: string
   const suppress = useRef(0)
   const latest = useRef<{ cols: ReturnType<typeof boardColumns>; state: WorkState }>({ cols: [], state })
   const companies = useMemo(() => new Map(state.companies.map((c) => [c.id, c])), [state.companies])
+  const ghs = useGhSettings()
+  const logins = state.companies.filter((c) => scope === 'all' || c.id === scope).map((c) => ghs.stations[c.id]).filter((l): l is string => !!l)
+  const boards = useBoards(logins)
+  const prsByCo = useMemo(() => {
+    const m = new Map<string, LivePr[]>()
+    for (const c of state.companies) {
+      const l = ghs.stations[c.id]
+      if (!l) continue
+      m.set(c.id, livePrs(boards.filter((b) => b.login === l)))
+    }
+    return m
+  }, [boards, ghs.stations, state.companies])
   const notes = useMemo(() => {
     const m = new Map<string, { n: number; last: string }>()
     for (const e of state.events) if (e.kind === 'note') m.set(e.itemId, { n: (m.get(e.itemId)?.n ?? 0) + 1, last: e.note })
@@ -392,6 +405,7 @@ export function Board({ state, today, scope }: { state: WorkState; today: string
                     timeMs={itemTimeMs(state.sessions, it.id, Date.now())}
                     sla={companies.get(it.companyId) ? slaFor(it, state.events, companies.get(it.companyId)!, Date.now()) : null}
                     linked={!!ticketUrl(it, companies.get(it.companyId))}
+                    pr={linkPr(it, prsByCo.get(it.companyId) ?? [])}
                     onPointerDown={(e) => startDrag(e, it)}
                     suppress={suppress}
                   />,
@@ -450,7 +464,7 @@ function QuickAdd({ stage, state, scope, today }: { stage: 'todo' | 'doing'; sta
   )
 }
 
-function Card({ item, company, today, note, attachments, pending, totalChecks, celebrating, landed, selected, live, timeMs, sla, linked, onPointerDown, suppress }: {
+function Card({ item, company, today, note, attachments, pending, totalChecks, celebrating, landed, selected, live, timeMs, sla, linked, pr, onPointerDown, suppress }: {
   item: WorkItem
   company?: Company
   today: string
@@ -465,6 +479,7 @@ function Card({ item, company, today, note, attachments, pending, totalChecks, c
   timeMs: number
   sla: Sla | null
   linked: boolean
+  pr: LivePr | null
   onPointerDown: (e: RPointerEvent<HTMLElement>) => void
   suppress: React.RefObject<number>
 }) {
@@ -532,6 +547,22 @@ function Card({ item, company, today, note, attachments, pending, totalChecks, c
         )}
       </div>
       <h4 className="wk-card-title">{item.title}</h4>
+      {pr && (
+        <button
+          className={`wk-prchip is-${(checkOf(pr.pr) ?? 'none').toLowerCase()} ${pr.review ? 'is-review' : ''}`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            openPr(prOpen(pr))
+          }}
+          title={`${pr.pr.repository.nameWithOwner} #${pr.pr.number}: ${pr.pr.title}`}
+        >
+          <Icon name="link" size={10} />
+          <b>PR #{pr.pr.number}</b>
+          <i aria-hidden="true" />
+          <span>{pr.review ? 'review pedida' : pr.pr.reviewDecision === 'APPROVED' ? 'aprovado' : checkOf(pr.pr) ? CHECK_SHORT[checkOf(pr.pr)!] : pr.pr.isDraft ? 'rascunho' : 'aberto'}</span>
+        </button>
+      )}
       {note && item.stage !== 'done' && <p className="wk-card-note">{note.last}</p>}
       <div className="wk-card-meta">
         {sla && (

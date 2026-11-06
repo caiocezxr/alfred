@@ -3,6 +3,7 @@ import { addDays, parseCivil } from '../../shared/dates'
 import { CompanyMark, coStyle } from './brand'
 import { Gauge, GaugeCenter } from './Gauge'
 import { Icon } from './icons'
+import { CHECK_SHORT, checkOf, livePrs, openPr, prOpen, useBoards, useGhSettings, type LivePr } from './github/api'
 import {
   dayGrid, dueLabel, fixedTodos, fmtDur, gaugeSegments, healthLabel, itemTimeMs, label, runningSession, streak, suggestFocus,
   todayTodos, todoDoneOn, upcomingTodos, type CompanyNeglect, type ForgetEntry, type Health, type Nudge, type Scope, type WeekScore as Score,
@@ -63,6 +64,7 @@ export function DayMap({ state, today, health, weeks = 14 }: { state: WorkState;
 }
 
 type NextRow =
+  | { kind: 'pr'; key: string; pr: LivePr; co: string }
   | { kind: 'forget'; key: string; entry: ForgetEntry }
   | { kind: 'focus'; key: string; item: WorkItem }
   | { kind: 'todo'; key: string; todo: Todo; late: boolean }
@@ -88,8 +90,16 @@ export function Cockpit({ state, health, perCompany, today, scope, score, nudges
     .filter((i) => i.focusedAt && i.stage !== 'done' && (scope === 'all' || i.companyId === scope))
     .sort((a, b) => Number(b.returnOpen) - Number(a.returnOpen) || a.focusedAt!.localeCompare(b.focusedAt!))
   const tt = todayTodos(state.todos, state.todoChecks, today, scope).filter((t) => !t.done && !t.todo.mustNotForget)
+  const ghs = useGhSettings()
+  const coOfLogin = new Map(state.companies.filter((c) => (scope === 'all' || c.id === scope) && ghs.stations[c.id]).map((c) => [ghs.stations[c.id], c.id]))
+  const boards = useBoards([...coOfLogin.keys()])
+  const ghRows: NextRow[] = livePrs(boards)
+    .filter((p) => p.review || ['FAILURE', 'ERROR'].includes(checkOf(p.pr) ?? '') || p.pr.reviewDecision === 'CHANGES_REQUESTED')
+    .slice(0, 4)
+    .map((p) => ({ kind: 'pr' as const, key: `p${p.pr.url}`, pr: p, co: coOfLogin.get(p.login) ?? '' }))
   const rows: NextRow[] = [
     ...forget.filter((f) => f.state === 'due').map((entry) => ({ kind: 'forget' as const, key: `f${entry.todo.id}`, entry })),
+    ...ghRows,
     ...focus.map((item) => ({ kind: 'focus' as const, key: `i${item.id}`, item })),
     ...tt.map((t) => ({ kind: 'todo' as const, key: `t${t.todo.id}`, todo: t.todo, late: t.late })),
   ]
@@ -193,6 +203,26 @@ export function Cockpit({ state, health, perCompany, today, scope, score, nudges
                         Gerar horas
                       </button>
                     )}
+                  </li>
+                )
+              }
+              if (r.kind === 'pr') {
+                const co = companies.get(r.co)
+                const ck = checkOf(r.pr.pr)
+                const why = r.pr.review ? `review pedida por @${r.pr.pr.author?.login}` : r.pr.pr.reviewDecision === 'CHANGES_REQUESTED' ? 'pediram ajustes' : CHECK_SHORT[ck ?? ''] ?? 'checks'
+                return (
+                  <li key={r.key} className={`wk-ck-row is-pr ${r.pr.review ? 'is-review' : 'is-fail'}`} style={coStyle(co)}>
+                    <span className={`wk-ck-gh ${r.pr.review ? 'is-review' : 'is-fail'}`} aria-hidden="true">
+                      <Icon name="link" size={10} />
+                    </span>
+                    <button className="wk-ck-text" onClick={() => openPr(prOpen(r.pr))}>
+                      <b>
+                        <CompanyMark company={co} size={12} /> PR #{r.pr.pr.number} · {r.pr.pr.title}
+                      </b>
+                      <span>
+                        {r.pr.pr.repository.nameWithOwner.split('/')[1]} · {why}
+                      </span>
+                    </button>
                   </li>
                 )
               }
