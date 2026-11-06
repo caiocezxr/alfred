@@ -17,7 +17,7 @@ export type TextFontId = 'sistema' | 'arredondada' | 'serifada'
 export type Tone = 'neutro' | 'quente' | 'frio'
 
 export const DISPLAY_FONTS: Record<DisplayFontId, { label: string; note: string; family: string; weight: string; tracking: string; adjust?: string }> = {
-  cormorant: { label: 'Cormorant', note: 'clássica', family: "'Cormorant Garamond', 'EB Garamond', Georgia, serif", weight: '500', tracking: '0.005em' },
+  cormorant: { label: 'Cormorant', note: 'clássica, acento alto', family: "'Cormorant Garamond', 'EB Garamond', Georgia, serif", weight: '500', tracking: '0.005em' },
   garamond: { label: 'Garamond', note: 'de livro', family: "'EB Garamond', Georgia, serif", weight: '400', tracking: '0' },
   fraunces: { label: 'Fraunces', note: 'editorial', family: "'Fraunces', Georgia, serif", weight: '600', tracking: '-0.015em' },
   bodoni: { label: 'Bodoni', note: 'alta-costura', family: "'Bodoni Moda', Didot, Georgia, serif", weight: '500', tracking: '0.01em' },
@@ -68,8 +68,8 @@ export type Appearance = {
 }
 
 export const DEFAULT_LOOK: Record<ThemeId, Appearance> = {
-  claro: { accent: '#8c6a3a', display: 'cormorant', text: 'sistema', glass: 0.8, depth: 0.35, tone: 'quente', contrast: 0.5, radius: 20, window: 0 },
-  escuro: { accent: '#d6c19c', display: 'cormorant', text: 'sistema', glass: 0.72, depth: 1, tone: 'neutro', contrast: 0.5, radius: 20, window: 0 },
+  claro: { accent: '#8c6a3a', display: 'instrument', text: 'sistema', glass: 0.8, depth: 0.35, tone: 'quente', contrast: 0.5, radius: 20, window: 0 },
+  escuro: { accent: '#d6c19c', display: 'instrument', text: 'sistema', glass: 0.72, depth: 1, tone: 'neutro', contrast: 0.5, radius: 20, window: 0 },
 }
 
 type RGB = [number, number, number]
@@ -166,7 +166,7 @@ export function themeVars(id: ThemeId, a: Appearance): Record<string, string> {
   }
 }
 
-type State = { theme: ThemeId; look: Record<ThemeId, Appearance> }
+type State = { theme: ThemeId; fontV?: number; look: Record<ThemeId, Appearance> }
 
 const LS_KEY = 'ps.theme.v3'
 const LEGACY_KEY = 'ps.theme.v2'
@@ -191,7 +191,11 @@ function parse(d: unknown): State | null {
   if (!d || typeof d !== 'object') return null
   const o = d as { theme?: string; look?: Record<string, Partial<Appearance>>; prefs?: { glass?: number } }
   const theme: ThemeId = o.theme === 'claro' ? 'claro' : 'escuro'
-  if (o.look) return { theme, look: { claro: clean('claro', o.look.claro), escuro: clean('escuro', o.look.escuro) } }
+  if (o.look) {
+    const fresh = (o as { fontV?: number }).fontV !== 2
+    const fix = (a: Appearance): Appearance => (fresh && a.display === 'cormorant' ? { ...a, display: 'instrument' } : a)
+    return { theme, fontV: 2, look: { claro: fix(clean('claro', o.look.claro)), escuro: fix(clean('escuro', o.look.escuro)) } }
+  }
   const glass = o.prefs?.glass
   return {
     theme,
