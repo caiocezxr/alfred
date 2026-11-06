@@ -13,6 +13,7 @@ import { MoodYear } from '../mood/MoodYear'
 import { greetingFor, loadNicks, saveNicks, type Period } from '../../shared/greeting'
 import { SplitFlap } from './SplitFlap'
 import { WorkCockpit } from './WorkCockpit'
+import { LiveSky } from './LiveSky'
 import './home.css'
 
 function useClock(ms = 15000) {
@@ -28,6 +29,7 @@ export default function Home() {
   const now = useClock()
   const today = civil(now)
   const work = useWorkToday()
+  const sky = useWeather()
   const { habits, checkins } = useHabits()
   const home = useMemo(() => homeCity(), [])
   const [nickTick, setNickTick] = useState(0)
@@ -144,6 +146,7 @@ export default function Home() {
 
   return (
     <div className="home">
+      <LiveSky weather={sky.data?.[0] ?? null} />
       {year && <MoodYear onClose={() => setYear(false)} />}
       {editNicks && (
         <NickEditor
