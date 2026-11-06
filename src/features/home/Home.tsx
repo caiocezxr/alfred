@@ -7,7 +7,8 @@ import { openWorkItem, toggleTodo, useWorkToday, type TodayEntry } from '../work
 import { homeCity, localTime } from './geo'
 import { describe, useWeather, type Weather } from './weather'
 import BriefingCard from '../briefing/BriefingCard'
-import { CheckIn } from '../mood/CheckIn'
+import { MoodChip } from '../mood/CheckIn'
+import { openRitual } from '../../app/Ritual'
 import { MoodYear } from '../mood/MoodYear'
 import { greetingFor, loadNicks, saveNicks, type Period } from '../../shared/greeting'
 import './home.css'
@@ -62,7 +63,7 @@ export default function Home() {
           </>
         )}
       </p>
-      <CheckIn onOpenYear={() => setYear(true)} />
+      <MoodChip onOpen={openRitual} onOpenYear={() => setYear(true)} />
     </header>
   )
 
@@ -153,11 +154,11 @@ export default function Home() {
       <div className="home-wrap">
         <div className="home-top">
           {hero}
+          {todayCard}
           <WeatherCard />
         </div>
         <div className="home-main">
           <BriefingCard />
-          {todayCard}
         </div>
       </div>
     </div>

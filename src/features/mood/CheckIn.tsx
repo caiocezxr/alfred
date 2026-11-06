@@ -131,3 +131,33 @@ export function CheckIn({ onOpenYear, index = 1 }: { onOpenYear: () => void; ind
     </div>
   )
 }
+
+export function MoodChip({ onOpen, onOpenYear }: { onOpen: () => void; onOpenYear: () => void }) {
+  const { today } = useToday()
+  const mood = today?.mood ?? null
+  const m = mood ? MOODS[mood - 1] : null
+  return (
+    <div className="mchip reveal" style={{ ['--i' as string]: 1 }}>
+      <button className="mchip-main" onClick={onOpen} style={m ? { ['--mc' as string]: m.color } : undefined} title="Mudar humor de hoje">
+        {m ? (
+          <>
+            <span className="mchip-face">
+              <Face level={m.id} size={16} />
+            </span>
+            {m.label}
+          </>
+        ) : (
+          'Como você está?'
+        )}
+        {today?.coffee && (
+          <span className="mchip-coffee" title="Café 14 tomado">
+            <CoffeeIcon />
+          </span>
+        )}
+      </button>
+      <button className="mchip-year" onClick={onOpenYear}>
+        seu ano
+      </button>
+    </div>
+  )
+}

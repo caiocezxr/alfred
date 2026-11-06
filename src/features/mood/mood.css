@@ -452,3 +452,67 @@
     animation: none;
   }
 }
+
+.mchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 18px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface, var(--bg)) 60%, transparent);
+}
+
+.mchip-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 12px 0 6px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.mchip-main:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.mchip-face {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--mc, var(--accent));
+  color: #fff;
+}
+
+.mchip-coffee {
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+}
+
+.mchip-year {
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-left: 1px solid var(--border);
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.mchip-year:hover {
+  color: var(--text);
+}

@@ -8,7 +8,7 @@ import {
 import { Segmented } from '../shared/ui/Segmented'
 import { isTauri } from '../shared/db/api'
 import { CommandPalette } from './CommandPalette'
-import { MorningIntro, shouldPlayIntro } from './MorningIntro'
+import { RitualGate } from './Ritual'
 import { PaletteIcon, RouteIcon, SearchIcon, SidebarIcon } from './Icons'
 import { ROUTES, navigate, requestIntent, useRoute, withThemeTransition, type Route } from './router'
 import './shell.css'
@@ -48,7 +48,7 @@ export function App() {
   const [palette, setPalette] = useState(false)
   const [themePicker, setThemePicker] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
-  const [intro, setIntro] = useState(() => shouldPlayIntro(route))
+  const [ritualOnHome] = useState(() => route === 'home')
   const error = useSyncExternalStore(errorStore.subscribe, errorStore.get)
 
   useEffect(() => {
@@ -150,7 +150,7 @@ export function App() {
       </main>
 
       {themePicker && <ThemePicker onClose={() => setThemePicker(false)} />}
-      {intro && <MorningIntro onDone={() => setIntro(false)} />}
+      <RitualGate active={ritualOnHome} />
       {palette && <CommandPalette onClose={() => setPalette(false)} onToast={onToast} />}
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>
