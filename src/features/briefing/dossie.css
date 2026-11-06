@@ -2411,3 +2411,169 @@
   font-size: 21px;
   line-height: 1.4;
 }
+
+.dz[class] .dz-tabs button {
+  border-color: var(--dz-rule);
+  background: var(--dz-paper-2);
+}
+
+.dz[class] .dz-tabs button:hover {
+  background: color-mix(in srgb, var(--dz-ink) 5%, var(--dz-paper-2));
+}
+
+.dz[class] .dz-tabs button::before {
+  width: 6px;
+  height: 6px;
+  box-shadow: none;
+}
+
+.dz[class] .dz-tabs button[data-c='tudo']::before {
+  background: var(--dz-ink);
+}
+
+.dz[class] .dz-tabs button[aria-selected='true'] {
+  border-color: var(--dz-rule-2);
+  border-top: 2px solid var(--dz-ink);
+  background: var(--dz-paper);
+}
+
+.dz[class] .dz-tabs button[aria-selected='true'] .dz-tab-n {
+  background: var(--dz-ink);
+  color: var(--dz-paper);
+}
+
+.dz[class] .dz-progress i {
+  background: var(--dz-ink);
+}
+
+.dz[class] .dz-hero-mesh {
+  inset: 0;
+  background:
+    radial-gradient(70% 120% at 0% 0%, rgba(255, 255, 255, 0.07), transparent 60%),
+    linear-gradient(135deg, #17191e, #0c0d10);
+  filter: none;
+  animation: none;
+}
+
+.dz[class] .dz-mix button i,
+.dz[class] .dz-mix button[data-c] i {
+  height: 4px;
+  background: rgba(244, 241, 234, 0.82);
+  box-shadow: none;
+}
+
+.dz[class] .dz-mix button:nth-child(2) i {
+  background: rgba(244, 241, 234, 0.55);
+}
+
+.dz[class] .dz-mix button:nth-child(3) i {
+  background: rgba(244, 241, 234, 0.32);
+}
+
+.dz[class] .dz-mix button span::before,
+.dz[class] .dz-points .dz-pt-c::before,
+.dz[class] .dz-item-h .dz-type::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: 0.1em;
+  background: var(--cc);
+}
+
+.dz[class] .dz-points li {
+  padding-left: 0;
+}
+
+.dz[class] .dz-points li::before {
+  content: none;
+}
+
+.dz[class] .dz-points li:hover {
+  background: color-mix(in srgb, var(--dz-ink) 4%, transparent);
+}
+
+.dz[class] .dz-pt-c {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--dz-ink-2);
+}
+
+.dz[class] .dz-sec[data-c] {
+  border-bottom-color: var(--dz-rule-2);
+  box-shadow: none;
+  background-image: none;
+}
+
+.dz[class] .dz-sec[data-c] .dz-sec-l {
+  color: var(--dz-ink);
+}
+
+.dz[class] .dz-sec .dz-shape {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  transform: none;
+  background: var(--cc);
+}
+
+.dz[class] .dz-item::before {
+  content: none;
+}
+
+.dz[class] .dz-item:hover {
+  border-color: color-mix(in srgb, var(--dz-ink) 18%, transparent);
+}
+
+.dz[class] .dz-item.is-sel,
+.dz[class] .dz-item[data-speaking] {
+  border-color: var(--dz-ink);
+  background: var(--dz-card);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dz-ink) 10%, transparent);
+}
+
+.dz[class] .dz-item-h .dz-shape {
+  display: none;
+}
+
+.dz[class] .dz-item[data-c] .dz-type,
+.dz[class] .dz-item[data-c] .dz-mark {
+  color: var(--dz-ink-2);
+}
+
+.dz[class] .dz-assess,
+.dz[class] .dz-rec {
+  background: color-mix(in srgb, var(--dz-ink) 4%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--dz-ink) 30%, transparent);
+}
+
+.dz[class] .dz-rec {
+  box-shadow: inset 2px 0 0 var(--dz-ink);
+}
+
+.dz[class] .dz-lbl,
+.dz[class] .dz-rec .dz-lbl {
+  color: var(--dz-ink-2);
+}
+
+.dz[class] .dz-index button[data-c] small {
+  color: var(--dz-ink-3);
+}
+
+.dz[class] .dz-index button[data-c] small::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 5px;
+  border-radius: 50%;
+  vertical-align: 0.15em;
+  background: var(--cc);
+}
+
+.dz[class] .dz-tl-dot {
+  box-shadow: none;
+}
