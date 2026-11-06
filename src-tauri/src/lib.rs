@@ -1,6 +1,7 @@
 mod briefing;
 mod commands;
 mod db;
+mod github;
 mod ideas;
 mod mood;
 mod notes;
@@ -94,6 +95,14 @@ pub fn run() {
             radar::radar_items_upsert,
             radar::radar_translate,
             briefing::habit_tips,
+            github::github_accounts,
+            github::github_dashboard,
+            github::github_repos,
+            github::github_branches,
+            github::github_pr_create,
+            github::github_pr_merge,
+            github::github_local_scan,
+            github::github_identity_apply,
             radar::radar_item_set,
             radar::radar_cleanup,
             radar::radar_keywords_list,
