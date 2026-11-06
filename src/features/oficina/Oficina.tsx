@@ -4,6 +4,8 @@ import { onIntent } from '../../app/router'
 import { isTauri } from '../../shared/db/api'
 import { Icon } from '../work/icons'
 import { getGh, gh, useGhSettings, type LocalRepo } from '../work/github/api'
+
+const getGhSettingsSafe = () => getGh()
 import { initScope, loadWork, useWork } from '../work/store'
 import { SessionHost, SessionsView, ToolMark, Text } from '../work/sessions/Sessions'
 import { sx } from '../work/sessions/api'
@@ -43,6 +45,10 @@ import { Arsenal } from './Arsenal'
 import { Bench } from './Bench'
 import { cofreOf, getSettings, loadSettings, useSettings } from './cofre'
 import { route as routeSkills, warmRouter, type Pick } from './router'
+import { draftFor, type PendingItem } from './bridge'
+import { ApplyAlfred, useAlfredRepo } from './Apply'
+import { navigate } from '../../app/router'
+import { openItem } from '../work/store'
 import './oficina.css'
 import './arsenal.css'
 
@@ -219,6 +225,27 @@ export default function Oficina() {
       setArea('desks')
       setCurrent(m.id)
     }
+    const fromItem = () => {
+      const raw = localStorage.getItem('sx.pendingItem')
+      if (!raw || !loaded) return
+      localStorage.removeItem('sx.pendingItem')
+      let p: PendingItem
+      try {
+        p = JSON.parse(raw) as PendingItem
+      } catch {
+        return
+      }
+      const existing = mesas.find((m) => m.itemId === p.itemId)
+      setArea('desks')
+      if (existing) return setCurrent(existing.id)
+      const gs = getGhSettingsSafe()
+      const mapped = Object.entries(gs.repos).filter(([, c]) => c === p.companyId).map(([path]) => path)
+      const m = createMesa(p.companyId, mapped.length === 1 ? mapped : [], 'claude')
+      patchMesa(m.id, { title: p.ticket ? `${p.ticket.startsWith('#') ? p.ticket : `#${p.ticket}`} ${p.title}` : p.title, itemId: p.itemId, ticket: p.ticket, draft: draftFor(p) })
+      setCurrent(m.id)
+    }
+    window.addEventListener('sx:pending-item', fromItem)
+    fromItem()
     window.addEventListener('sx:to-desk', open)
     const pending = localStorage.getItem('sx.pendingDesk')
     if (pending && loaded) {
@@ -229,7 +256,10 @@ export default function Oficina() {
         localStorage.removeItem('sx.pendingDesk')
       }
     }
-    return () => window.removeEventListener('sx:to-desk', open)
+    return () => {
+      window.removeEventListener('sx:to-desk', open)
+      window.removeEventListener('sx:pending-item', fromItem)
+    }
   }, [mesas, co, loaded])
 
   const start = (agent: AgentId, repos: string[], text: string) => {
@@ -443,6 +473,7 @@ function DeskView({ desk, companies, scope, fallback, onDelete }: { desk: Mesa; 
   const show = wide ? bench : peek
   const toggle = () => (wide ? setBench((p) => !p) : setPeek((p) => !p))
   const flow = desk.flow ?? cofreFlow(desk.companyId)
+  const alfred = useAlfredRepo(desk.repos)
 
   return (
     <div ref={view} className={`ofc-desk-view ${show ? (wide ? 'has-bench' : 'has-peek') : ''}`}>
@@ -450,7 +481,21 @@ function DeskView({ desk, companies, scope, fallback, onDelete }: { desk: Mesa; 
         <header className="ofc-top">
           <input className="ofc-title display" value={desk.title} placeholder="Desk nova" onChange={(e) => patchMesa(desk.id, { title: e.target.value })} />
           <RepoChips repos={desk.repos} onChange={(r) => void setRepos(desk, r)} companies={companies} scope={scope} />
+          {desk.itemId && (
+            <button
+              className="ofc-item"
+              onClick={() => {
+                navigate('work')
+                window.setTimeout(() => openItem(desk.itemId!), 120)
+              }}
+              title="Abrir o chamado no Quadro da Workstation"
+            >
+              <Icon name="hash" size={11} />
+              {desk.ticket ? desk.ticket.replace(/^#/, '') : 'chamado'}
+            </button>
+          )}
           <span className="ofc-grow" />
+          {alfred && <ApplyAlfred repo={alfred} />}
           <div className="ofc-flow" role="radiogroup" aria-label="Fluxo">
             {(['livre', 'maivado'] as const).map((f) => (
               <button key={f} role="radio" aria-checked={flow === f} className={flow === f ? 'is-on' : ''} onClick={() => patchMesa(desk.id, { flow: f })} title={f === 'livre' ? 'Conversa direta' : 'O /maivado conduz: rápido ou avançado, com travas'}>
@@ -715,7 +760,7 @@ function Row({ it, desk, mesa, fallback }: { it: Item; desk: string; mesa: Mesa;
       </div>
     )
   if (it.role === 'note') return <div className={`ofc-note is-${it.tone}`}>{it.text}</div>
-  if (it.role === 'auth') return <AuthCard desk={desk} done={it.done} />
+  if (it.role === 'auth') return it.agent === 'codex' ? <CodexAuthCard mesa={mesa} done={it.done} /> : <AuthCard desk={desk} done={it.done} />
   if (it.role === 'limit') return <LimitCard it={it} mesa={mesa} fallback={fallback} />
   return null
 }
@@ -747,6 +792,47 @@ function LimitCard({ it, mesa, fallback }: { it: Extract<Item, { role: 'limit' }
         )}
       </div>
       {others.length === 0 && <small>Cadastre outra conta em Arsenal › Contas para trocar sem perder a conversa.</small>}
+    </div>
+  )
+}
+
+function CodexAuthCard({ mesa, done }: { mesa: Mesa; done: boolean }) {
+  const [msg, setMsg] = useState<string | null>(null)
+  const acct = mesa.accounts?.codex ?? cofreOf(mesa.companyId).codexAccount
+  const label = getSettings().accounts.codex.find((a) => a.id === acct)?.label ?? acct
+  if (done)
+    return (
+      <div className="ofc-auth is-done">
+        <ToolMark tool="codex" size={12} /> Pronto. Manda a mensagem de novo.
+      </div>
+    )
+  return (
+    <div className="ofc-auth is-codex">
+      <header>
+        <ToolMark tool="codex" size={16} />
+        <b>A conta “{label}” do Codex não está logada</b>
+      </header>
+      <ol>
+        <li>
+          <span>Abre o Terminal com o login desta conta. Você entra pelo navegador com o ChatGPT dela.</span>
+          <button onClick={() => void invoke('sessao_codex_login', { id: acct }).catch((e) => setMsg(String(e)))} disabled={acct === 'default'}>
+            <Icon name="key" size={12} /> Entrar nesta conta
+          </button>
+          {acct === 'default' && <small>A conta padrão é a do Codex instalado: rode codex login no Terminal.</small>}
+        </li>
+        <li>
+          <span>Terminou? Confirma aqui.</span>
+          <button
+            className="is-go"
+            onClick={() => {
+              void closeAgent(mesa.id, 'codex').then(() => markAuthDone(mesa.id))
+            }}
+          >
+            Já entrei
+          </button>
+        </li>
+      </ol>
+      {msg && <p className="ofc-auth-e">{msg}</p>}
     </div>
   )
 }
@@ -1012,6 +1098,13 @@ function Deck({ desk, agent, setAgent, fallback }: { desk: Mesa; agent: AgentId;
     }
   }, [text, agent, auto, desk.repos.join('|')])
   const chosen = picks.filter((p) => !dropped.has(p.id))
+
+  useEffect(() => {
+    if (desk.draft) {
+      setText(desk.draft)
+      patchMesa(desk.id, { draft: undefined })
+    }
+  }, [desk.id])
 
   useEffect(() => {
     box.current?.focus()

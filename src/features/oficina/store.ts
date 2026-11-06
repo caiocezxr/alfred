@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event'
 import { useSyncExternalStore } from 'react'
 import { track } from '../../shared/activity'
 import { api, isTauri } from '../../shared/db/api'
-import { cofreOf, codexHome, getSettings, mcpFor, skillsFor } from './cofre'
+import { cofreOf, codexHome, getSettings, listSkills, mcpFor, skillsFor } from './cofre'
 import { route as routeSkills, type Pick } from './router'
 
 export type AgentId = 'claude' | 'codex' | 'local'
@@ -20,6 +20,9 @@ export type Mesa = {
   agent: AgentId
   flow?: 'livre' | 'maivado'
   accounts?: Partial<Record<AgentId, string>>
+  itemId?: string
+  ticket?: string | null
+  draft?: string
   sessions: Partial<Record<AgentId, string>>
   prefs: Partial<Record<AgentId, Record<string, string>>>
   createdAt: string
@@ -256,7 +259,7 @@ function authCard(mesa: string, agent: AgentId) {
   const m = liveOf(mesa)
   m.items = m.items.filter((x) => !(x.agent === agent && ((x.role === 'agent' && AUTH_FAIL.test(x.text)) || (x.role === 'note' && AUTH_FAIL.test(x.text)))))
   if (!m.items.slice(-4).some((x) => x.role === 'auth' && !x.done)) push(mesa, { id: uid(), agent, role: 'auth', at: Date.now(), done: false })
-  setAgent(mesa, agent, { status: 'error', error: 'login do Claude expirado', action: '' })
+  setAgent(mesa, agent, { status: 'error', error: agent === 'codex' ? 'conta do Codex sem login' : 'login do Claude expirado', action: '' })
 }
 
 export function markAuthDone(mesa: string) {
@@ -365,7 +368,7 @@ function apply(ev: Out) {
     if (agent === 'local') queueMicrotask(() => saveLocal(mesa))
     const err = ev.data.error as { message?: string } | undefined
     m.items = m.items.map((x) => (x.role === 'agent' || x.role === 'thought') && x.open && x.agent === agent ? { ...x, open: false } : x)
-    if (err && agent === 'claude' && AUTH_FAIL.test(err.message ?? '')) {
+    if (err && agent !== 'local' && AUTH_FAIL.test(err.message ?? '')) {
       authCard(mesa, agent)
       setAgent(mesa, agent, { since: null })
       busy(mesa, agent, false)
@@ -463,6 +466,22 @@ export function personaText(companyId?: string) {
   return (companyId ? cofreOf(companyId).persona : null) ?? PERSONA
 }
 
+export async function skillIndex(companyId: string) {
+  const all = await listSkills().catch(() => [])
+  const allowed = skillsFor(companyId)
+  const list = all.filter((s) => !s.manual && (allowed === null || allowed.includes(s.id)))
+  if (!list.length) return ''
+  const lines: string[] = []
+  let size = 0
+  for (const s of list) {
+    const line = `- ${s.name}: ${s.description.replace(/\s+/g, ' ').slice(0, 140)} (${s.path}/SKILL.md)`
+    if (size + line.length > 9000) break
+    lines.push(line)
+    size += line.length
+  }
+  return `\n\nSkills disponíveis neste perfil. Quando um pedido combinar com uma delas, leia o SKILL.md indicado e siga as instruções antes de começar:\n${lines.join('\n')}`
+}
+
 export function accountOf(mesa: Mesa, agent: AgentId) {
   const c = cofreOf(mesa.companyId)
   return mesa.accounts?.[agent] ?? (agent === 'claude' ? c.claudeAccount : agent === 'codex' ? c.codexAccount : 'default')
@@ -490,7 +509,7 @@ export function ensureAgent(mesa: Mesa, agent: AgentId, codexHome_: string | nul
         agent,
         cwd: place.cwd,
         dirs: place.dirs,
-        persona: personaText(mesa.companyId),
+        persona: agent === 'codex' ? personaText(mesa.companyId) + (await skillIndex(mesa.companyId)) : personaText(mesa.companyId),
         resume: mesa.sessions[agent] ?? null,
         codexHome: home,
         skills: agent === 'claude' ? skillsFor(mesa.companyId) : null,
@@ -506,8 +525,11 @@ export function ensureAgent(mesa: Mesa, agent: AgentId, codexHome_: string | nul
       for (const [opt, val] of Object.entries(prefs)) if (val !== 'auto') await oficinaApi.config(mesa.id, agent, opt, val).catch(() => {})
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      setAgent(mesa.id, agent, { status: 'error', error: msg, action: '' })
-      push(mesa.id, { id: uid(), agent, role: 'note', text: msg, tone: 'error', at: Date.now() })
+      if (AUTH_FAIL.test(msg)) authCard(mesa.id, agent)
+      else {
+        setAgent(mesa.id, agent, { status: 'error', error: msg, action: '' })
+        push(mesa.id, { id: uid(), agent, role: 'note', text: msg, tone: 'error', at: Date.now() })
+      }
     } finally {
       opening.delete(k)
       emit()

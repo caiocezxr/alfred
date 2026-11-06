@@ -168,23 +168,27 @@ pub(crate) fn github_url(s: &str) -> Option<String> {
 pub async fn sessao_skill_import(state: State<'_, AppState>, source: String) -> R<Vec<String>> {
     let lib = library(&state);
     let tmp = state.data_dir.join("tmp").join(format!("skill-{}", uuid::Uuid::new_v4()));
-    tauri::async_runtime::spawn_blocking(move || -> R<Vec<String>> {
-        ensure_library(&lib)?;
+    tauri::async_runtime::spawn_blocking(move || import_skill(&lib, &tmp, &source)).await.map_err(|e| e.to_string())?
+}
+
+pub(crate) fn import_skill(lib: &Path, tmp: &Path, source: &str) -> R<Vec<String>> {
+    {
+        ensure_library(lib)?;
         let root = if let Some(url) = github_url(&source) {
             std::fs::create_dir_all(tmp.parent().unwrap_or(&tmp)).map_err(|e| e.to_string())?;
             let git = ["/usr/bin/git", "/opt/homebrew/bin/git"].into_iter().find(|p| Path::new(p).exists()).ok_or("git não encontrado")?;
-            let out = Command::new(git).args(["clone", "--depth", "1", "--quiet", &url]).arg(&tmp).env("GIT_TERMINAL_PROMPT", "0").output().map_err(|e| e.to_string())?;
+            let out = Command::new(git).args(["clone", "--depth", "1", "--quiet", &url]).arg(tmp).env("GIT_TERMINAL_PROMPT", "0").output().map_err(|e| e.to_string())?;
             if !out.status.success() {
                 return Err(format!("não deu para baixar: {}", String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("")));
             }
-            tmp.clone()
+            tmp.to_path_buf()
         } else {
-            safe_dir(&source)?
+            safe_dir(source)?
         };
         let mut found = vec![];
         find_skills(&root, 4, &mut found);
         if found.is_empty() {
-            let _ = std::fs::remove_dir_all(&tmp);
+            let _ = std::fs::remove_dir_all(tmp);
             return Err("não achei nenhum SKILL.md ali".into());
         }
         let mut names = vec![];
@@ -200,11 +204,9 @@ pub async fn sessao_skill_import(state: State<'_, AppState>, source: String) -> 
             copy_dir(&dir, &dest, &mut budget)?;
             names.push(name);
         }
-        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_dir_all(tmp);
         Ok(names)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }
 }
 
 #[tauri::command]
@@ -295,7 +297,11 @@ fn handshake(bin: &Path) -> R<String> {
 pub async fn sessao_engines_update(state: State<'_, AppState>) -> R<Value> {
     crate::oficina::close_all();
     let data = state.data_dir.clone();
-    tauri::async_runtime::spawn_blocking(move || -> R<Value> {
+    tauri::async_runtime::spawn_blocking(move || update_engines(&data)).await.map_err(|e| e.to_string())?
+}
+
+pub(crate) fn update_engines(data: &Path) -> R<Value> {
+    {
         let cur = data.join("oficina");
         let next = data.join("oficina-next");
         let prev = data.join("oficina-prev");
@@ -327,17 +333,19 @@ pub async fn sessao_engines_update(state: State<'_, AppState>) -> R<Value> {
             return Err(e.to_string());
         }
         Ok(json!({ "engines": tested, "seconds": started.elapsed().as_secs() }))
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    }
 }
 
 #[tauri::command]
 pub fn sessao_engines_rollback(state: State<AppState>) -> R<()> {
     crate::oficina::close_all();
-    let cur = state.data_dir.join("oficina");
-    let prev = state.data_dir.join("oficina-prev");
-    let tmp = state.data_dir.join("oficina-swap");
+    rollback_engines(&state.data_dir)
+}
+
+pub(crate) fn rollback_engines(data: &Path) -> R<()> {
+    let cur = data.join("oficina");
+    let prev = data.join("oficina-prev");
+    let tmp = data.join("oficina-swap");
     if !prev.exists() {
         return Err("não há versão anterior guardada".into());
     }
@@ -416,10 +424,161 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
+    fn engines_update_and_rollback_for_real() {
+        let data = std::env::temp_dir().join(format!("alfred-engines-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(data.join("oficina")).unwrap();
+        std::fs::write(data.join("oficina/marker"), "old").unwrap();
+        let r = update_engines(&data).expect("update");
+        println!("{r}");
+        assert_eq!(r["engines"].as_array().unwrap().len(), 2);
+        assert!(data.join("oficina/node_modules/.bin/claude-agent-acp").exists());
+        assert!(data.join("oficina-prev/marker").exists());
+        for (_, pkg, _) in ENGINE_PKGS {
+            assert!(installed(&data.join("oficina"), pkg).is_some());
+        }
+        rollback_engines(&data).expect("rollback");
+        assert!(data.join("oficina/marker").exists());
+        assert!(data.join("oficina-prev/node_modules").exists());
+        let _ = std::fs::remove_dir_all(&data);
+    }
+
+    #[test]
+    #[ignore]
+    fn imports_a_real_skill_from_github() {
+        let base = std::env::temp_dir().join(format!("alfred-skills-{}", uuid::Uuid::new_v4()));
+        let lib = base.join("lib");
+        let names = import_skill(&lib, &base.join("tmp"), "https://github.com/DietrichGebert/ponytail").expect("import");
+        println!("{names:?}");
+        assert!(!names.is_empty());
+        assert!(lib.join(".claude-plugin/plugin.json").exists());
+        for n in &names {
+            assert!(lib.join("skills").join(n).join("SKILL.md").exists());
+        }
+        assert!(!base.join("tmp").exists());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
     fn names_are_sanitized() {
         assert_eq!(safe_name("Pony Tail!"), "pony-tail");
         assert_eq!(safe_name("../../etc"), "etc");
         assert!(valid_account("pessoal-1"));
         assert!(!valid_account("../x"));
     }
+}
+
+fn alfred_repo(path: &str) -> R<PathBuf> {
+    let dir = safe_dir(path)?;
+    let conf = std::fs::read_to_string(dir.join("src-tauri/tauri.conf.json")).map_err(|_| "essa pasta não é o repositório do Alfred".to_string())?;
+    let v: Value = serde_json::from_str(&conf).map_err(|_| "tauri.conf.json inválido".to_string())?;
+    if v.get("productName").and_then(Value::as_str) != Some("Alfred") {
+        return Err("essa pasta não é o repositório do Alfred".into());
+    }
+    Ok(dir)
+}
+
+#[tauri::command]
+pub fn sessao_alfred_repo(path: String) -> bool {
+    alfred_repo(&path).is_ok()
+}
+
+static BUILDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn build_path() -> String {
+    let h = home().map(|h| h.to_string_lossy().to_string()).unwrap_or_default();
+    format!("{h}/.cargo/bin:{}", node_path())
+}
+
+#[tauri::command]
+pub fn sessao_alfred_build(app: tauri::AppHandle, path: String) -> R<()> {
+    use std::sync::atomic::Ordering;
+    use tauri::Emitter;
+    let dir = alfred_repo(&path)?;
+    if BUILDING.swap(true, Ordering::SeqCst) {
+        return Err("já tem uma compilação rodando".into());
+    }
+    std::thread::spawn(move || {
+        let say = |kind: &str, text: String| {
+            let _ = app.emit("sessao-build", json!({ "kind": kind, "text": text }));
+        };
+        let steps: [(&str, &str, &[&str]); 2] = [("Interface", "npm", &["run", "build"]), ("App", "npx", &["tauri", "build", "--bundles", "app"])];
+        for (label, bin, args) in steps {
+            say("step", label.to_string());
+            let child = Command::new(bin).args(args).current_dir(&dir).env("PATH", build_path()).env("CI", "true").stdout(Stdio::piped()).stderr(Stdio::piped()).spawn();
+            let mut child = match child {
+                Ok(c) => c,
+                Err(e) => {
+                    say("fail", format!("não deu para rodar {bin}: {e}"));
+                    BUILDING.store(false, Ordering::SeqCst);
+                    return;
+                }
+            };
+            let err = child.stderr.take();
+            let errs = std::thread::spawn(move || {
+                let mut tail = vec![];
+                if let Some(e) = err {
+                    for l in BufReader::new(e).lines().map_while(Result::ok) {
+                        tail.push(l);
+                        if tail.len() > 40 {
+                            tail.remove(0);
+                        }
+                    }
+                }
+                tail
+            });
+            if let Some(out) = child.stdout.take() {
+                for l in BufReader::new(out).lines().map_while(Result::ok) {
+                    let t = l.trim();
+                    if !t.is_empty() {
+                        say("line", t.chars().take(300).collect());
+                    }
+                }
+            }
+            let ok = child.wait().map(|s| s.success()).unwrap_or(false);
+            let tail = errs.join().unwrap_or_default();
+            if !ok {
+                say("fail", tail.iter().rev().take(12).rev().cloned().collect::<Vec<_>>().join("\n"));
+                BUILDING.store(false, Ordering::SeqCst);
+                return;
+            }
+        }
+        let bundle = dir.join("src-tauri/target/release/bundle/macos/Alfred.app");
+        if bundle.exists() {
+            say("done", bundle.to_string_lossy().to_string());
+        } else {
+            say("fail", "a compilação terminou mas o Alfred.app não apareceu".into());
+        }
+        BUILDING.store(false, Ordering::SeqCst);
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn sessao_alfred_install(app: tauri::AppHandle, state: State<AppState>, path: String) -> R<()> {
+    let dir = alfred_repo(&path)?;
+    let bundle = dir.join("src-tauri/target/release/bundle/macos/Alfred.app");
+    if !bundle.exists() {
+        return Err("compile antes de aplicar".into());
+    }
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let target = exe.ancestors().find(|p| p.extension().is_some_and(|e| e == "app")).map(Path::to_path_buf).ok_or("o Alfred não está rodando de um .app")?;
+    if !target.starts_with("/Applications") && !target.starts_with(home()?) {
+        return Err("lugar de instalação inesperado".into());
+    }
+    let script = state.data_dir.join("tmp/aplicar-alfred.sh");
+    std::fs::create_dir_all(script.parent().unwrap_or(&state.data_dir)).map_err(|e| e.to_string())?;
+    std::fs::write(&script, "#!/bin/bash\nTARGET=\"$1\"\nSRC=\"$2\"\nPID=\"$3\"\nfor i in $(seq 1 120); do kill -0 \"$PID\" 2>/dev/null || break; sleep 0.5; done\nrm -rf \"$TARGET\" && /usr/bin/ditto \"$SRC\" \"$TARGET\" && /usr/bin/open \"$TARGET\"\n").map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        Command::new("/bin/bash").arg(&script).arg(&target).arg(&bundle).arg(std::process::id().to_string()).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).process_group(0).spawn().map_err(|e| e.to_string())?;
+    }
+    crate::oficina::close_all();
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(400));
+        handle.exit(0);
+    });
+    Ok(())
 }

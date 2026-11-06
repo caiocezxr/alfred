@@ -340,7 +340,7 @@ pub async fn oficina_start(
         }
     }
     let extra: Vec<String> = extra.iter().map(|p| p.to_string_lossy().to_string()).collect();
-    if persona.as_ref().is_some_and(|p| p.len() > 8000) {
+    if persona.as_ref().is_some_and(|p| p.len() > 24000) {
         return Err("instrução grande demais".into());
     }
     let codex_home = match codex_home {

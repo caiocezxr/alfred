@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { openExternal } from '../../shared/openExternal'
+import { openInSessao } from '../oficina/bridge'
+import { loadMesas, useOficina } from '../oficina/store'
+import { linkPr, livePrs, useBoards, useGhSettings } from './github/api'
 import { secretsAvailable, workApi } from './api'
 import { CompanyMark, coStyle } from './brand'
 import { Icon, type IconName } from './icons'
@@ -19,6 +22,13 @@ export function Drawer({ state, today }: { state: WorkState; today: string }) {
   const item = state.items.find((i) => i.id === openId) ?? null
   const panel = useRef<HTMLDivElement>(null)
   const [leaving, setLeaving] = useState(false)
+  const { mesas } = useOficina()
+  useEffect(() => {
+    void loadMesas()
+  }, [])
+  const ghs = useGhSettings()
+  const login = item ? ghs.stations[item.companyId] : undefined
+  const boards = useBoards(login ? [login] : [])
   const close = () => {
     if (canMorph() && document.querySelector(`[data-card="${openId}"]`)) return closeItem()
     setLeaving(true)
@@ -99,6 +109,18 @@ export function Drawer({ state, today }: { state: WorkState; today: string }) {
               Abrir chamado
             </button>
           )}
+          <button
+            className="btn quiet wk-dr-sessao"
+            onClick={() => {
+              const pr = linkPr(item, livePrs(boards))
+              openInSessao(item, company, pr, ticketUrl(item, company))
+              close()
+            }}
+            title="Abre uma desk da Sessão com este chamado já descrito"
+          >
+            <Icon name="spark" size={14} />
+            {mesas.some((m) => m.itemId === item.id) ? 'Abrir desk' : 'Trabalhar na Sessão'}
+          </button>
           <button className={`btn quiet ${item.focusedAt ? 'is-on' : ''}`} onClick={() => void setFocus(item.id, !item.focusedAt)} aria-pressed={!!item.focusedAt} disabled={item.stage === 'done'}>
             <Icon name="pin" size={14} />
             {item.focusedAt ? 'No foco' : 'Foco'}

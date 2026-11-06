@@ -157,6 +157,26 @@ export function NoteEditor({ note, readOnly, font, focusTitle, onFocusConsumed, 
       onBlur: () => flush(),
       editorProps: {
         attributes: { class: 'notes-prose', spellcheck: 'true', 'aria-label': 'Conteúdo da nota', 'aria-multiline': 'true' },
+        handleDOMEvents: {
+          click: (view, event) => {
+            const box = event.target
+            if (!(box instanceof HTMLInputElement) || box.type !== 'checkbox') return false
+            const li = box.closest('li[data-checked]')
+            if (!li || !view.dom.contains(li)) return false
+            event.preventDefault()
+            if (!view.editable) return true
+            const inner = view.posAtDOM(li, 0)
+            const $pos = view.state.doc.resolve(inner)
+            for (let d = $pos.depth; d > 0; d--) {
+              const node = $pos.node(d)
+              if (node.type.name === 'taskItem') {
+                view.dispatch(view.state.tr.setNodeMarkup($pos.before(d), undefined, { ...node.attrs, checked: !node.attrs.checked }))
+                return true
+              }
+            }
+            return true
+          },
+        },
         handlePaste: (_view, event) => {
           const files = imageFiles(event.clipboardData)
           if (!files.length) return false

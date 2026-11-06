@@ -3,6 +3,8 @@ import { CompanyMark, coStyle } from './brand'
 import { Icon } from './icons'
 import { boardColumns, checklistFor, crossesDelivery, dueLabel, dueState, fmtDur, isPost, itemTimeMs, label, parseCapture, pendingChecks, shortDay, slaFor, ticketUrl, type Scope, type Sla } from './logic'
 import { Roll } from './Roll'
+import { openInSessao } from '../oficina/bridge'
+import { liveOf, loadMesas, useOficina, type Mesa } from '../oficina/store'
 import { CHECK_SHORT, checkOf, linkPr, livePrs, openPr, prOpen, useBoards, useGhSettings, type LivePr } from './github/api'
 import {
   createItem, doMove, openDialog, openItemFrom, openTicket, readUi, reorderColumn, requestMove, resume, select, setFocus, toggleTimer, useWork, writeUi,
@@ -85,6 +87,11 @@ export function Board({ state, today, scope }: { state: WorkState; today: string
   const ghs = useGhSettings()
   const logins = state.companies.filter((c) => scope === 'all' || c.id === scope).map((c) => ghs.stations[c.id]).filter((l): l is string => !!l)
   const boards = useBoards(logins)
+  const { mesas } = useOficina()
+  useEffect(() => {
+    void loadMesas()
+  }, [])
+  const deskByItem = useMemo(() => new Map(mesas.filter((m) => m.itemId).map((m) => [m.itemId!, m])), [mesas])
   const prsByCo = useMemo(() => {
     const m = new Map<string, LivePr[]>()
     for (const c of state.companies) {
@@ -406,6 +413,8 @@ export function Board({ state, today, scope }: { state: WorkState; today: string
                     sla={companies.get(it.companyId) ? slaFor(it, state.events, companies.get(it.companyId)!, Date.now()) : null}
                     linked={!!ticketUrl(it, companies.get(it.companyId))}
                     pr={linkPr(it, prsByCo.get(it.companyId) ?? [])}
+                    desk={deskByItem.get(it.id) ?? null}
+                    onSessao={() => openInSessao(it, companies.get(it.companyId), linkPr(it, prsByCo.get(it.companyId) ?? []), ticketUrl(it, companies.get(it.companyId)))}
                     onPointerDown={(e) => startDrag(e, it)}
                     suppress={suppress}
                   />,
@@ -464,7 +473,9 @@ function QuickAdd({ stage, state, scope, today }: { stage: 'todo' | 'doing'; sta
   )
 }
 
-function Card({ item, company, today, note, attachments, pending, totalChecks, celebrating, landed, selected, live, timeMs, sla, linked, pr, onPointerDown, suppress }: {
+function Card({ item, company, today, note, attachments, pending, totalChecks, celebrating, landed, selected, live, timeMs, sla, linked, pr, desk, onSessao, onPointerDown, suppress }: {
+  desk?: Mesa | null
+  onSessao?: () => void
   item: WorkItem
   company?: Company
   today: string
@@ -561,6 +572,21 @@ function Card({ item, company, today, note, attachments, pending, totalChecks, c
           <b>PR #{pr.pr.number}</b>
           <i aria-hidden="true" />
           <span>{pr.review ? 'review pedida' : pr.pr.reviewDecision === 'APPROVED' ? 'aprovado' : checkOf(pr.pr) ? CHECK_SHORT[checkOf(pr.pr)!] : pr.pr.isDraft ? 'rascunho' : 'aberto'}</span>
+        </button>
+      )}
+      {desk && (
+        <button
+          className={`wk-deskchip ${(['claude', 'codex', 'local'] as const).some((a) => ['thinking', 'writing', 'tool', 'waiting'].includes(liveOf(desk.id).agents[a].status)) ? 'is-live' : ''}`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            onSessao?.()
+          }}
+          title="Abrir a desk deste chamado na Sessão"
+        >
+          <i aria-hidden="true" />
+          <b>desk</b>
+          <span>{desk.title || 'Sessão'}</span>
         </button>
       )}
       {note && item.stage !== 'done' && <p className="wk-card-note">{note.last}</p>}
