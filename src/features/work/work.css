@@ -6298,3 +6298,69 @@
     animation: none;
   }
 }
+
+.wk .wk-head {
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 24px;
+  row-gap: 18px;
+}
+
+.wk .wk-head .wk-input {
+  order: 3;
+  flex: 1 1 100%;
+  max-width: none;
+}
+
+.wk .wk-head-tools {
+  margin-left: auto;
+  gap: 2px;
+  padding: 4px 6px 4px 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-solid) 55%, transparent);
+  box-shadow: inset 0 1px 0 var(--highlight);
+}
+
+.wk .wk-head-tools .seg {
+  margin-right: 6px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.wk .wk-head-tools .seg + .wk-tool {
+  margin-left: 4px;
+  position: relative;
+}
+
+.wk .wk-head-tools .seg + .wk-tool::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--hairline);
+}
+
+.wk .wk-cockpit {
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(220px, 0.8fr);
+  align-items: center;
+  column-gap: 28px;
+  padding: 6px 8px 20px;
+}
+
+.wk .wk-cockpit > .wk-ck-status {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.wk .wk-cockpit > .wk-ck-score {
+  align-items: center;
+}
+
+.wk .wk-ck-next {
+  align-self: stretch;
+  justify-content: center;
+}
