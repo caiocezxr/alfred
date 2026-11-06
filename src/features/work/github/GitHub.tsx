@@ -51,6 +51,8 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
   const [accounts, setAccounts] = useState<GhAccount[] | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [pr, setPr] = useState<{ company: Company; login: string } | null>(null)
+  const [only, setOnly] = useState<string | null>(null)
+  const [switching, setSwitching] = useState<string | null>(null)
 
   const loadAccounts = () => {
     setErr(null)
@@ -61,10 +63,47 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
   useEffect(loadAccounts, [])
 
   const companies = state.companies
-  const visible = scope === 'all' ? companies : companies.filter((c) => c.id === scope)
+  const visible = (scope === 'all' ? companies : companies.filter((c) => c.id === scope)).filter((c) => !only || s.stations[c.id] === only)
+  const active = accounts?.find((a) => a.active)?.login ?? null
+  const makeActive = async (login: string) => {
+    setSwitching(login)
+    try {
+      setAccounts(await gh.switchTo(login))
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSwitching(null)
+    }
+  }
 
   return (
     <div className="gh">
+      {accounts && accounts.length > 0 && (
+        <section className="gh-accts reveal" style={{ ['--i' as string]: 0 }} aria-label="Contas do GitHub">
+          <div className="gh-acct-seg" role="radiogroup" aria-label="Ver conta">
+            <button role="radio" aria-checked={!only} className={!only ? 'is-on' : ''} onClick={() => setOnly(null)}>
+              Todas
+            </button>
+            {accounts.map((a) => (
+              <button key={a.login} role="radio" aria-checked={only === a.login} className={only === a.login ? 'is-on' : ''} onClick={() => setOnly(a.login)}>
+                <img src={`https://github.com/${a.login}.png?size=48`} alt="" />@{a.login}
+              </button>
+            ))}
+          </div>
+          <div className="gh-active">
+            <span className="gh-muted">ativa no terminal:</span>
+            <b>@{active ?? '—'}</b>
+            {accounts
+              .filter((a) => a.login !== active)
+              .map((a) => (
+                <button key={a.login} className="gh-ghost" onClick={() => void makeActive(a.login)} disabled={!!switching} title="Roda gh auth switch">
+                  {switching === a.login ? 'Trocando…' : `Usar @${a.login}`}
+                </button>
+              ))}
+          </div>
+        </section>
+      )}
+
       <section className="gh-stations reveal" style={{ ['--i' as string]: 1 }}>
         <header className="gh-h">
           <span className="gh-k">Estações</span>

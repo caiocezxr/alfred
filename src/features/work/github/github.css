@@ -873,3 +873,71 @@
 .gh-pr-top {
   min-width: 0;
 }
+
+.gh-accts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.gh-acct-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 14px;
+  border: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--surface-solid) 60%, transparent);
+}
+
+.gh-acct-seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 14px 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--text-2);
+  font: 600 13px/1 var(--wk-mono, 'SF Mono', ui-monospace, monospace);
+  cursor: pointer;
+  transition: background 200ms ease, color 200ms ease, box-shadow 200ms ease;
+}
+
+.gh-acct-seg button:first-child {
+  padding-left: 14px;
+  font-family: var(--font-ui);
+}
+
+.gh-acct-seg button img {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+}
+
+.gh-acct-seg button:hover {
+  color: var(--text);
+}
+
+.gh-acct-seg button.is-on {
+  background: var(--surface-solid);
+  color: var(--text);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18), inset 0 1px 0 var(--highlight);
+}
+
+.gh-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.gh-active b {
+  font-family: var(--wk-mono, 'SF Mono', ui-monospace, monospace);
+}
+
+.gh-active .gh-ghost {
+  height: 30px;
+}

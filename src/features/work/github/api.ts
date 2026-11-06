@@ -68,6 +68,7 @@ async function call<T>(cmd: string, args: Record<string, unknown> = {}): Promise
 
 export const gh = {
   accounts: () => call<GhAccount[]>('github_accounts'),
+  switchTo: (login: string) => call<GhAccount[]>('github_switch', { login }),
   dashboard: (login: string) => call<Dashboard>('github_dashboard', { login }),
   repos: async (login: string) => (await call<{ viewer: { repositories: { nodes: Repo[] } } }>('github_repos', { login })).viewer.repositories.nodes,
   branches: (login: string, repo: string) => call<Branches>('github_branches', { login, repo }),

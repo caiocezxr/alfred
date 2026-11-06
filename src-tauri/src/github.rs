@@ -160,6 +160,21 @@ pub async fn github_accounts() -> R<Vec<GhAccount>> {
     blocking(accounts_blocking).await
 }
 
+#[tauri::command]
+pub async fn github_switch(login: String) -> R<Vec<GhAccount>> {
+    if !valid_login(&login) {
+        return Err("conta inválida".into());
+    }
+    blocking(move || {
+        let out = Command::new(gh_bin()?).args(["auth", "switch", "--hostname", "github.com", "--user", &login]).output().map_err(|e| format!("não deu para rodar o gh: {e}"))?;
+        if !out.status.success() {
+            return Err(format!("o gh não conseguiu trocar para {login}"));
+        }
+        accounts_blocking()
+    })
+    .await
+}
+
 const PR_FIELDS: &str = "... on PullRequest { number title url isDraft updatedAt headRefName baseRefName mergeable reviewDecision additions deletions \
     repository { nameWithOwner } author { login } \
     commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } }";

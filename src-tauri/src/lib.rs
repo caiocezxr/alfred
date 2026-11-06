@@ -96,6 +96,7 @@ pub fn run() {
             radar::radar_translate,
             briefing::habit_tips,
             github::github_accounts,
+            github::github_switch,
             github::github_dashboard,
             github::github_repos,
             github::github_branches,
