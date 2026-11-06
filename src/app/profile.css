@@ -250,16 +250,26 @@
   border-radius: 50%;
   background: #f0a92c;
   box-shadow: 0 0 0 2px var(--surface-solid);
-  animation: pf-pulse 2.4s ease-in-out infinite;
+}
+
+.pf-alert::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(240, 169, 44, 0.55);
+  animation: pf-pulse 2.4s ease-out infinite;
 }
 
 @keyframes pf-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 2px var(--surface-solid), 0 0 0 2px rgba(240, 169, 44, 0.5);
+  0% {
+    transform: scale(1);
+    opacity: 0.75;
   }
-  50% {
-    box-shadow: 0 0 0 2px var(--surface-solid), 0 0 0 6px rgba(240, 169, 44, 0);
+  70%,
+  100% {
+    transform: scale(2.3);
+    opacity: 0;
   }
 }
 
@@ -275,7 +285,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pf-alert {
+  .pf-alert::after {
     animation: none;
   }
 }

@@ -1,3 +1,4 @@
+import { isResting, onWake } from '../../shared/ui/rest'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { narrator } from './voice.ts'
 import { vote, useBriefing } from './store.ts'
@@ -74,9 +75,17 @@ export function VoiceOrb({ size = 120, active = false, thinking = false, classNa
     let raf = 0
     let lvl = 0
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    let drawn = 0
     const draw = (now: number) => {
+      if (isResting()) {
+        raf = 0
+        return
+      }
       raf = requestAnimationFrame(draw)
       if (document.hidden) return
+      const busy = live.current.active && (narrator.speaking || live.current.thinking)
+      if (!busy && now - drawn < 66) return
+      drawn = now
       if (now - colorAt > 1000) {
         color = toRgb(getComputedStyle(cv).color)
         colorAt = now
@@ -135,7 +144,13 @@ export function VoiceOrb({ size = 120, active = false, thinking = false, classNa
       ctx.stroke()
     }
     raf = requestAnimationFrame(draw)
-    return () => cancelAnimationFrame(raf)
+    const off = onWake(() => {
+      if (!raf) raf = requestAnimationFrame(draw)
+    })
+    return () => {
+      off()
+      cancelAnimationFrame(raf)
+    }
   }, [size])
   return <canvas ref={ref} className={`brf-orb ${className}`} style={{ width: size, height: size }} aria-hidden="true" />
 }

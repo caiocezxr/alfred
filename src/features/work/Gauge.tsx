@@ -1,3 +1,4 @@
+import { isResting, onWake } from '../../shared/ui/rest'
 import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { GaugeSegment } from './logic'
 import { openItemFrom, readUi, toggleTodo } from './store'
@@ -119,8 +120,18 @@ export function Gauge({ progress, red, level, children, segments, companies, sum
     }
     let last = performance.now()
     let nextTwitch = last + 1800 + Math.random() * 3000
+    let drawn = 0
     const step = (now: number) => {
-      const dt = Math.min(0.032, (now - last) / 1000)
+      if (isResting() && s.settled) {
+        s.raf = 0
+        return
+      }
+      if (s.settled && now - drawn < 33) {
+        s.raf = requestAnimationFrame(step)
+        return
+      }
+      drawn = now
+      const dt = Math.min(0.05, (now - last) / 1000)
       last = now
       if (s.settled && now > nextTwitch) {
         s.v += (Math.random() < 0.5 ? -1 : 1) * (14 + Math.random() * 18)
@@ -141,7 +152,16 @@ export function Gauge({ progress, red, level, children, segments, companies, sum
       s.raf = requestAnimationFrame(step)
     }
     s.raf = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(s.raf)
+    const off = onWake(() => {
+      if (!s.raf) {
+        last = performance.now()
+        s.raf = requestAnimationFrame(step)
+      }
+    })
+    return () => {
+      off()
+      cancelAnimationFrame(s.raf)
+    }
   }, [])
 
   useEffect(() => {

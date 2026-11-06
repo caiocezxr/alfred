@@ -1,3 +1,4 @@
+import { onWake } from '../../shared/ui/rest'
 import { useEffect, useRef, useState } from 'react'
 import type { City } from './geo'
 
@@ -52,11 +53,10 @@ export function DayClock({ city }: { city: City }) {
 
   useEffect(() => {
     let raf = 0
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const tick = () => {
       const d = new Date()
       const { h, m, s } = parts(d, city.tz)
-      const ms = reduce ? 0 : d.getMilliseconds()
+      const ms = 0
       const el = hands.current
       if (el) {
         const [hh, mm, ss] = el.children as unknown as SVGElement[]
@@ -64,16 +64,18 @@ export function DayClock({ city }: { city: City }) {
         mm?.setAttribute('transform', `rotate(${(m + s / 60) * 6} 20 20)`)
         ss?.setAttribute('transform', `rotate(${(s + ms / 1000) * 6} 20 20)`)
       }
-      if (!reduce && !document.hidden) raf = requestAnimationFrame(tick)
+      if (!document.hidden) raf = window.setTimeout(tick, 1000 - (Date.now() % 1000) + 5)
     }
     tick()
     const vis = () => {
-      cancelAnimationFrame(raf)
-      if (!document.hidden) raf = requestAnimationFrame(tick)
+      window.clearTimeout(raf)
+      if (!document.hidden) tick()
     }
     document.addEventListener('visibilitychange', vis)
+    const off = onWake(vis)
     return () => {
-      cancelAnimationFrame(raf)
+      off()
+      window.clearTimeout(raf)
       document.removeEventListener('visibilitychange', vis)
     }
   }, [city.tz])

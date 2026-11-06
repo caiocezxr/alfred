@@ -121,13 +121,27 @@ fn gpu_times() -> HashMap<i32, u64> {
     m
 }
 
+static OLLAMA: Mutex<Option<(Instant, Vec<i32>)>> = Mutex::new(None);
+
 fn ollama_pids() -> Vec<i32> {
+    let mut g = OLLAMA.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((at, v)) = g.as_ref() {
+        if at.elapsed().as_secs() < 15 {
+            return v.clone();
+        }
+    }
+    let v = scan_ollama();
+    *g = Some((Instant::now(), v.clone()));
+    v
+}
+
+fn scan_ollama() -> Vec<i32> {
     let Ok(out) = std::process::Command::new("/usr/bin/pgrep").arg("-x").arg("ollama").output() else { return vec![] };
     String::from_utf8_lossy(&out.stdout).lines().filter_map(|l| l.trim().parse().ok()).collect()
 }
 
 #[cfg(target_os = "macos")]
-fn sample(app: &AppHandle) -> Meter {
+fn sample(app: &AppHandle, detail: bool) -> Meter {
     let me = std::process::id() as i32;
     let kids = {
         let cached = KIDS.lock().ok().and_then(|g| *g);
@@ -146,7 +160,7 @@ fn sample(app: &AppHandle) -> Meter {
     roles.extend(ollama_pids().into_iter().map(|p| ("local", p)));
     let now = Instant::now();
     let ns = tick_ns();
-    let gpu_now = gpu_times();
+    let gpu_now = if detail { gpu_times() } else { HashMap::new() };
     let mut prev = PREV.lock().unwrap_or_else(|e| e.into_inner());
     let mut ticks = HashMap::new();
     let mut gpu_seen = HashMap::new();
@@ -162,7 +176,7 @@ fn sample(app: &AppHandle) -> Meter {
                     _ => 0.0,
                 };
                 let gpu = match p.gpu.get(&pid) {
-                    Some(&before) if dt > 0.0 && g >= before => ((g - before) as f64 / dt * 100.0).min(100.0),
+                    Some(&before) if detail && dt > 0.0 && g >= before => ((g - before) as f64 / dt * 100.0).min(100.0),
                     _ => 0.0,
                 };
                 (cpu, gpu)
@@ -195,13 +209,14 @@ fn sample(app: &AppHandle) -> Meter {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn sample(_app: &AppHandle) -> Meter {
+fn sample(_app: &AppHandle, _detail: bool) -> Meter {
     Meter { parts: vec![], cpu: 0.0, mem: 0, gpu: None, cores: 1 }
 }
 
 #[tauri::command]
-pub async fn meter_sample(app: AppHandle) -> R<Meter> {
-    tauri::async_runtime::spawn_blocking(move || sample(&app)).await.map_err(|e| e.to_string())
+pub async fn meter_sample(app: AppHandle, detail: Option<bool>) -> R<Meter> {
+    let detail = detail.unwrap_or(true);
+    tauri::async_runtime::spawn_blocking(move || sample(&app, detail)).await.map_err(|e| e.to_string())
 }
 
 #[cfg(all(test, target_os = "macos"))]

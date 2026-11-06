@@ -10,9 +10,9 @@ export type MeterSample = { parts: Part[]; cpu: number; mem: number; gpu: number
 type Consumer = { key: string; label: string; detail: string; cpu: number; gpu: number; local?: boolean }
 
 export const meterApi = {
-  sample: async (): Promise<MeterSample> => {
+  sample: async (detail = true): Promise<MeterSample> => {
     if (!isTauri) throw new Error('fora do app')
-    return invoke<MeterSample>('meter_sample')
+    return invoke<MeterSample>('meter_sample', { detail })
   },
 }
 
@@ -97,7 +97,7 @@ export function ResourceMeter({ compact }: { compact: boolean }) {
     const tick = async () => {
       if (document.visibilityState === 'visible') {
         try {
-          const x = await meterApi.sample()
+          const x = await meterApi.sample(open)
           if (!alive) return
           const now = performance.now()
           const work = new Map(activities().filter((a) => a.work).map((a) => [a.id, a.work!()]))
@@ -112,7 +112,7 @@ export function ResourceMeter({ compact }: { compact: boolean }) {
           if (alive) setS(null)
         }
       }
-      if (alive) t = window.setTimeout(tick, open ? 1500 : 3000)
+      if (alive) t = window.setTimeout(tick, open ? 1500 : 4000)
     }
     void tick()
     return () => {

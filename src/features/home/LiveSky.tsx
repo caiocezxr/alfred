@@ -1,3 +1,4 @@
+import { isResting, onWake } from '../../shared/ui/rest'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { describe, type Weather } from './weather'
 
@@ -81,8 +82,17 @@ export function LiveSky({ weather }: { weather: Weather | null }) {
     const drops = wet ? Array.from({ length: kind === 'drizzle' ? 70 : 150 }, () => ({ x: Math.random(), y: Math.random(), v: 0.9 + Math.random() * 0.8, l: 8 + Math.random() * 14 })) : []
     let flash = 0
     let last = performance.now()
+    const gap = drops.length ? 33 : 80
     const draw = (now: number) => {
-      const dt = Math.min(50, now - last) / 1000
+      if (isResting()) {
+        raf = 0
+        return
+      }
+      if (now - last < gap) {
+        raf = requestAnimationFrame(draw)
+        return
+      }
+      const dt = Math.min(100, now - last) / 1000
       last = now
       ctx.clearRect(0, 0, w, h)
       for (const s of stars) {
@@ -129,7 +139,14 @@ export function LiveSky({ weather }: { weather: Weather | null }) {
       }
     }
     document.addEventListener('visibilitychange', vis)
+    const off = onWake(() => {
+      if (!raf && !reduce && (stars.length || drops.length)) {
+        last = performance.now()
+        raf = requestAnimationFrame(draw)
+      }
+    })
     return () => {
+      off()
       cancelAnimationFrame(raf)
       ro.disconnect()
       document.removeEventListener('visibilitychange', vis)

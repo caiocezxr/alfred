@@ -303,7 +303,7 @@ export class CurlRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
     if (this.anisoExt) gl.texParameterf(gl.TEXTURE_2D, this.anisoExt.TEXTURE_MAX_ANISOTROPY_EXT, this.aniso)
     this.touch(e.t)
-    if (this.tex.size > 14) {
+    if (this.tex.size > 8) {
       let oldest = -1
       let ou = Infinity
       for (const [k, v] of this.tex) if (v.used < ou && k !== i) {
