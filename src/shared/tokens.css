@@ -250,3 +250,22 @@ button.panel:hover {
 :root[data-scheme='light'] .h-head .kicker {
   color: var(--accent);
 }
+
+[data-tilt] {
+  --rx: 0deg;
+  --ry: 0deg;
+  transform: perspective(900px) rotateX(var(--rx)) rotateY(var(--ry));
+  transform-style: preserve-3d;
+  transition: transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
+}
+
+[data-tilt].is-tilting {
+  transition: transform 120ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-tilt] {
+    transform: none;
+  }
+}

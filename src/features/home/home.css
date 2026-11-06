@@ -1276,3 +1276,158 @@
   color: var(--text-2);
   margin-top: 2px;
 }
+
+.home .bx-story,
+.home .bx-cover {
+  --rx: 0deg;
+  --ry: 0deg;
+  --lift: 0px;
+  transform: perspective(900px) rotateX(var(--rx)) rotateY(var(--ry)) translateY(var(--lift));
+  transition: transform 460ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 360ms var(--ease-out), --lit 420ms var(--ease-out);
+}
+
+.home .bx-story.is-tilting,
+.home .bx-cover.is-tilting {
+  transition: transform 140ms linear, box-shadow 360ms var(--ease-out), --lit 420ms var(--ease-out);
+}
+
+.home .bx-story:hover,
+.home .bx-cover:hover {
+  --lift: -4px;
+}
+
+.home .bx-story .bx-story-title,
+.home .bx-story .bx-glyph,
+.home .bx-cover .bx-cover-n {
+  transition: transform 260ms var(--ease-out);
+}
+
+.home .bx-story:hover .bx-story-title {
+  transform: translate(calc(var(--tx, 0) * 6px), calc(var(--ty, 0) * 4px));
+}
+
+.home .bx-story:hover .bx-glyph {
+  transform: translate(calc(var(--tx, 0) * 12px), calc(var(--ty, 0) * 8px)) rotate(calc(var(--tx, 0) * 20deg)) scale(1.12);
+}
+
+.home .bx-cover:hover .bx-cover-n {
+  transform: translate(calc(var(--tx, 0) * 10px), calc(var(--ty, 0) * 6px));
+}
+
+.wx-rays {
+  transform-origin: 19px 18px;
+  transition: transform 900ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.wx-sun {
+  transform-origin: 19px 18px;
+  transition: transform 500ms var(--ease-out);
+}
+
+.wx-cloud {
+  transition: transform 700ms var(--ease-out);
+}
+
+.wx-city:hover .wx-rays,
+.wx-row:hover .wx-rays {
+  transform: rotate(45deg);
+}
+
+.wx-city:hover .wx-sun,
+.wx-row:hover .wx-sun {
+  transform: scale(1.12);
+}
+
+.wx-city:hover .wx-cloud,
+.wx-row:hover .wx-cloud {
+  translate: 2.5px 0;
+}
+
+.wx-city:hover .wx-rain,
+.wx-row:hover .wx-rain {
+  animation: wx-fall 700ms linear infinite;
+}
+
+@keyframes wx-fall {
+  from {
+    transform: translateY(-2px);
+    opacity: 0.4;
+  }
+  to {
+    transform: translateY(3px);
+    opacity: 1;
+  }
+}
+
+.wx-temp,
+.wx-row-temp {
+  transition: transform 260ms var(--ease-out);
+}
+
+.wx-city:hover .wx-temp {
+  transform: translateY(-2px);
+}
+
+.home-tasks li {
+  transition: transform 220ms var(--ease-out);
+}
+
+.home-tasks li:hover {
+  transform: translateX(3px);
+}
+
+.home-tasks li:hover .check {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.mchip-face {
+  transition: transform 300ms cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+
+.mchip-main:hover .mchip-face {
+  transform: rotate(-12deg) scale(1.12);
+}
+
+.dc-watch {
+  transition: transform 400ms cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+
+.dc:hover .dc-watch {
+  transform: rotate(-8deg) scale(1.06);
+}
+
+.dc-sun-dot {
+  transition: r 300ms var(--ease-out);
+}
+
+.dc:hover .dc-sun-dot {
+  r: 4.2;
+}
+
+.brf-tick,
+.bx-foot .brf-tick {
+  transition: transform 200ms var(--ease-out), opacity 200ms;
+}
+
+.bx-foot .brf-ticker:hover .brf-tick {
+  opacity: 0.55;
+}
+
+.bx-foot .brf-ticker:hover .brf-tick:hover {
+  opacity: 1;
+  transform: translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home .bx-story,
+  .home .bx-cover,
+  .wx-rays,
+  .wx-rain,
+  .home-tasks li,
+  .dc-watch {
+    transition: none;
+    animation: none;
+    transform: none;
+  }
+}

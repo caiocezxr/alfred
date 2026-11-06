@@ -34,6 +34,7 @@ export default function Home() {
   const { habits, checkins } = useHabits()
   const home = useMemo(() => homeCity(), [])
   const [nickTick, setNickTick] = useState(0)
+  const lastFlip = useRef(Date.now())
   const g = useMemo(() => greetingFor(now), [now, nickTick])
   const period = g.period
   const [year, setYear] = useState(false)
@@ -50,7 +51,18 @@ export default function Home() {
       <h1 className="display home-hello">
         <span className="hello-main">{g.hello},</span>
         <span className="hello-nick">
-          <button className="hello-nick-btn" onClick={() => setEditNicks(true)} title="Editar apelidos">
+          <button
+            className="hello-nick-btn"
+            onClick={() => setEditNicks(true)}
+            onMouseEnter={() => {
+              const t = Date.now()
+              if (t - lastFlip.current > 4000) {
+                lastFlip.current = t
+                setNickTick((n) => n + 1)
+              }
+            }}
+            title="Editar apelidos"
+          >
             <SplitFlap text={g.nick} replay={nickTick} />
           </button>
           <PeriodIcon period={period} />
@@ -377,13 +389,13 @@ function WeatherIcon({ kind, night }: { kind: ReturnType<typeof describe>['icon'
     <path className="wx-moon" d="M24 25.5a8.6 8.6 0 0 1-8-11.8 9.3 9.3 0 1 0 11.4 11.1 8.6 8.6 0 0 1-3.4.7z" fill="#e8ecfa" />
   ) : (
     <g>
-      <g stroke="#ffbe3d" strokeWidth="2" strokeLinecap="round">
+      <g className="wx-rays" stroke="#ffbe3d" strokeWidth="2" strokeLinecap="round">
         {Array.from({ length: 8 }, (_, i) => {
           const a = (i * Math.PI) / 4
           return <line key={i} x1={19 + Math.cos(a) * 10} y1={18 + Math.sin(a) * 10} x2={19 + Math.cos(a) * 13.5} y2={18 + Math.sin(a) * 13.5} />
         })}
       </g>
-      <circle cx="19" cy="18" r="7" fill="#ffc24a" />
+      <circle className="wx-sun" cx="19" cy="18" r="7" fill="#ffc24a" />
     </g>
   )
   const cloud = (dx = 0, dy = 0, tone: 'light' | 'mid' | 'dark' = 'light') => (
@@ -402,7 +414,7 @@ function WeatherIcon({ kind, night }: { kind: ReturnType<typeof describe>['icon'
       {kind === 'fog' && <path d="M10 40h28M15 44.5h18" stroke="#c9cfd9" strokeWidth="2.2" strokeLinecap="round" />}
       {(kind === 'drizzle' || kind === 'rain' || kind === 'storm') && cloud(0, -6, 'dark')}
       {(kind === 'drizzle' || kind === 'rain') && (
-        <g stroke="#69b4ff" strokeWidth="2.3" strokeLinecap="round" opacity={kind === 'drizzle' ? 0.65 : 1}>
+        <g className="wx-rain" stroke="#69b4ff" strokeWidth="2.3" strokeLinecap="round" opacity={kind === 'drizzle' ? 0.65 : 1}>
           <path d="M18 35l-2 5.5M25 35l-2 5.5M32 35l-2 5.5" />
         </g>
       )}
