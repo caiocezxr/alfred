@@ -1,4 +1,4 @@
-import { Fragment } from 'react'
+import { Fragment, useRef } from 'react'
 import { CompanyMark, coStyle } from './brand'
 import type { WeekScore as Score, WeekStage } from './logic'
 import { Odometer } from './Odometer'
@@ -17,17 +17,47 @@ export function WeekScore({ score, companies, title = 'Esta semana', className =
   const split = companies.filter((c) => score.split[c.id])
   const v = pct(score.validated, score.delivered)
   const d = pct(score.done, score.delivered)
+  const board = useRef<HTMLDivElement>(null)
+  const raf = useRef(0)
+  const tilt = (x: number, y: number) => {
+    if (compact || raf.current) return
+    raf.current = requestAnimationFrame(() => {
+      raf.current = 0
+      const el = board.current
+      if (!el) return
+      el.style.setProperty('--rx', `${(x * 10).toFixed(2)}deg`)
+      el.style.setProperty('--ry', `${(-y * 8).toFixed(2)}deg`)
+      el.style.setProperty('--gx', `${Math.round((x + 0.5) * 100)}%`)
+    })
+  }
   return (
-    <div className={`wk-ws ${compact ? 'is-light' : ''} ${className}`} tabIndex={split.length ? 0 : undefined} aria-label={`${title}: ${score.delivered} entregues, ${score.validated} validadas, ${score.done} concluídas`}>
+    <div
+      ref={board}
+      className={`wk-ws ${compact ? 'is-light' : 'is-board'} ${className}`}
+      tabIndex={split.length ? 0 : undefined}
+      aria-label={`${title}: ${score.delivered} entregues, ${score.validated} validadas, ${score.done} concluídas`}
+      onPointerMove={(e) => {
+        const r = e.currentTarget.getBoundingClientRect()
+        tilt((e.clientX - r.left) / r.width - 0.5, (e.clientY - r.top) / r.height - 0.5)
+      }}
+      onPointerLeave={() => tilt(0, 0)}
+    >
       <span className="wk-ws-title">{title}</span>
       <div className="wk-ws-row">
         {STAGES.map((s, i) => (
           <Fragment key={s.k}>
-            {i > 0 && (
-              <svg className="wk-ws-chev" viewBox="0 0 8 20" aria-hidden="true">
-                <path d="M1.5 3l5 7-5 7" />
-              </svg>
-            )}
+            {i > 0 &&
+              (compact ? (
+                <svg className="wk-ws-chev" viewBox="0 0 8 20" aria-hidden="true">
+                  <path d="M1.5 3l5 7-5 7" />
+                </svg>
+              ) : (
+                <span className="wk-ws-flow" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+              ))}
             <span className={`wk-ws-win is-${s.k}`}>
               <span className="wk-ws-dial">
                 {!compact && <span className={`wk-ws-led ${score.last === s.k ? 'is-on' : ''}`} aria-hidden="true" />}
