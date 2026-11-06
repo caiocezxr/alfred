@@ -1,6 +1,7 @@
 import '@fontsource/eb-garamond/400.css'
 import '@fontsource/eb-garamond/400-italic.css'
 import '@fontsource/eb-garamond/500.css'
+import '@fontsource/eb-garamond/600.css'
 import '@fontsource/cormorant-garamond/500.css'
 import './bible.css'
 
@@ -8,8 +9,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { BookController, FONT_SCALES, type Selection } from './controller'
 import { formatRef, loadBible, type Bible, type VerseRef } from './data/bible'
 import { takeBibleTarget } from '../../app/router'
-import { BookScene } from './three/BookScene'
-import { BACKGROUNDS, COVERS, backgroundImage, backgroundOf, backgroundThumb, normalizeBackground, type BackgroundIcon } from './three/ambience'
+import { BookStage } from './book/BookStage'
+import { BACKGROUNDS, COVERS, backgroundCss, backgroundImage, backgroundOf, backgroundThumb, normalizeBackground, type BackgroundIcon, type BackgroundId } from './ambience'
 import { startAmbient, stopAmbient } from './ambientSound'
 import { preloadSounds } from './sound'
 import { NoteCard } from './ui/NoteCard'
@@ -22,6 +23,7 @@ async function loadFonts() {
     document.fonts.load('400 24px "EB Garamond"', 'Áá'),
     document.fonts.load('italic 400 24px "EB Garamond"', 'Áá'),
     document.fonts.load('500 24px "EB Garamond"', 'Áá'),
+    document.fonts.load('600 24px "EB Garamond"', 'ÁÍ'),
     document.fonts.load('500 24px "Cormorant Garamond"', 'Áá0123'),
   ])
 }
@@ -81,17 +83,14 @@ function Reader({ bible }: { bible: Bible }) {
   const [used, setUsed] = useState(0)
   const [ritual, setRitual] = useState(false)
   const [breath, setBreath] = useState(0)
-  const stage = useRef<HTMLDivElement>(null)
 
   const enterRitual = useCallback(() => {
+    const wasOpen = controller.getSnapshot().phase === 'open'
     if (!controller.isOpen) controller.open()
     setPanel(null)
     setRitual(true)
     setBreath(1)
-    const leftPage = controller.pageAt(controller.pos, 'left')
-    const a = controller.anchor
-    const onLeft = leftPage.lastRef && (leftPage.lastRef.chapter > a.chapter || (leftPage.lastRef.chapter === a.chapter && leftPage.lastRef.verse >= a.verse))
-    setTimeout(() => controller.focus(onLeft === false ? 'right' : 'left'), 400)
+    setTimeout(() => controller.focusAnchor(), wasOpen ? 400 : 1700)
   }, [controller])
   const exitRitual = useCallback(() => {
     setRitual(false)
@@ -111,7 +110,7 @@ function Reader({ bible }: { bible: Bible }) {
   }, [breath === 1])
 
   useEffect(() => {
-    if (ritual && snap.ambientSound) startAmbient(backgroundOf(snap.background).light.sound)
+    if (ritual && snap.ambientSound) startAmbient(backgroundOf(snap.background).sound)
     else stopAmbient()
   }, [ritual, snap.ambientSound, snap.background])
   useEffect(() => () => stopAmbient(0.4), [])
@@ -136,6 +135,28 @@ function Reader({ bible }: { bible: Bible }) {
     setCardAnchor(null)
   }, [controller])
 
+  const cardOpen = useRef(false)
+  useEffect(() => {
+    cardOpen.current = !!cardAnchor
+  }, [cardAnchor])
+  useEffect(() => {
+    controller.onVerse = (sel, at) => {
+      const cur = controller.selection
+      const same = cur && cur.book === sel.book && cur.chapter === sel.chapter && cur.verse === sel.verse
+      if (same && cardOpen.current) closeNote()
+      else openNote(sel, at)
+    }
+    controller.onBlank = () => {
+      if (cardOpen.current) closeNote()
+    }
+    controller.onTurned = () => setUsed((n) => (n > 3 ? n : n + 1))
+    return () => {
+      controller.onVerse = () => {}
+      controller.onBlank = () => {}
+      controller.onTurned = () => {}
+    }
+  }, [controller, openNote, closeNote])
+
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
     const apply = () => (controller.reducedMotion = mq.matches)
@@ -158,7 +179,6 @@ function Reader({ bible }: { bible: Bible }) {
       setFromVerse(true)
     }
     if (resumeOpen) controller.snapOpen(true)
-    controller.prefetch()
     return () => {
       clearTimeout(unmark)
       resumeOpen = controller.isOpen
@@ -188,19 +208,11 @@ function Reader({ bible }: { bible: Bible }) {
           e.preventDefault()
           if (!controller.isOpen) controller.open()
           else controller.forward()
-          setUsed((n) => n + 1)
           break
         case 'ArrowLeft':
         case 'PageUp':
           e.preventDefault()
           controller.backward()
-          setUsed((n) => n + 1)
-          break
-        case 'ArrowDown':
-          if (controller.zoomed) controller.pan(0, 120)
-          break
-        case 'ArrowUp':
-          if (controller.zoomed) controller.pan(0, -120)
           break
         case 'Enter':
           if (!controller.isOpen) controller.open()
@@ -243,213 +255,19 @@ function Reader({ bible }: { bible: Bible }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [controller, indexOpen, cardAnchor, panel, closeNote, ritual, exitRitual])
 
+  const showMeter = snap.isOpen && (snap.resumed || used > 3)
   useEffect(() => {
-    const el = stage.current
-    if (!el) return
-    type Gesture = { dir: 0 | 1 | -1; acc: number; dragging: boolean; failed: boolean; vel: number; lastT: number; lastMag: number; decay: number; corner: number }
-    let g: Gesture | null = null
-    let endTimer = 0
-    let ignoreUntil = 0
-    let lastMag = 0
-    let focusAcc = 0
-    const physicalX = (e: WheelEvent) => {
-      const inv = (e as WheelEvent & { webkitDirectionInvertedFromDevice?: boolean }).webkitDirectionInvertedFromDevice
-      return inv === false ? e.deltaX : -e.deltaX
-    }
-    const progress = (gs: Gesture) => Math.max(0, (gs.acc * gs.dir) / Math.max(1, 1 / controller.worldPerPx))
-    const finish = () => {
-      const gs = g
-      g = null
-      if (!gs || gs.dir === 0 || gs.failed) return
-      const u = progress(gs)
-      const fast = gs.vel * gs.dir > 0.9
-      const commit = u > 0.35 || (fast && u > 0.04)
-      const strength = Math.min(1, 0.3 + Math.abs(gs.vel) / 2.4)
-      ignoreUntil = performance.now() + 420
-      if (gs.dragging) controller.endDrag(commit, strength)
-      else if (commit) {
-        if (gs.dir === 1) controller.forward()
-        else controller.backward()
-      }
-      if (commit) setUsed((n) => n + 1)
-    }
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault()
-      if (e.ctrlKey) {
-        controller.zoomAt(Math.exp(-e.deltaY * 0.0125), e.clientX, e.clientY)
-        return
-      }
-      const now = performance.now()
-      const horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY)
-      const mag = Math.hypot(e.deltaX, e.deltaY)
-      if (!g && now < ignoreUntil) {
-        if (mag <= lastMag * 1.15 + 1) ignoreUntil = Math.max(ignoreUntil, now + 140)
-        lastMag = mag
-        return
-      }
-      lastMag = mag
-      if (controller.zoomed) {
-        if (horizontal && controller.inFocus) {
-          focusAcc += physicalX(e)
-          if (Math.abs(focusAcc) > 90) {
-            if (focusAcc > 0) controller.forward()
-            else controller.backward()
-            focusAcc = 0
-            ignoreUntil = now + 420
-            setUsed((n) => n + 1)
-          }
-          return
-        }
-        controller.pan(e.deltaX, e.deltaY)
-        return
-      }
-      if (!controller.isOpen) return
-      if (!g) {
-        if (!horizontal) {
-          if (e.deltaY < -2 && Math.abs(e.deltaY) > 18) controller.zoomAt(1.12, e.clientX, e.clientY)
-          return
-        }
-        g = { dir: 0, acc: 0, dragging: false, failed: false, vel: 0, lastT: now, lastMag: mag, decay: 0, corner: ((e.clientY / window.innerHeight) * 2 - 1) * 0.9 }
-      }
-      const gs = g
-      const dx = physicalX(e)
-      const dtMs = Math.max(4, now - gs.lastT)
-      gs.vel = gs.vel * 0.6 + (dx / dtMs) * 0.4
-      gs.lastT = now
-      gs.acc += dx
-      if (gs.dir === 0 && Math.abs(gs.acc) > 6) {
-        gs.dir = gs.acc > 0 ? 1 : -1
-        if (!controller.reducedMotion) {
-          gs.dragging = controller.beginDrag(gs.dir, gs.corner)
-          gs.failed = !gs.dragging
-        } else gs.failed = gs.dir === 1 ? !controller.getSnapshot().canNext : !controller.getSnapshot().canPrev
-      }
-      gs.decay = mag < gs.lastMag ? gs.decay + 1 : 0
-      gs.lastMag = mag
-      if (gs.dragging) controller.dragTo(progress(gs))
-      const u = gs.dir ? progress(gs) : 0
-      if (gs.dir !== 0 && !gs.failed && (u > 0.92 || (gs.decay >= 5 && u > 0.35))) {
-        clearTimeout(endTimer)
-        finish()
-        return
-      }
-      clearTimeout(endTimer)
-      endTimer = window.setTimeout(finish, 110)
-    }
-    el.addEventListener('wheel', onWheel, { passive: false })
-    return () => {
-      el.removeEventListener('wheel', onWheel)
-      clearTimeout(endTimer)
-    }
-  }, [controller])
-
-  const press = useRef<{ x: number; y: number; t: number; lastX: number; lastY: number; lastT: number; vx: number; mode: 'pending' | 'turn' | 'pan' | 'lid-pending' | 'lid'; dir: 1 | -1; edge: boolean } | null>(null)
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return
-    if (!controller.isOpen) {
-      if (!controller.overClosedBook(e.clientX, e.clientY)) return
-      const now = performance.now()
-      press.current = { x: e.clientX, y: e.clientY, t: now, lastX: e.clientX, lastY: e.clientY, lastT: now, vx: 0, mode: 'lid-pending', dir: 1, edge: false }
-      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-      return
-    }
-    const ph = controller.pointerHit(e.clientX, e.clientY)
-    const now = performance.now()
-    press.current = {
-      x: e.clientX, y: e.clientY, t: now, lastX: e.clientX, lastY: e.clientY, lastT: now, vx: 0,
-      mode: 'pending', dir: ph?.side === 'left' ? -1 : 1, edge: !!ph?.edge,
-    }
-    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-  }
-  const onPointerMove = (e: React.PointerEvent) => {
-    const el = e.currentTarget as HTMLElement
-    const pr = press.current
-    if (pr) {
-      const now = performance.now()
-      pr.vx = (e.clientX - pr.lastX) / Math.max(1, now - pr.lastT)
-      const dX = e.clientX - pr.lastX
-      const dY = e.clientY - pr.lastY
-      pr.lastX = e.clientX
-      pr.lastY = e.clientY
-      pr.lastT = now
-      if (pr.mode === 'lid-pending' && Math.hypot(e.clientX - pr.x, e.clientY - pr.y) > 6) {
-        if (controller.beginLidDrag(pr.x, pr.y)) pr.mode = 'lid'
-      }
-      if (pr.mode === 'lid') {
-        controller.dragLid(e.clientX, e.clientY)
-        el.style.cursor = 'grabbing'
-        return
-      }
-      if (pr.mode === 'pending' && Math.hypot(e.clientX - pr.x, e.clientY - pr.y) > 7) {
-        if (controller.zoomed && !pr.edge) pr.mode = 'pan'
-        else if (controller.beginDrag(pr.dir, ((e.clientY / window.innerHeight) * 2 - 1) * 0.9)) pr.mode = 'turn'
-      }
-      if (pr.mode === 'pan') controller.pan(-dX, -dY)
-      if (pr.mode === 'turn') {
-        const pagePx = 1 / controller.worldPerPx
-        controller.dragTo(((pr.x - e.clientX) * pr.dir) / (pagePx * 1.6))
-        el.style.cursor = 'grabbing'
-      }
-      return
-    }
-    if (!controller.isOpen) {
-      const over = controller.overClosedBook(e.clientX, e.clientY)
-      controller.setLidHover(over)
-      el.style.cursor = over ? 'grab' : 'default'
-      return
-    }
-    const ph = controller.pointerHit(e.clientX, e.clientY)
-    controller.setHover(ph?.edge ? (ph.side === 'right' ? 1 : -1) : 0, ph?.corner ?? 0.55)
-    el.style.cursor = !ph ? 'default' : ph.edge ? 'grab' : ph.hit ? 'pointer' : 'default'
-  }
-  const onPointerUp = (e: React.PointerEvent) => {
-    const pr = press.current
-    press.current = null
-    if (!pr) return
-    const el = e.currentTarget as HTMLElement
-    el.style.cursor = 'default'
-    if (pr.mode === 'lid') {
-      controller.endLidDrag()
-      return
-    }
-    if (pr.mode === 'lid-pending') {
-      controller.open()
-      return
-    }
-    if (pr.mode === 'turn') {
-      const moved = ((pr.x - e.clientX) * pr.dir) / (1 / controller.worldPerPx)
-      const flick = -pr.vx * pr.dir > 0.4
-      controller.endDrag(flick || moved > 0.5, Math.min(1, 0.3 + Math.abs(pr.vx) / 2.4))
-      setUsed((n) => n + 1)
-      return
-    }
-    if (pr.mode === 'pan') return
-    const ph = controller.pointerHit(e.clientX, e.clientY)
-    if (!ph) {
-      if (cardAnchor) closeNote()
-      return
-    }
-    if (ph.edge) {
-      if (ph.side === 'right') controller.forward()
-      else controller.backward()
-      setUsed((n) => n + 1)
-      return
-    }
-    if (ph.hit && ph.page.book >= 0) {
-      const sel: Selection = ph.hit.kind === 'verse'
-        ? { book: ph.page.book, chapter: ph.hit.chapter, verse: ph.hit.verse }
-        : { book: ph.page.book, chapter: ph.hit.chapter, verse: null }
-      const same = snap.selection && snap.selection.book === sel.book && snap.selection.chapter === sel.chapter && snap.selection.verse === sel.verse
-      if (same && cardAnchor) closeNote()
-      else openNote(sel, { x: e.clientX, y: e.clientY })
-    } else if (cardAnchor) closeNote()
-  }
-  const onDoubleClick = (e: React.MouseEvent) => {
-    const ph = controller.pointerHit(e.clientX, e.clientY)
-    if (controller.zoomed) controller.resetView()
-    else if (ph) controller.focus(ph.side)
-    closeNote()
-  }
+    if (!import.meta.env.DEV || snap.phase !== 'open') return
+    const id = requestAnimationFrame(() => {
+      if (document.querySelector('.bible .bible-invite')) console.error('[bíblia] o convite continua montado com o livro aberto')
+    })
+    return () => cancelAnimationFrame(id)
+  }, [snap.phase])
+  useEffect(() => {
+    if (snap.phase !== 'open' || used > 3) return
+    const t = window.setTimeout(() => setUsed(4), 9000)
+    return () => clearTimeout(t)
+  }, [snap.phase, used])
 
   const goTo = (ref: VerseRef) => {
     controller.goTo(ref)
@@ -459,31 +277,20 @@ function Reader({ bible }: { bible: Bible }) {
   return (
     <div className={`bible ${ritual ? 'is-ritual' : ''}`} data-bg={snap.background}>
       <BibleBackdrop id={snap.background} />
-      <div
-        ref={stage}
-        className="bible-stage"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        onDoubleClick={onDoubleClick}
-        onPointerLeave={() => {
-          if (press.current) return
-          controller.setHover(0)
-          controller.setLidHover(false)
-        }}
-      >
-        <BookScene controller={controller} background={snap.background} cover={snap.cover} />
+      <div className="bible-stage">
+        <BookStage controller={controller} cover={snap.cover} />
       </div>
 
-      <div className={`bible-invite ${snap.isOpen ? 'is-hidden' : ''}`} aria-hidden={snap.isOpen}>
+      {!snap.isOpen && (
+        <div className="bible-invite">
         <span className="invite-kicker">{fromVerse ? 'Versículo do dia' : snap.resumed ? 'Continuar em' : 'Comece por'}</span>
         <span className="invite-ref">
           {bible.books[snap.ref.book]?.name ?? 'Gênesis'} {snap.ref.chapter + 1}
           {fromVerse || (snap.resumed && snap.ref.verse > 0) ? `:${snap.ref.verse + 1}` : ''}
         </span>
-        <span className="invite-hint">Toque na capa, arraste ou tecle Enter para abrir</span>
-      </div>
+        <span className="invite-hint">Clique na capa ou tecle Enter para abrir</span>
+        </div>
+      )}
 
       <header className="bible-bar">
         <button className="bible-ref" onClick={() => setIndexOpen(true)} aria-haspopup="dialog" title="Índice (I)">
@@ -624,7 +431,7 @@ function Reader({ bible }: { bible: Bible }) {
             />
           </div>
           <p className="settings-help">
-            Pinça no trackpad aproxima onde você aponta · dois dedos deslizam a página · gesto lateral vira · duplo clique foca a página
+            Arraste o canto da página ou deslize dois dedos para virar · pinça ou duplo clique aproxima a página · F alterna o foco
           </p>
         </div>
       )}
@@ -638,10 +445,13 @@ function Reader({ bible }: { bible: Bible }) {
           Momento de leitura
         </button>
         <div className="nav-center">
-          <ReadingMeter bible={bible} first={snap.first} last={snap.last} visible={snap.isOpen && (snap.resumed || used > 3)} />
-          <span className={`bible-hint ${used > 3 || snap.resumed || !snap.isOpen ? 'is-hidden' : ''}`}>
-            Clique num versículo para anotar · ← → ou dois dedos para virar · M marca a página
-          </span>
+          {showMeter ? (
+            <ReadingMeter bible={bible} first={snap.first} last={snap.last} visible />
+          ) : (
+            <span className={`bible-hint ${snap.isOpen ? '' : 'is-hidden'}`}>
+              Clique num versículo para anotar · ← → ou dois dedos para virar · M marca a página
+            </span>
+          )}
         </div>
         <button className="nav-btn" disabled={!snap.canNext || !snap.isOpen} onClick={() => controller.forward()} aria-label="Próxima página">
           <Arrow dir={1} />
@@ -681,7 +491,7 @@ function Reader({ bible }: { bible: Bible }) {
                   <button
                     key={b.id}
                     className={`amb-bg reveal ${snap.background === b.id ? 'is-on' : ''}`}
-                    style={{ ['--i' as string]: i, background: b.fallback }}
+                    style={{ ['--i' as string]: i, background: backgroundCss(b.id) }}
                     onClick={() => controller.setBackground(b.id)}
                     aria-pressed={snap.background === b.id}
                   >
@@ -824,20 +634,89 @@ const CandleIcon = () => (
   </svg>
 )
 
-let introPlayed: string | null = null
-
-function BibleBackdrop({ id }: { id: Parameters<typeof backgroundImage>[0] }) {
+function BibleBackdrop({ id }: { id: BackgroundId }) {
+  const wrap = useRef<HTMLDivElement>(null)
+  const layers = useRef<(HTMLCanvasElement | null)[]>([null, null])
+  const front = useRef(0)
   const img = backgroundImage(id)
-  const fallback = backgroundOf(id).fallback
-  const [instant] = useState(() => img !== null && img === introPlayed)
+
   useEffect(() => {
-    introPlayed = img
-    const t = setTimeout(() => (introPlayed = null), 4000)
-    return () => clearTimeout(t)
+    const el = wrap.current
+    if (!el) return
+    let alive = true
+    let photo: HTMLImageElement | null = null
+    const bake = (cv: HTMLCanvasElement) => {
+      if (!photo) return
+      const r = el.getBoundingClientRect()
+      const vw = Math.max(1, r.width)
+      const vh = Math.max(1, r.height)
+      const k = Math.min(window.devicePixelRatio || 1, 1.5)
+      cv.width = Math.round(vw * k)
+      cv.height = Math.round(vh * k)
+      const ctx = cv.getContext('2d')!
+      ctx.setTransform(k, 0, 0, k, 0, 0)
+      const pad = 24
+      const sc = Math.max((vw + pad * 2) / photo.naturalWidth, (vh + pad * 2) / photo.naturalHeight)
+      const iw = photo.naturalWidth * sc
+      const ih = photo.naturalHeight * sc
+      ctx.filter = 'blur(4px) saturate(1.05)'
+      ctx.drawImage(photo, (vw - iw) / 2, (vh - ih) / 2, iw, ih)
+      ctx.filter = 'none'
+      const lg = ctx.createLinearGradient(0, vh, 0, 0)
+      lg.addColorStop(0, 'rgba(22, 13, 7, 0.88)')
+      lg.addColorStop(0.22, 'rgba(22, 13, 7, 0.62)')
+      lg.addColorStop(0.46, 'rgba(22, 13, 7, 0.18)')
+      lg.addColorStop(0.62, 'rgba(22, 13, 7, 0)')
+      ctx.fillStyle = lg
+      ctx.fillRect(0, 0, vw, vh)
+      const rg = ctx.createRadialGradient(vw / 2, vh * 0.55, 0, vw / 2, vh * 0.55, Math.max(vw, vh) * 0.62)
+      rg.addColorStop(0, 'rgba(22, 13, 7, 0.24)')
+      rg.addColorStop(0.7, 'rgba(22, 13, 7, 0.1)')
+      rg.addColorStop(1, 'rgba(22, 13, 7, 0)')
+      ctx.fillStyle = rg
+      ctx.fillRect(0, 0, vw, vh)
+    }
+    const show = () => {
+      const next = layers.current[1 - front.current]
+      const prev = layers.current[front.current]
+      if (!next) return
+      if (photo) bake(next)
+      next.classList.toggle('on', !!photo)
+      prev?.classList.remove('on')
+      front.current = 1 - front.current
+    }
+    if (img) {
+      const im = new Image()
+      im.src = img
+      im.decode().then(
+        () => {
+          if (!alive) return
+          photo = im
+          show()
+        },
+        () => {},
+      )
+    } else show()
+    let t = 0
+    const ro = new ResizeObserver(() => {
+      clearTimeout(t)
+      t = window.setTimeout(() => {
+        const cur = layers.current[front.current]
+        if (cur && photo) bake(cur)
+      }, 140)
+    })
+    ro.observe(el)
+    return () => {
+      alive = false
+      clearTimeout(t)
+      ro.disconnect()
+    }
   }, [img])
+
   return (
-    <div className={`bible-bg ${img ? 'has-photo' : ''}`} aria-hidden="true" style={{ background: fallback }}>
-      {img && <img key={img} src={img} alt="" decoding="async" className={instant ? 'is-instant' : undefined} />}
+    <div ref={wrap} className={`bible-bg ${img ? 'has-photo' : ''}`} aria-hidden="true" style={{ background: backgroundCss(id) }}>
+      <canvas ref={(el) => void (layers.current[0] = el)} />
+      <canvas ref={(el) => void (layers.current[1] = el)} />
     </div>
   )
 }

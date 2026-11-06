@@ -1,10 +1,11 @@
-import type { Bible, VerseRef } from '../data/bible'
+import type { BibleBook } from '../data/bible'
 
 export const PAGE_W = 1400
 export const PAGE_H = 2030
+export const LW = 470
+export const LH = (LW * PAGE_H) / PAGE_W
 
 export const FONT_BODY = '"EB Garamond", Georgia, serif'
-export const FONT_DISPLAY = '"Cormorant Garamond", "EB Garamond", Georgia, serif'
 
 export type VerseMode = 'lines' | 'flow'
 export type TypeStyle = { fontScale: number; verseMode: VerseMode }
@@ -13,15 +14,15 @@ export type SegRole = 'body' | 'italic' | 'lead' | 'vnum'
 export type Seg = { x: number; w: number; text: string; role: SegRole; chapter: number; verse: number }
 export type Line = { line: number; segs: Seg[] }
 export type Heading = { line: number; chapter: number; label: string; sup: string[]; lines: number }
+export type Ref = { chapter: number; verse: number }
 
 export type Page = {
   book: number
-  index: number
   lines: Line[]
   headings: Heading[]
   title: { name: string; subtitle: string } | null
-  firstRef: VerseRef | null
-  lastRef: VerseRef | null
+  firstRef: Ref | null
+  lastRef: Ref | null
   blank: boolean
   special?: 'credits' | 'titlepage'
 }
@@ -37,10 +38,7 @@ export type Metrics = {
   style: TypeStyle
 }
 
-const measureCtx = (() => {
-  const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(8, 8) : document.createElement('canvas')
-  return c.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
-})()
+const measureCtx = new OffscreenCanvas(8, 8).getContext('2d')!
 const widthCache = new Map<string, Map<string, number>>()
 
 export function measure(font: string, text: string): number {
@@ -55,22 +53,26 @@ export function measure(font: string, text: string): number {
   return w
 }
 
+export function resetMeasure() {
+  widthCache.clear()
+}
+
 export function fonts(m: Metrics) {
   const fs = m.fs
   return {
     body: `400 ${fs}px ${FONT_BODY}`,
     italic: `italic 400 ${fs}px ${FONT_BODY}`,
     lead: `500 ${Math.round(fs * 0.8)}px ${FONT_BODY}`,
-    vnum: `500 ${Math.round(fs * 0.56)}px ${FONT_BODY}`,
-    vnumLines: `500 ${Math.round(fs * 0.62)}px ${FONT_BODY}`,
+    vnum: `600 ${Math.round(fs * 0.56)}px ${FONT_BODY}`,
+    vnumLines: `600 ${Math.round(fs * 0.6)}px ${FONT_BODY}`,
     sup: `italic 400 ${Math.round(fs * 0.86)}px ${FONT_BODY}`,
   }
 }
 
 export function metricsFor(style: TypeStyle): Metrics {
-  const fs = Math.round(38 * style.fontScale * 10) / 10
-  const lh = Math.round(fs * 1.6 * 10) / 10
-  const margin = { top: 210, bottom: 190, inner: 176, outer: 150 }
+  const fs = Math.round(41 * style.fontScale * 10) / 10
+  const lh = Math.round(fs * 1.46 * 10) / 10
+  const margin = { top: 196, bottom: 150, inner: 150, outer: 118 }
   const blockW = PAGE_W - margin.inner - margin.outer
   const maxLines = Math.floor((PAGE_H - margin.top - margin.bottom) / lh)
   const titleLines = Math.max(4, Math.ceil((fs * 3.2 + fs * 2.2 + fs * 2.4) / lh))
@@ -107,20 +109,26 @@ function wrapText(font: string, text: string, maxW: number): string[] {
   return out
 }
 
-export function typesetBook(bible: Bible, bookIdx: number, style: TypeStyle): Page[] {
-  const m = metricsFor(style)
+export function frontMatter(): Page[] {
+  const base = { book: -1, lines: [], headings: [], title: null, firstRef: null, lastRef: null, blank: false }
+  return [
+    { ...base, special: 'credits' },
+    { ...base, special: 'titlepage' },
+  ]
+}
+
+export function typesetBook(book: BibleBook, bookIdx: number, m: Metrics): Page[] {
   const f = fonts(m)
   const space = measure(f.body, ' ')
   m.space = space
-  const book = bible.books[bookIdx]
   const pages: Page[] = []
-  const linesMode = style.verseMode === 'lines'
+  const linesMode = m.style.verseMode === 'lines'
   const vnGap = m.fs * 0.16
 
   let page!: Page
   let line = 0
   const newPage = () => {
-    page = { book: bookIdx, index: pages.length, lines: [], headings: [], title: null, firstRef: null, lastRef: null, blank: false }
+    page = { book: bookIdx, lines: [], headings: [], title: null, firstRef: null, lastRef: null, blank: false }
     pages.push(page)
     line = 0
   }
@@ -193,17 +201,17 @@ export function typesetBook(bible: Bible, bookIdx: number, style: TypeStyle): Pa
       let x = 0
       for (let k = i; k < j; k++) {
         const b = boxes[k]
-        if (linesMode && b.verseStart && b.verse > 0) {
+        if (linesMode && b.verseStart) {
           const n = String(b.verse + 1)
           const nw = measure(f.vnumLines, n)
-          segs.push({ x: -nw - m.fs * 0.42, w: nw, text: n, role: 'vnum', chapter: b.chapter, verse: b.verse })
+          segs.push({ x: -nw - m.fs * 0.38, w: nw, text: n, role: 'vnum', chapter: b.chapter, verse: b.verse })
         }
         let bx = x
         for (const s of b.segs) {
           segs.push({ x: bx, w: s.w, text: s.text, role: s.role, chapter: b.chapter, verse: b.verse })
           bx += s.w + (s.role === 'vnum' ? vnGap : 0)
         }
-        const ref = { book: bookIdx, chapter: b.chapter, verse: b.verse }
+        const ref = { chapter: b.chapter, verse: b.verse }
         if (!page.firstRef) page.firstRef = ref
         page.lastRef = ref
         x += b.w + gap
@@ -214,30 +222,16 @@ export function typesetBook(bible: Bible, bookIdx: number, style: TypeStyle): Pa
     }
   }
 
-  if (pages.length % 2 === 1) {
-    pages.push({ book: bookIdx, index: pages.length, lines: [], headings: [], title: null, firstRef: null, lastRef: null, blank: true })
-  }
+  if (pages.length % 2 === 1) pages.push({ book: bookIdx, lines: [], headings: [], title: null, firstRef: null, lastRef: null, blank: true })
   return pages
-}
-
-export function spreadForRef(pages: Page[], ref: VerseRef): number {
-  let best = 0
-  for (const p of pages) {
-    if (!p.firstRef) continue
-    const r = p.firstRef
-    if (r.chapter < ref.chapter || (r.chapter === ref.chapter && r.verse <= ref.verse)) best = p.index
-    else break
-  }
-  return Math.floor(best / 2)
 }
 
 export type Hit = { kind: 'verse'; chapter: number; verse: number } | { kind: 'chapter'; chapter: number }
 
-export function hitTest(page: Page, side: 'left' | 'right', m: Metrics, px: number, py: number): Hit | null {
-  const left = side === 'right' ? m.margin.inner : m.margin.outer
-  const x = px - left
-  const lineF = (py - m.margin.top) / m.lh
-  const ln = Math.floor(lineF)
+export function hitTest(page: Page, left: boolean, m: Metrics, px: number, py: number): Hit | null {
+  const x0 = left ? m.margin.outer : m.margin.inner
+  const x = px - x0
+  const ln = Math.floor((py - m.margin.top) / m.lh)
   for (const h of page.headings) {
     if (ln >= h.line && ln < h.line + h.lines && x > -40 && x < m.blockW + 40) return { kind: 'chapter', chapter: h.chapter }
   }

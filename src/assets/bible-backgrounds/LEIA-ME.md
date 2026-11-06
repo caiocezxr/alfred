@@ -14,5 +14,5 @@ Fotos enviadas pelo dono (recortadas da arte-conceito e ampliadas; 3724×2324 We
 | `aconchego.webp` | Aconchego | lareira |
 | `noite.webp` | Noite | grilos |
 
-"Luz da manhã" (padrão) não usa foto: é a pedra iluminada com sombra de folhas desenhada pela própria cena.
+"Luz da manhã" (padrão) não usa foto: é um degradê quente desenhado pelo próprio leitor.
 Para trocar uma foto, substitua o arquivo com o mesmo nome (jpg, png ou webp) e gere a miniatura em `thumbs/`.

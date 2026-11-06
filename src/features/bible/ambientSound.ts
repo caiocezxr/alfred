@@ -1,4 +1,4 @@
-import type { AmbientKind } from './three/ambience'
+import type { AmbientKind } from './ambience'
 
 type Ambience = AmbientKind
 
