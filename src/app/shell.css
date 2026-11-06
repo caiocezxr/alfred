@@ -939,7 +939,7 @@ textarea.field {
 }
 
 .shell[data-route='home'] .main {
-  overflow: hidden;
+  overflow: hidden auto;
 }
 
 :root[data-ritual] .shell {

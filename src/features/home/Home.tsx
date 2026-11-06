@@ -12,6 +12,7 @@ import { openRitual } from '../../app/Ritual'
 import { MoodYear } from '../mood/MoodYear'
 import { greetingFor, loadNicks, saveNicks, type Period } from '../../shared/greeting'
 import { SplitFlap } from './SplitFlap'
+import { WorkCockpit } from './WorkCockpit'
 import './home.css'
 
 function useClock(ms = 15000) {
@@ -153,14 +154,17 @@ export default function Home() {
         />
       )}
       <div className="home-wrap">
-        <div className="home-top">
+        <div className="home-left">
           {hero}
-          {todayCard}
+          <div className="home-main">
+            <BriefingCard />
+          </div>
+        </div>
+        <aside className="home-right">
           <WeatherCard />
-        </div>
-        <div className="home-main">
-          <BriefingCard />
-        </div>
+          <WorkCockpit />
+          {todayCard}
+        </aside>
       </div>
     </div>
   )
