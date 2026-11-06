@@ -166,14 +166,14 @@ export default function Home() {
         />
       )}
       <div className="home-wrap">
-        <div className="home-left">
-          {hero}
-          <div className="home-main">
-            <BriefingCard />
-          </div>
+        <div className="home-hero-cell">{hero}</div>
+        <div className="home-wx-cell">
+          <WeatherCard />
+        </div>
+        <div className="home-main">
+          <BriefingCard />
         </div>
         <aside className="home-right">
-          <WeatherCard />
           <WorkCockpit />
           {todayCard}
         </aside>
@@ -294,14 +294,11 @@ function WeatherCard({ compact = false }: { compact?: boolean }) {
     <section className={`panel wx reveal ${compact ? 'is-compact' : ''}`} style={{ ['--i' as string]: 1 }} aria-label="Clima em Fortaleza, Recife e Frankfurt">
       {data ? (
         <>
-          <div className="wx-cities">
-            {data.slice(0, 2).map((w) => (
-              <WeatherCity key={w.city} w={w} compact={compact} />
+          <div className="wx-cities is-three">
+            {data.map((w, i) => (
+              <WeatherCity key={w.city} w={w} compact={compact} abroad={i >= 2} />
             ))}
           </div>
-          {data.slice(2).map((w) => (
-            <WeatherRow key={w.city} w={w} />
-          ))}
         </>
       ) : (
         <p className="wx-empty">{loading || !error ? 'Buscando o clima…' : 'Sem conexão para buscar o clima agora.'}</p>
@@ -321,11 +318,26 @@ function WeatherCard({ compact = false }: { compact?: boolean }) {
   )
 }
 
-function WeatherCity({ w, compact }: { w: Weather; compact: boolean }) {
+function WeatherCity({ w, compact, abroad = false }: { w: Weather; compact: boolean; abroad?: boolean }) {
   const d = describe(w.code)
+  const city = CITIES.find((c) => c.name === w.city)
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    if (!abroad) return
+    const id = setInterval(() => setNow(new Date()), 30_000)
+    return () => clearInterval(id)
+  }, [abroad])
+  const diff = abroad && city ? Math.round((tzOffset(city.tz, now) - tzOffset(CITIES[0].tz, now)) / 60) : 0
   return (
     <div className="wx-city">
-      <div className="wx-name">{w.city}</div>
+      <div className="wx-name">
+        {w.city}
+        {abroad && city && (
+          <span className="wx-tz">
+            {localTime(city.tz, now)} · {diff >= 0 ? `+${diff}h` : `${diff}h`}
+          </span>
+        )}
+      </div>
       <div className="wx-main">
         <WeatherIcon kind={d.icon} night={!w.isDay} />
         <span className="wx-temp">
@@ -341,38 +353,9 @@ function WeatherCity({ w, compact }: { w: Weather; compact: boolean }) {
           <span title="Chance de chuva hoje">
             <Drop /> {w.rain}%
           </span>
-          <span title="Sensação térmica">sensação {Math.round(w.feels)}°</span>
+          {!abroad && <span title="Sensação térmica">sensação {Math.round(w.feels)}°</span>}
         </div>
       )}
-    </div>
-  )
-}
-
-function WeatherRow({ w }: { w: Weather }) {
-  const d = describe(w.code)
-  const city = CITIES.find((c) => c.name === w.city)
-  const [now, setNow] = useState(() => new Date())
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 30_000)
-    return () => clearInterval(id)
-  }, [])
-  const time = city ? localTime(city.tz, now) : ''
-  const diff = city ? Math.round((tzOffset(city.tz, now) - tzOffset(CITIES[0].tz, now)) / 60) : 0
-  return (
-    <div className="wx-row">
-      <span className="wx-row-icon">
-        <WeatherIcon kind={d.icon} night={!w.isDay} />
-      </span>
-      <span className="wx-row-name">
-        {w.city}
-        <small>
-          {time} · {diff >= 0 ? `+${diff}h` : `${diff}h`}
-        </small>
-      </span>
-      <span className="wx-row-desc">{d.label}</span>
-      <span className="wx-row-temp">
-        {Math.round(w.temp)}°<small>{Math.round(w.max)}° / {Math.round(w.min)}°</small>
-      </span>
     </div>
   )
 }
