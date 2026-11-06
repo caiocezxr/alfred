@@ -53,6 +53,7 @@ type Props = {
   companies?: Company[]
   summary?: string
   size?: number
+  onPeek?: (p: { title: string; detail: string; state: string } | null) => void
 }
 
 const TICKS = 50
@@ -75,7 +76,7 @@ export function GaugeCenter({ left }: { left: number }) {
   )
 }
 
-export function Gauge({ progress, red, level, children, segments, companies, summary, size }: Props) {
+export function Gauge({ progress, red, level, children, segments, companies, summary, size, onPeek }: Props) {
   const uid = useId().replace(/:/g, '')
   const root = useRef<HTMLDivElement>(null)
   const needle = useRef<SVGGElement>(null)
@@ -220,6 +221,15 @@ export function Gauge({ progress, red, level, children, segments, companies, sum
   const redEnd = MIN + (MAX - MIN) * Math.max(0, Math.min(1, red))
   const hov = hover !== null ? segs[hover] : null
 
+  const peekRef = useRef(onPeek)
+  peekRef.current = onPeek
+  const peekKey = hov ? `${hov.id}|${armed === hov.id}|${hov.detail}` : ''
+  useEffect(() => {
+    const fn = peekRef.current
+    if (!fn) return
+    fn(hov ? { title: hov.title, detail: armed === hov.id ? 'Clique de novo para concluir' : hov.detail, state: hov.state } : null)
+  }, [peekKey])
+
   const clickSeg = (sg: GaugeSegment) => {
     if (sg.itemId) return openItemFrom(sg.itemId, document.querySelector<HTMLElement>(`[data-card="${sg.itemId}"]`))
     if (!sg.todoId) return
@@ -288,7 +298,10 @@ export function Gauge({ progress, red, level, children, segments, companies, sum
                     onPointerEnter={() => setHover(i)}
                     onFocus={() => setHover(i)}
                     onBlur={() => setHover(null)}
-                    onClick={() => clickSeg(sg)}
+                    onClick={(e) => {
+                      ;(e.currentTarget as SVGPathElement).blur()
+                      clickSeg(sg)
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault()
@@ -321,7 +334,7 @@ export function Gauge({ progress, red, level, children, segments, companies, sum
       <div ref={glass} className="wk-gauge-glass" aria-hidden="true" />
       <span className="wk-gauge-ring" aria-hidden="true" />
       <button className="wk-gauge-hub" onPointerEnter={blip} onClick={rev} aria-label="Acelerar o ponteiro" title="Acelerar" />
-      {hov ? (
+      {onPeek ? null : hov ? (
         <div className={`wk-gauge-tip is-${hov.state}`} role="tooltip">
           <b>{hov.title}</b>
           <span>{armed === hov.id ? 'Clique de novo para concluir' : hov.detail}</span>

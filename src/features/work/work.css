@@ -3165,7 +3165,7 @@
 }
 
 .wk-ck-gauge.has-rings:hover .wk-ck-rings,
-.wk-ck-gauge.has-rings:focus-within .wk-ck-rings {
+.wk-ck-gauge.has-rings:has(:focus-visible) .wk-ck-rings {
   opacity: 1;
   transform: translate(-50%, 0) scale(1);
   pointer-events: auto;
@@ -5900,7 +5900,11 @@
 .wk-cockpit.has-neglect .wk-ck-gauge::after {
   content: '';
   position: absolute;
-  inset: -4px;
+  left: 4%;
+  top: 0;
+  width: 92%;
+  aspect-ratio: 1;
+  margin-top: 4%;
   border-radius: 50%;
   pointer-events: none;
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--wk-amber) 35%, transparent);
@@ -5923,4 +5927,62 @@
   .wk-cockpit.has-neglect .wk-ck-gauge::after {
     animation: none !important;
   }
+}
+
+.wk-cockpit {
+  position: relative;
+  z-index: 5;
+}
+
+.wk-ck-status {
+  position: relative;
+}
+
+.wk-ck-status > :not(.wk-ck-peek) {
+  transition: opacity 180ms var(--ease-out), transform 260ms var(--ease-out);
+}
+
+.wk-ck-status.is-peeking > :not(.wk-ck-peek) {
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+}
+
+.wk-ck-peek {
+  position: absolute;
+  inset: 0 0 0 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 180ms var(--ease-out), transform 260ms var(--ease-out);
+}
+
+.wk-ck-status.is-peeking .wk-ck-peek {
+  opacity: 1;
+  transform: none;
+}
+
+.wk-ck-peek .wk-ck-head {
+  font-size: 15px;
+}
+
+.wk-ck-peek.is-late .wk-ck-meta {
+  color: var(--wk-red);
+}
+
+.wk-ck-peek.is-done .wk-ck-meta {
+  color: var(--wk-green);
+}
+
+.wk-ck-rings {
+  gap: 2px;
+  padding: 8px 6px 6px;
+}
+
+.wk-ck-ring span {
+  line-height: 1.2;
+  white-space: nowrap;
 }

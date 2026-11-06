@@ -4,7 +4,7 @@ import { CompanyMark, coStyle } from './brand'
 import { Gauge, GaugeCenter } from './Gauge'
 import { Icon } from './icons'
 import {
-  dayGrid, dueLabel, fixedTodos, fmtDur, gaugeSegments, healthLabel, healthSummary, itemTimeMs, label, runningSession, streak, suggestFocus,
+  dayGrid, dueLabel, fixedTodos, fmtDur, gaugeSegments, healthLabel, itemTimeMs, label, runningSession, streak, suggestFocus,
   todayTodos, todoDoneOn, upcomingTodos, type CompanyNeglect, type ForgetEntry, type Health, type Nudge, type Scope, type WeekScore as Score,
 } from './logic'
 import { NudgeLine } from './Nudges'
@@ -96,6 +96,7 @@ export function Cockpit({ state, health, perCompany, today, scope, score, nudges
   const shown = rows.slice(0, 3)
   const more = rows.length - shown.length
   const [leaving, setLeaving] = useState<string[]>([])
+  const [peek, setPeek] = useState<{ title: string; detail: string; state: string } | null>(null)
   const tick = (id: string) => {
     if (leaving.includes(id)) return
     setLeaving((l) => [...l, id])
@@ -104,8 +105,8 @@ export function Cockpit({ state, health, perCompany, today, scope, score, nudges
 
   return (
     <section className={`wk-cockpit reveal is-${health.level} ${neglect.some((n) => n.unseen) ? 'has-neglect' : ''}`} style={{ ['--i' as string]: 1 }} aria-label="Painel do dia">
-      <div className={`wk-ck-gauge ${scope === 'all' ? 'has-rings' : ''}`} tabIndex={scope === 'all' ? 0 : undefined}>
-        <Gauge progress={health.progress} red={red} level={health.level} segments={gaugeSegments(health)} companies={state.companies} summary={healthSummary(health, state.todos)}>
+      <div className={`wk-ck-gauge ${scope === 'all' ? 'has-rings' : ''}`}>
+        <Gauge progress={health.progress} red={red} level={health.level} segments={gaugeSegments(health)} companies={state.companies} onPeek={setPeek}>
           <GaugeCenter left={health.blockers.length} />
         </Gauge>
         {scope === 'all' && (
@@ -122,7 +123,15 @@ export function Cockpit({ state, health, perCompany, today, scope, score, nudges
         )}
       </div>
 
-      <div className="wk-ck-status">
+      <div className={`wk-ck-status ${peek ? 'is-peeking' : ''}`}>
+        <div className={`wk-ck-peek is-${peek?.state ?? 'none'}`} aria-live="polite">
+          {peek && (
+            <>
+              <span className="wk-ck-meta">{peek.detail}</span>
+              <h2 className="wk-ck-head">{peek.title}</h2>
+            </>
+          )}
+        </div>
         <span className="wk-ck-meta">
           <span className={`wk-dot is-${health.level}`} aria-hidden="true" />
           {green ? 'Tudo em dia' : health.level === 'red' ? 'Precisa de você' : 'Quase lá'}

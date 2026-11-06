@@ -41,11 +41,19 @@ export function WorkCockpit() {
         </button>
       </header>
       <div className="hc-body">
-        <button className="hc-gauge" onClick={() => navigate('work')} aria-label="Abrir a Workstation" title={summary}>
+        <div
+          className="hc-gauge"
+          role="link"
+          tabIndex={0}
+          onClick={() => navigate('work')}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), navigate('work'))}
+          aria-label="Abrir a Workstation"
+          title={summary}
+        >
           <Gauge progress={h.total ? h.progress : 1} red={red} level={h.level}>
             <GaugeCenter left={left} />
           </Gauge>
-        </button>
+        </div>
         <div className="hc-side">
           <span className={`hc-state is-${h.level}`}>{h.label || (today.loaded ? 'Tudo em dia por aqui' : ' ')}</span>
           <div className="hc-line">
