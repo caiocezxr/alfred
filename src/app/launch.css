@@ -387,33 +387,9 @@
 }
 
 .lx-lock {
-  gap: 12px;
+  gap: 10px;
   cursor: default;
   animation: lx-swap 320ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
-.lx-lock input {
-  width: 148px;
-  height: 34px;
-  padding: 0 6px;
-  border: 0;
-  border-bottom: 1.5px solid color-mix(in srgb, var(--pc) 70%, rgba(255, 255, 255, 0.3));
-  background: transparent;
-  color: var(--ink);
-  font: 600 20px/1 -apple-system, system-ui, sans-serif;
-  letter-spacing: 0.24em;
-  text-align: center;
-  outline: none;
-  caret-color: var(--pc);
-  user-select: text;
-}
-
-.lx-lock input::placeholder {
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--ink-3);
 }
 
 .lx-hint {
@@ -586,4 +562,329 @@
   .lx-st {
     transition: none;
   }
+}
+
+.lx-tilt {
+  --rx: 0deg;
+  --ry: 0deg;
+  perspective: 1400px;
+}
+
+.lx-dial {
+  transform: rotateX(var(--ry)) rotateY(var(--rx));
+  transition: transform 500ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  touch-action: none;
+  cursor: grab;
+}
+
+.lx.is-dragging .lx-dial {
+  cursor: grabbing;
+}
+
+.lx.is-dragging .lx-ring,
+.lx.is-dragging .lx-st {
+  transition: none;
+}
+
+.lx-sector {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: 50%;
+  background: conic-gradient(from calc(var(--span) / -2), color-mix(in srgb, var(--pc) 22%, transparent) 0 var(--span), transparent var(--span));
+  -webkit-mask: radial-gradient(closest-side, transparent 50%, #000 51%, #000 92%, transparent 93%);
+  mask: radial-gradient(closest-side, transparent 50%, #000 51%, #000 92%, transparent 93%);
+  pointer-events: none;
+  transition: opacity 400ms ease;
+}
+
+.lx.is-locking .lx-sector {
+  opacity: 0;
+}
+
+.lx-notch {
+  transition: transform 260ms var(--spring);
+}
+
+.lx.is-lock .lx-notch {
+  transform: translateY(4px);
+}
+
+.lx-ring {
+  z-index: 1;
+}
+
+.lx-core {
+  z-index: 3;
+  transition: transform 520ms var(--spring);
+}
+
+.lx.is-locking .lx-core {
+  transform: scale(1.12);
+}
+
+.lx.is-locking .lx-st {
+  color: var(--ink-3);
+}
+
+.lx.is-locking .lx-st-mark {
+  opacity: 0.22;
+  transform: scale(0.82);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.lx.is-locking .lx-st-name {
+  opacity: 0.25;
+}
+
+.lx.is-locking .lx-ticks line.is-major {
+  stroke: color-mix(in srgb, var(--pc) 70%, rgba(242, 239, 232, 0.5));
+}
+
+.lx-arc {
+  position: absolute;
+  inset: -12px;
+  width: calc(100% + 24px);
+  height: calc(100% + 24px);
+  overflow: visible;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 260ms ease;
+}
+
+.lx.is-locking .lx-arc {
+  opacity: 1;
+}
+
+.lx-arc circle {
+  fill: none;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+
+.lx-arc-track {
+  stroke: rgba(255, 255, 255, 0.06);
+  stroke-width: 2;
+}
+
+.lx-arc-run {
+  stroke: var(--pc);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 0 100;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--pc) 80%, transparent));
+  transition: stroke-dasharray 300ms ease, stroke 200ms ease;
+}
+
+.lx.st-checking .lx-arc-run {
+  stroke-dasharray: 22 78;
+  animation: lx-sweep 700ms linear infinite;
+}
+
+@keyframes lx-sweep {
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+
+.lx.st-ok .lx-arc-run {
+  stroke-dasharray: 100 0;
+  transition: stroke-dasharray 380ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.lx.st-bad .lx-arc-run {
+  stroke: #e0605a;
+  stroke-dasharray: 100 0;
+  filter: drop-shadow(0 0 8px rgba(224, 96, 90, 0.8));
+}
+
+.lx-bolt {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform: rotate(var(--r));
+  pointer-events: none;
+}
+
+.lx-bolt i {
+  position: absolute;
+  left: -9px;
+  top: -128px;
+  width: 18px;
+  height: 22px;
+  border-radius: 4px 4px 3px 3px;
+  background: linear-gradient(90deg, #4a4e56, #c3c8d0 45%, #6b7079 60%, #3a3d44);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 2px 6px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  transform: translateY(-14px);
+  transition: transform 380ms var(--spring), opacity 220ms ease, box-shadow 300ms ease;
+}
+
+.lx.is-lock .lx-bolt i {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.lx.is-lock .lx-bolt:nth-of-type(2) i {
+  transition-delay: 50ms;
+}
+
+.lx.is-lock .lx-bolt:nth-of-type(3) i {
+  transition-delay: 100ms;
+}
+
+.lx.is-lock .lx-bolt:nth-of-type(4) i {
+  transition-delay: 150ms;
+}
+
+.lx.st-ok .lx-bolt i {
+  opacity: 0;
+  transform: translateY(-34px);
+  box-shadow: 0 0 14px var(--pc);
+  transition: transform 420ms cubic-bezier(0.5, 0, 0.2, 1), opacity 420ms ease 120ms;
+}
+
+.lx.st-bad .lx-bolt i {
+  background: linear-gradient(90deg, #5a2a28, #e58a84 45%, #7a3532 60%, #3a1d1c);
+}
+
+.lx-lock-mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: #0c0d10;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 18px -4px color-mix(in srgb, var(--pc) 70%, transparent);
+  animation: lx-drop 420ms var(--spring) both;
+}
+
+@keyframes lx-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-40px) scale(1.4);
+  }
+}
+
+.lx-pins {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 7px;
+  max-width: 150px;
+  min-height: 26px;
+  padding: 6px 4px;
+  cursor: text;
+}
+
+.lx-pins i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #08090b;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  transition: background 160ms ease, box-shadow 200ms ease, transform 260ms var(--spring);
+}
+
+.lx-pins i.is-on {
+  background: var(--pc);
+  transform: scale(1.18);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--pc) 60%, #fff), 0 0 10px color-mix(in srgb, var(--pc) 90%, transparent);
+  animation: lx-pin 260ms var(--spring);
+}
+
+@keyframes lx-pin {
+  from {
+    transform: scale(0.4) translateY(-6px);
+  }
+}
+
+.lx-pins b {
+  font: 600 10px/1 'SF Mono', ui-monospace, Menlo, monospace;
+  color: var(--ink-2);
+}
+
+.lx-pins input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  opacity: 0;
+  cursor: text;
+}
+
+.lx-pins:has(input:focus) i:not(.is-on):first-of-type,
+.lx-pins:has(input:focus) i.is-on + i:not(.is-on) {
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 0 1.5px color-mix(in srgb, var(--pc) 80%, transparent);
+  animation: lx-blink 1s steps(2, jump-none) infinite;
+}
+
+@keyframes lx-blink {
+  50% {
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  }
+}
+
+.lx.st-bad .lx-pins i.is-on {
+  background: #e0605a;
+  box-shadow: 0 0 10px rgba(224, 96, 90, 0.8);
+  animation: lx-pin-fall 440ms cubic-bezier(0.5, 0, 0.75, 0) forwards;
+  animation-delay: calc(var(--k) * 18ms);
+}
+
+@keyframes lx-pin-fall {
+  to {
+    opacity: 0;
+    transform: translateY(26px) rotate(40deg);
+  }
+}
+
+.lx.st-checking .lx-pins i.is-on {
+  animation: lx-pin-check 700ms ease-in-out infinite;
+  animation-delay: calc(var(--k) * 50ms);
+}
+
+@keyframes lx-pin-check {
+  50% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+}
+
+.lx.st-ok .lx-pins i.is-on {
+  transform: scale(1.3);
+}
+
+.lx-open {
+  animation: lx-swap 300ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lx-dial {
+    transform: none;
+  }
+  .lx-pins i,
+  .lx-bolt i,
+  .lx-core,
+  .lx-lock-mark {
+    animation: none !important;
+    transition: none;
+  }
+}
+
+.lx.is-locking .lx-st-name {
+  opacity: 0;
+}
+
+.lx-st-name {
+  transition: opacity 240ms ease;
 }
