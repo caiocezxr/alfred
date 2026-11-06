@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fbfaf7"/>
-      <stop offset="1" stop-color="#ebe8e2"/>
+      <stop offset="0" stop-color="#17181b"/>
+      <stop offset="1" stop-color="#050506"/>
     </linearGradient>
-    <radialGradient id="vig" cx="50%" cy="46%" r="62%">
-      <stop offset="0.55" stop-color="#000" stop-opacity="0"/>
-      <stop offset="1" stop-color="#000" stop-opacity="0.12"/>
+    <radialGradient id="vig" cx="50%" cy="38%" r="70%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.07"/>
+      <stop offset="0.6" stop-color="#fff" stop-opacity="0"/>
     </radialGradient>
     <linearGradient id="silk" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#eadbc4"/>
@@ -22,7 +22,7 @@
     </filter>
     <filter id="grain" x="0" y="0" width="100%" height="100%">
       <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/>
-      <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.05 0"/>
+      <feColorMatrix values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.035 0"/>
     </filter>
     <clipPath id="sq">
       <rect x="100" y="100" width="824" height="824" rx="186"/>
@@ -32,9 +32,9 @@
     <rect x="100" y="100" width="824" height="824" fill="url(#bg)"/>
     <rect x="100" y="100" width="824" height="824" fill="url(#vig)"/>
     <rect x="100" y="100" width="824" height="824" filter="url(#grain)"/>
-    <g filter="url(#halo)" opacity="0.62">
-      <path d="M292 408 L470 512 L292 616 Z M732 408 L554 512 L732 616 Z" fill="#1b1b1d" stroke="#1b1b1d" stroke-width="40" stroke-linejoin="round"/>
-      <rect x="470" y="480" width="84" height="66" rx="14" fill="#1b1b1d"/>
+    <g filter="url(#halo)" opacity="0.28">
+      <path d="M292 408 L470 512 L292 616 Z M732 408 L554 512 L732 616 Z" fill="#d8bf98" stroke="#d8bf98" stroke-width="40" stroke-linejoin="round"/>
+      <rect x="470" y="480" width="84" height="66" rx="14" fill="#d8bf98"/>
     </g>
     <g>
       <path d="M302 424 L462 512 L302 600 Z" fill="url(#silk)" stroke="url(#silk)" stroke-width="26" stroke-linejoin="round"/>
@@ -43,6 +43,6 @@
       <path d="M296 420 L456 509" stroke="#fff" stroke-opacity="0.35" stroke-width="3" stroke-linecap="round"/>
       <path d="M728 420 L568 509" stroke="#fff" stroke-opacity="0.35" stroke-width="3" stroke-linecap="round"/>
     </g>
-    <rect x="100.5" y="100.5" width="823" height="823" rx="186" fill="none" stroke="#000" stroke-opacity="0.08"/>
+    <rect x="100.5" y="100.5" width="823" height="823" rx="186" fill="none" stroke="#fff" stroke-opacity="0.1"/>
   </g>
 </svg>
