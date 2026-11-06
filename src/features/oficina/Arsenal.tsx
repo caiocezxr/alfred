@@ -304,6 +304,18 @@ function Skills({ co }: { co: string }) {
       </Section>
 
       <Section
+        title="Escolha automática"
+        sub="Enquanto você escreve, o Alfred cruza o pedido e os repositórios da desk com a descrição de cada skill ligada aqui e já manda junto as que combinam. Usa o modelo de embeddings do Ollama; sem ele, compara por palavras."
+        aside={
+          <button role="switch" aria-checked={s.autoSkills !== false} className={`ars-switch ${s.autoSkills !== false ? 'is-on' : ''}`} onClick={() => patchSettings({ autoSkills: s.autoSkills === false })}>
+            <span />
+          </button>
+        }
+      >
+        <span />
+      </Section>
+
+      <Section
         title="Skills deste perfil"
         sub={c.skills.mode === 'all' ? 'Hoje o agente enxerga todas as skills instaladas. Ligue as que fazem sentido para escolher a dedo.' : `${c.skills.on.length} ligadas neste perfil, mais ${s.base.length} da base que vale para todo perfil.`}
         aside={

@@ -498,6 +498,36 @@ pub fn oficina_claude_token(token: Option<String>, account: Option<String>) -> R
     }
 }
 
+fn claude_cli() -> R<PathBuf> {
+    let h = home()?;
+    [h.join(".local/bin/claude"), PathBuf::from("/opt/homebrew/bin/claude"), PathBuf::from("/usr/local/bin/claude")].into_iter().find(|p| p.exists()).ok_or_else(|| "não achei o Claude Code instalado".to_string())
+}
+
+#[tauri::command]
+pub async fn oficina_claude_status() -> R<Value> {
+    tauri::async_runtime::spawn_blocking(|| -> R<Value> {
+        let bin = claude_cli()?;
+        let out = Command::new(bin).args(["auth", "status"]).env("PATH", path_env()).env_remove("ANTHROPIC_API_KEY").output().map_err(|e| e.to_string())?;
+        let v: Value = serde_json::from_slice(&out.stdout).unwrap_or(json!({}));
+        Ok(json!({ "loggedIn": v.get("loggedIn").and_then(Value::as_bool).unwrap_or(false), "method": v.get("authMethod").and_then(Value::as_str).unwrap_or("none") }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn oficina_claude_signin() -> R<()> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let bin = claude_cli()?;
+        let cmd = format!("'{}' auth login", bin.to_string_lossy().replace('\'', "'\\''"));
+        let script = format!("tell application \"Terminal\"\nactivate\ndo script \"{}\"\nend tell", cmd.replace('\\', "\\\\").replace('"', "\\\""));
+        let out = Command::new("/usr/bin/osascript").arg("-e").arg(script).output().map_err(|e| e.to_string())?;
+        if out.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&out.stderr).trim().to_string()) }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn oficina_claude_login() -> R<()> {
     tauri::async_runtime::spawn_blocking(|| {
@@ -620,6 +650,51 @@ pub fn oficina_local_chat(app: AppHandle, mesa: String, model: String, messages:
         note("response", json!({ "result": { "stopReason": "end_turn" } }));
     });
     Ok(())
+}
+
+static EMBED_MODEL: Mutex<Option<String>> = Mutex::new(None);
+
+fn embed_model(a: &ureq::Agent) -> R<String> {
+    if let Some(m) = EMBED_MODEL.lock().ok().and_then(|g| g.clone()) {
+        return Ok(m);
+    }
+    let mut r = a.get(&format!("{OLLAMA}/api/tags")).call().map_err(|_| "o Ollama não está rodando".to_string())?;
+    let tags = read_value(&mut r).ok_or_else(|| "resposta inválida do Ollama".to_string())?;
+    let name = tags
+        .get("models")
+        .and_then(Value::as_array)
+        .and_then(|l| l.iter().filter_map(|m| m.get("name").and_then(Value::as_str)).find(|n| n.contains("embed")).map(str::to_string))
+        .ok_or("nenhum modelo de embeddings no Ollama")?;
+    if let Ok(mut g) = EMBED_MODEL.lock() {
+        *g = Some(name.clone());
+    }
+    Ok(name)
+}
+
+#[tauri::command]
+pub async fn oficina_embed(texts: Vec<String>) -> R<Vec<Vec<f32>>> {
+    if texts.is_empty() {
+        return Ok(vec![]);
+    }
+    if texts.len() > 400 || texts.iter().any(|t| t.len() > 8000) {
+        return Err("texto demais para embeddings".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || -> R<Vec<Vec<f32>>> {
+        let a = ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(60))).http_status_as_error(false).build().into();
+        let model = embed_model(&a)?;
+        let mut out = vec![];
+        for chunk in texts.chunks(64) {
+            let mut r = post_json(&a, "/api/embed", &json!({ "model": model, "input": chunk })).map_err(|_| "o Ollama não respondeu".to_string())?;
+            let v = read_value(&mut r).ok_or_else(|| "resposta inválida do Ollama".to_string())?;
+            let list = v.get("embeddings").and_then(Value::as_array).ok_or("o Ollama não devolveu embeddings")?;
+            for e in list {
+                out.push(e.as_array().map(|x| x.iter().filter_map(Value::as_f64).map(|f| f as f32).collect()).unwrap_or_default());
+            }
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

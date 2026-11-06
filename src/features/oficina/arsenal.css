@@ -1264,3 +1264,86 @@
 .bn-tabs button {
   padding: 0 8px;
 }
+
+.ofc-auth-p {
+  margin: 0;
+  color: var(--text-2);
+  font: 450 12.5px/1.5 var(--font-ui);
+}
+
+.ofc-auth li > .is-go {
+  background: var(--sx-claude);
+  box-shadow: none;
+  color: #fff;
+}
+
+.ofc-auth-alt {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: 600 11.5px/1 var(--font-ui);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.ofc-skchips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  animation: ofc-in 220ms var(--ease-out) backwards;
+}
+
+.ofc-skchips-k {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 2px;
+  font: 700 9.5px/1 var(--ofc-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #c9a45c;
+}
+
+.ofc-skchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 4px 0 9px;
+  border-radius: 99px;
+  background: color-mix(in srgb, #c9a45c 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #c9a45c 40%, transparent);
+  font: 600 11px/1 var(--ofc-mono);
+  color: var(--text);
+  animation: ofc-pop 260ms cubic-bezier(0.2, 1.4, 0.4, 1) backwards;
+}
+
+.ofc-skchip button {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.ofc-skchip button:hover {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  color: var(--text);
+}
+
+.ofc-u-sk {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: 600 10.5px/1 var(--ofc-mono);
+  color: #c9a45c;
+}

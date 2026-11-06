@@ -19,6 +19,7 @@ pub struct Skill {
     source: &'static str,
     origin: String,
     path: String,
+    manual: bool,
 }
 
 fn front(text: &str, key: &str) -> Option<String> {
@@ -47,7 +48,8 @@ fn read_skill(dir: &Path, source: &'static str, prefix: Option<&str>, origin: &s
         Some(p) => format!("{p}:{name}"),
         None => name.clone(),
     };
-    Some(Skill { id, name, description, source, origin: origin.to_string(), path: dir.to_string_lossy().to_string() })
+    let manual = front(&text, "disable-model-invocation").is_some_and(|v| v == "true");
+    Some(Skill { id, name, description, source, origin: origin.to_string(), path: dir.to_string_lossy().to_string(), manual })
 }
 
 fn subdirs(p: &Path) -> Vec<PathBuf> {

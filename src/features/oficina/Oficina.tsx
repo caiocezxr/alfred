@@ -42,6 +42,7 @@ import {
 import { Arsenal } from './Arsenal'
 import { Bench } from './Bench'
 import { cofreOf, getSettings, loadSettings, useSettings } from './cofre'
+import { route as routeSkills, warmRouter, type Pick } from './router'
 import './oficina.css'
 import './arsenal.css'
 
@@ -161,7 +162,7 @@ export default function Oficina() {
     void loadMesas()
     void listenOficina()
     void loadLocalModels()
-    void loadSettings()
+    void loadSettings().then(() => window.setTimeout(() => void warmRouter(), 1500))
   }, [])
 
   useEffect(() => localStorage.setItem('oficina.rail', rail ? 'open' : 'closed'), [rail])
@@ -664,6 +665,11 @@ function Row({ it, desk, mesa, fallback }: { it: Item; desk: string; mesa: Mesa;
         <div className="ofc-u-b">
           <Text text={it.text} />
         </div>
+        {!!it.skills?.length && (
+          <span className="ofc-u-sk">
+            <Icon name="spark" size={10} /> com {it.skills.join(', ')}
+          </span>
+        )}
       </div>
     )
   if (it.role === 'agent')
@@ -749,19 +755,36 @@ function AuthCard({ desk, done }: { desk: string; done: boolean }) {
   const [token, setToken] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [alt, setAlt] = useState(false)
   if (done)
     return (
       <div className="ofc-auth is-done">
-        <ToolMark tool="claude" size={12} /> Token salvo. Manda a mensagem de novo.
+        <ToolMark tool="claude" size={12} /> Pronto, o Claude está liberado. Manda a mensagem de novo.
       </div>
     )
+  const finish = async () => {
+    await closeAgent(desk, 'claude')
+    markAuthDone(desk)
+  }
+  const check = async () => {
+    setBusy(true)
+    setMsg(null)
+    try {
+      const st = await invoke<{ loggedIn: boolean }>('oficina_claude_status')
+      if (st.loggedIn) await finish()
+      else setMsg('Ainda não aparece logado. Termine o login no navegador e clique de novo.')
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
   const save = async () => {
     setBusy(true)
     setMsg(null)
     try {
-      await invoke('oficina_claude_token', { token })
-      await closeAgent(desk, 'claude')
-      markAuthDone(desk)
+      await invoke('oficina_claude_token', { token, account: null })
+      await finish()
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e))
     } finally {
@@ -772,25 +795,36 @@ function AuthCard({ desk, done }: { desk: string; done: boolean }) {
     <div className="ofc-auth">
       <header>
         <ToolMark tool="claude" size={16} />
-        <b>O login do Claude Code expirou</b>
+        <b>O Claude Code desta máquina não está logado</b>
       </header>
+      <p className="ofc-auth-p">O app do Claude e o Claude Code têm logins separados. A Sessão usa o do Claude Code, pela sua assinatura. É uma vez só.</p>
       <ol>
         <li>
-          <span>Gere um token da sua assinatura. Abre o Terminal, você entra no navegador e ele mostra o token.</span>
-          <button onClick={() => void invoke('oficina_claude_login').catch((e) => setMsg(String(e)))}>
-            <Icon name="key" size={12} /> Gerar token no Terminal
+          <span>Abre o Terminal com o login. Você entra pelo navegador com a sua conta.</span>
+          <button onClick={() => void invoke('oficina_claude_signin').catch((e) => setMsg(String(e)))}>
+            <Icon name="key" size={12} /> Entrar no Claude Code
           </button>
         </li>
         <li>
-          <span>Cole o token aqui. Ele fica no Keychain do Mac e só o Claude da Oficina usa.</span>
-          <div className="ofc-auth-in">
-            <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="sk-ant-oat…" autoComplete="off" spellCheck={false} />
-            <button className="is-go" onClick={() => void save()} disabled={!token.trim() || busy}>
-              {busy ? 'Salvando…' : 'Salvar'}
-            </button>
-          </div>
+          <span>Terminou no navegador? Confirma aqui.</span>
+          <button className="is-go" onClick={() => void check()} disabled={busy}>
+            {busy ? 'Conferindo…' : 'Já entrei'}
+          </button>
         </li>
       </ol>
+      {!alt ? (
+        <button className="ofc-auth-alt" onClick={() => setAlt(true)}>
+          Prefiro usar um token da assinatura
+        </button>
+      ) : (
+        <div className="ofc-auth-in">
+          <button onClick={() => void invoke('oficina_claude_login').catch((e) => setMsg(String(e)))}>Gerar token</button>
+          <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="sk-ant-oat…" autoComplete="off" spellCheck={false} />
+          <button className="is-go" onClick={() => void save()} disabled={!token.trim() || busy}>
+            Salvar
+          </button>
+        </div>
+      )}
       {msg && <p className="ofc-auth-e">{msg}</p>}
     </div>
   )
@@ -953,9 +987,31 @@ function Deck({ desk, agent, setAgent, fallback }: { desk: Mesa; agent: AgentId;
   const [text, setText] = useState('')
   const [shots, setShots] = useState<Shot[]>([])
   const [slash, setSlash] = useState(0)
+  const [picks, setPicks] = useState<Pick[]>([])
+  const [dropped, setDropped] = useState<Set<string>>(new Set())
   const box = useRef<HTMLTextAreaElement>(null)
   const file = useRef<HTMLInputElement>(null)
   const busy = WORKING.has(live.status) && live.status !== 'opening'
+  const auto = useSettings().autoSkills !== false
+  const flowNow = desk.flow ?? cofreOf(desk.companyId).flow
+
+  useEffect(() => {
+    if (!auto || agent === 'local' || text.trim().length < 6 || text.startsWith('/')) {
+      setPicks([])
+      return
+    }
+    let alive = true
+    const t = window.setTimeout(() => {
+      void routeSkills(text, desk.repos, desk.companyId)
+        .then((p) => alive && setPicks(p))
+        .catch(() => alive && setPicks([]))
+    }, 420)
+    return () => {
+      alive = false
+      window.clearTimeout(t)
+    }
+  }, [text, agent, auto, desk.repos.join('|')])
+  const chosen = picks.filter((p) => !dropped.has(p.id))
 
   useEffect(() => {
     box.current?.focus()
@@ -983,8 +1039,10 @@ function Deck({ desk, agent, setAgent, fallback }: { desk: Mesa; agent: AgentId;
     if (!t && !shots.length) return
     setText('')
     setShots([])
+    setPicks([])
+    setDropped(new Set())
     if (agent !== desk.agent) patchMesa(desk.id, { agent })
-    void send(desk, agent, t, shots, codexHomeFor(desk.companyId), fallback)
+    void send(desk, agent, t, shots, codexHomeFor(desk.companyId), fallback, auto ? chosen : [])
   }
 
   const showSlash = text.startsWith('/') && !text.includes(' ') && !text.includes('\n')
@@ -1039,6 +1097,21 @@ function Deck({ desk, agent, setAgent, fallback }: { desk: Mesa; agent: AgentId;
               <span>{o.desc}</span>
               {o.alfred && <em>Alfred</em>}
             </button>
+          ))}
+        </div>
+      )}
+      {chosen.length > 0 && !(flowNow === 'maivado' && agent === 'claude' && !desk.sessions.claude) && (
+        <div className="ofc-skchips" aria-label="Skills escolhidas para esta mensagem">
+          <span className="ofc-skchips-k">
+            <Icon name="spark" size={11} /> skills
+          </span>
+          {chosen.map((p) => (
+            <span key={p.id} className="ofc-skchip" title={`${p.id} · ${p.why}`}>
+              {p.name}
+              <button onClick={() => setDropped((d) => new Set(d).add(p.id))} aria-label={`Não usar ${p.name}`}>
+                <Icon name="x" size={8} />
+              </button>
+            </span>
           ))}
         </div>
       )}

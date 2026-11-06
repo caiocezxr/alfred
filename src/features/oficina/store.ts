@@ -4,6 +4,7 @@ import { useSyncExternalStore } from 'react'
 import { track } from '../../shared/activity'
 import { api, isTauri } from '../../shared/db/api'
 import { cofreOf, codexHome, getSettings, mcpFor, skillsFor } from './cofre'
+import { route as routeSkills, type Pick } from './router'
 
 export type AgentId = 'claude' | 'codex' | 'local'
 export const AGENTS: AgentId[] = ['claude', 'codex', 'local']
@@ -39,7 +40,7 @@ Pensa como quem já segurou incidente às 3 da manhã: segurança, dados de clie
 Na hora de escrever código, comentário, mensagem de commit ou descrição de PR, é profissional: limpo, sem gíria e sem palavrão.`
 
 export type Item =
-  | { id: string; agent: AgentId; role: 'user'; text: string; at: number }
+  | { id: string; agent: AgentId; role: 'user'; text: string; at: number; skills?: string[] }
   | { id: string; agent: AgentId; role: 'agent'; text: string; at: number; open: boolean }
   | { id: string; agent: AgentId; role: 'thought'; text: string; at: number; open: boolean }
   | { id: string; agent: AgentId; role: 'tool'; title: string; kind: string; status: string; files: string[]; at: number }
@@ -535,10 +536,19 @@ export function route(agent: AgentId, text: string, repos: number): Route {
   return pick('sonnet', 'gpt-6.1-sol', 'medium', 'tarefa do dia a dia')
 }
 
-export async function send(mesa: Mesa, agent: AgentId, text0: string, images: Shot[], codexHome: string | null, fallback: string) {
+function withSkills(agent: AgentId, text: string, picks: Pick[]) {
+  if (!picks.length || agent === 'local' || text.startsWith('/')) return text
+  if (agent === 'claude') return `[Alfred: para este pedido, use as skills ${picks.map((p) => p.id).join(', ')} com a ferramenta Skill antes de começar.]\n\n${text}`
+  return `[Alfred: antes de começar, leia e siga estas instruções: ${picks.map((p) => `${p.path}/SKILL.md`).join(', ')}]\n\n${text}`
+}
+
+export async function send(mesa: Mesa, agent: AgentId, text0: string, images: Shot[], codexHome: string | null, fallback: string, picks?: Pick[]) {
   const flow = mesa.flow ?? cofreOf(mesa.companyId).flow
-  const text = flow === 'maivado' && agent === 'claude' && !mesa.sessions.claude && text0 && !text0.startsWith('/') ? `/maivado ${text0}` : text0
-  push(mesa.id, { id: uid(), agent, role: 'user', text: images.length ? `${text}${text ? '\n' : ''}[${images.length} imagem${images.length > 1 ? 's' : ''}]` : text, at: Date.now() })
+  const maivado = flow === 'maivado' && agent === 'claude' && !mesa.sessions.claude && text0 && !text0.startsWith('/')
+  const chosen = maivado ? [] : (picks ?? (getSettings().autoSkills === false ? [] : await routeSkills(text0, mesa.repos, mesa.companyId).catch(() => [])))
+  const text = maivado ? `/maivado ${text0}` : withSkills(agent, text0, chosen)
+  const shown = images.length ? `${text0}${text0 ? '\n' : ''}[${images.length} imagem${images.length > 1 ? 's' : ''}]` : text0
+  push(mesa.id, { id: uid(), agent, role: 'user', text: maivado ? `/maivado ${text0}` : shown, at: Date.now(), skills: chosen.map((p) => p.name) })
   if (!mesa.title && text) patchMesa(mesa.id, { title: text.split('\n')[0].slice(0, 70) })
   emit()
   await ensureAgent(mesa, agent, codexHome, fallback)
@@ -617,7 +627,7 @@ export async function switchAccount(mesa: Mesa, agent: AgentId, account: string,
   push(mesa.id, { id: uid(), agent, role: 'note', text: `Trocou para ${label}. Continuando a mesma conversa.`, tone: 'info', at: Date.now() })
   emit()
   const fresh = mesas.find((x) => x.id === mesa.id) ?? mesa
-  if (last) await send(fresh, agent, 'Continua de onde parou. O limite da conta anterior estourou no meio da tarefa.', [], null, fallback)
+  if (last) await send(fresh, agent, 'Continua de onde parou. O limite da conta anterior estourou no meio da tarefa.', [], null, fallback, [])
 }
 
 function recap(mesa: string, from: AgentId) {
@@ -640,7 +650,7 @@ export async function handoff(mesa: Mesa, from: AgentId, to: AgentId, kind: 'rev
       ? `Revisão cruzada. O ${AGENT_NAME[from]} trabalhou nesta tarefa. Revise criticamente o que ele fez: bugs, escopo além do pedido, nomes inventados, riscos de segurança e testes que não provam nada. Leia os arquivos antes de opinar. Não edite nada, só aponte com caminho:linha.`
       : `Passagem de bastão. O ${AGENT_NAME[from]} estava nesta tarefa e você continua daqui, sem refazer o que já está pronto. Confira o estado dos arquivos antes de mexer.`
   const body = [head, r.plan && `Plano:\n${r.plan}`, r.files.length && `Arquivos mexidos:\n${r.files.map((f) => `- ${f}`).join('\n')}`, r.talk && `Conversa recente:\n${r.talk}`].filter(Boolean).join('\n\n')
-  await send(mesa, to, body, [], null, fallback)
+  await send(mesa, to, body, [], null, fallback, [])
 }
 
 export async function setRepos(mesa: Mesa, repos: string[]) {

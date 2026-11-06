@@ -22,9 +22,10 @@ export type Settings = {
   base: string[]
   accounts: { claude: Account[]; codex: Account[] }
   cofres: Record<string, Cofre>
+  autoSkills?: boolean
 }
 
-export type SkillInfo = { id: string; name: string; description: string; source: 'user' | 'plugin' | 'alfred'; origin: string; path: string }
+export type SkillInfo = { id: string; name: string; description: string; source: 'user' | 'plugin' | 'alfred'; origin: string; path: string; manual?: boolean }
 
 export const BASE_DEFAULT = ['i-have-adhd:i-have-adhd', 'ponytail:ponytail']
 
