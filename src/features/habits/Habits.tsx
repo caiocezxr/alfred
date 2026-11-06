@@ -8,6 +8,8 @@ import {
 } from '../../shared/db/stores'
 import { Odometer } from '../work/Odometer'
 import '../work/work.css'
+import { Celebrate, HabitSheet } from './HabitSheet'
+import { CATEGORIES, MILESTONES, guessKind, metaOf, numbersOf, setMeta, useHabitMeta, type HabitKind } from './meta'
 import './habits.css'
 
 const TRAIL = 14
@@ -62,7 +64,9 @@ export default function Habits() {
   const { habits, checkins } = useHabits()
   const today = civil()
   const [editing, setEditing] = useState<Habit | 'new' | null>(null)
-  const [flash, setFlash] = useState(0)
+  const [sheet, setSheet] = useState<string | null>(null)
+  const [cel, setCel] = useState<{ days: number; name: string; quit: boolean } | null>(null)
+  useHabitMeta()
   useEffect(() => onIntent((i) => i === 'new-habit' && setEditing('new')), [])
 
   const todays = habits.filter((h) => isScheduled(h, today))
@@ -70,12 +74,25 @@ export default function Habits() {
   const done = todays.filter((h) => statusOf(h.id)).length
   const all = todays.length > 0 && done === todays.length
   const streak = useMemo(() => allDoneStreak(habits, checkins, today), [habits, checkins, today])
-  const wasAll = useRef(all)
+  const prevStreak = useRef<Map<string, number> | null>(null)
 
   useEffect(() => {
-    if (all && !wasAll.current) setFlash((f) => f + 1)
-    wasAll.current = all
-  }, [all])
+    if (!habits.length) return
+    const now = new Map(habits.map((h) => [h.id, numbersOf(h, checkins, today).streak]))
+    const before = prevStreak.current
+    prevStreak.current = now
+    if (!before) return
+    for (const h of habits) {
+      const s = now.get(h.id) ?? 0
+      if (s > (before.get(h.id) ?? 0) && MILESTONES.includes(s)) {
+        const m = metaOf(h)
+        if (m.seen.includes(s)) continue
+        setMeta(h.id, { seen: [...m.seen, s] }, m)
+        setCel({ days: s, name: h.name, quit: m.kind === 'largar' })
+        break
+      }
+    }
+  }, [checkins, habits, today])
 
   const live = useRef({ todays, statusOf })
   live.current = { todays, statusOf }
@@ -121,9 +138,22 @@ export default function Habits() {
       </header>
 
       {editing && <HabitForm habit={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
+      {sheet && habits.find((h) => h.id === sheet) && (
+        <HabitSheet
+          habit={habits.find((h) => h.id === sheet)!}
+          checkins={checkins}
+          today={today}
+          onClose={() => setSheet(null)}
+          onEdit={() => {
+            const h = habits.find((x) => x.id === sheet)!
+            setSheet(null)
+            setEditing(h)
+          }}
+        />
+      )}
+      {cel && <Celebrate days={cel.days} name={cel.name} quit={cel.quit} onDone={() => setCel(null)} />}
 
       <section className="hb-panel reveal" style={{ ['--i' as string]: 1 }} aria-label="Hoje">
-        {flash > 0 && <span key={flash} className="hb-sweep" aria-hidden="true" />}
         <div className="hb-panel-h">
           <span className="hb-plate">Hoje</span>
           {todays.length > 0 && (
@@ -134,7 +164,7 @@ export default function Habits() {
         </div>
         <div className="hb-grid">
           {todays.map((h, i) => (
-            <Switch key={h.id} habit={h} n={i + 1} status={statusOf(h.id)} today={today} checkins={checkins} />
+            <Switch key={h.id} habit={h} n={i + 1} status={statusOf(h.id)} today={today} checkins={checkins} onOpen={() => setSheet(h.id)} />
           ))}
           <button className="hb-mod is-add" onClick={() => setEditing('new')}>
             <span className="hb-add-plus" aria-hidden="true">+</span>
@@ -165,7 +195,7 @@ export default function Habits() {
             </span>
           </header>
           {habits.map((h, i) => (
-            <TrailRow key={h.id} habit={h} checkins={checkins} today={today} index={i} onEdit={() => setEditing(h)} />
+            <TrailRow key={h.id} habit={h} checkins={checkins} today={today} index={i} onEdit={() => setEditing(h)} onOpen={() => setSheet(h.id)} />
           ))}
           <p className="hb-legend">
             <i className="is-done" /> feito <i className="is-minimum" /> mínimo <i className="is-miss" /> não marcado · clique num dia para corrigir
@@ -176,31 +206,36 @@ export default function Habits() {
   )
 }
 
-function Switch({ habit, n, status, today, checkins }: { habit: Habit; n: number; status: CheckinStatus | null; today: string; checkins: Checkin[] }) {
+function Switch({ habit, n, status, today, checkins, onOpen }: { habit: Habit; n: number; status: CheckinStatus | null; today: string; checkins: Checkin[]; onOpen: () => void }) {
+  const m = metaOf(habit)
+  const quit = m.kind === 'largar'
   const map = useMemo(() => statusMap(checkins, habit.id), [checkins, habit.id])
   const streak = streakOf(habit, map, today)
   const sub = habit.cue ? `depois de ${habit.cue.replace(/^depois de\s*/i, '')}` : habit.timeOfDay ? `às ${habit.timeOfDay}` : describeDays(daysOn(habit, today))
   return (
     <article className={`hb-mod is-${status ?? 'off'}`} style={{ ['--i' as string]: n } as CSSProperties}>
-      <span className="hb-n">{String(n).padStart(2, '0')}</span>
+      <span className="hb-n">
+        {String(n).padStart(2, '0')}
+        {m.category && <em> · {m.category}</em>}
+      </span>
       <span className="hb-led" aria-hidden="true" />
       <button
         className="hb-toggle"
         onClick={() => void setCheckin(habit.id, today, next(status))}
         aria-pressed={status === 'done'}
-        aria-label={status === 'done' ? `Desmarcar ${habit.name}` : `Marcar ${habit.name} como feito`}
+        aria-label={status === 'done' ? `Desmarcar ${habit.name}` : quit ? `Marcar ${habit.name}: hoje limpo` : `Marcar ${habit.name} como feito`}
       >
         <span className="hb-bezel" aria-hidden="true" />
         <span className="hb-lever" aria-hidden="true">
           <i />
         </span>
-        <span className="hb-pos is-on" aria-hidden="true">feito</span>
+        <span className="hb-pos is-on" aria-hidden="true">{quit ? 'limpo' : 'feito'}</span>
         <span className="hb-pos is-off" aria-hidden="true">—</span>
       </button>
-      <div className="hb-label">
+      <button className="hb-label" onClick={onOpen} title="Abrir a ficha do hábito">
         <span className="hb-name">{habit.name}</span>
-        <span className="hb-sub">{sub}</span>
-      </div>
+        <span className="hb-sub">{quit ? (streak ? `${streak} ${streak === 1 ? 'dia' : 'dias'} limpo` : 'hoje é o dia 1') : sub}</span>
+      </button>
       <div className="hb-foot">
         <button
           className={`hb-min ${status === 'minimum' ? 'is-on' : ''}`}
@@ -220,7 +255,7 @@ function Switch({ habit, n, status, today, checkins }: { habit: Habit; n: number
   )
 }
 
-function TrailRow({ habit, checkins, today, index, onEdit }: { habit: Habit; checkins: Checkin[]; today: string; index: number; onEdit: () => void }) {
+function TrailRow({ habit, checkins, today, index, onEdit, onOpen }: { habit: Habit; checkins: Checkin[]; today: string; index: number; onEdit: () => void; onOpen: () => void }) {
   const [menu, setMenu] = useState(false)
   const [confirm, setConfirm] = useState(false)
   const box = useRef<HTMLDivElement>(null)
@@ -243,13 +278,13 @@ function TrailRow({ habit, checkins, today, index, onEdit }: { habit: Habit; che
 
   return (
     <div className={`hb-row ${paused ? 'is-paused' : ''}`} style={{ ['--i' as string]: index } as CSSProperties}>
-      <div className="hb-row-name">
+      <button className="hb-row-name" onClick={onOpen} title="Abrir a ficha do hábito">
         <span>{habit.name}</span>
         <small>
           {describeDays(daysOn(habit, today) || 127)}
           {paused && ' · pausado'}
         </small>
-      </div>
+      </button>
       <div className="hb-dots">
         {Array.from({ length: TRAIL }, (_, i) => {
           const d = addDays(today, i - TRAIL + 1)
@@ -309,11 +344,20 @@ function HabitForm({ habit, onClose }: { habit: Habit | null; onClose: () => voi
   const [plan, setPlan] = useState(habit?.obstaclePlan ?? '')
   const [start, setStart] = useState(habit?.startDate ?? today)
   const [more, setMore] = useState(!!(habit?.why || habit?.obstaclePlan))
+  const base = habit ? metaOf(habit) : null
+  const [kind, setKind] = useState<HabitKind | null>(base?.kind ?? null)
+  const [cat, setCat] = useState<string | null>(base?.category ?? null)
+  const kindNow: HabitKind = kind ?? guessKind(name)
 
   const save = async () => {
     if (!name.trim() || !days) return
-    if (habit) await updateHabit(habit.id, { name, days, timeOfDay: time, cue, minimum, why, obstaclePlan: plan, today })
-    else await createHabit({ name, days, timeOfDay: time || null, cue, minimum, why, obstaclePlan: plan, startDate: start })
+    if (habit) {
+      await updateHabit(habit.id, { name, days, timeOfDay: time, cue, minimum, why, obstaclePlan: plan, today })
+      setMeta(habit.id, { kind: kindNow, category: cat }, metaOf(habit))
+    } else {
+      const h = await createHabit({ name, days, timeOfDay: time || null, cue, minimum, why, obstaclePlan: plan, startDate: start })
+      if (h) setMeta(h.id, { kind: kindNow, category: cat }, metaOf(h))
+    }
     onClose()
   }
 
@@ -332,6 +376,23 @@ function HabitForm({ habit, onClose }: { habit: Habit | null; onClose: () => voi
           Depois de <b>{cue || 'algo que você já faz'}</b>, vou <b>{name || 'fazer o hábito'}</b>
           {minimum ? <> — no mínimo <b>{minimum}</b></> : null}.
         </p>
+      </div>
+
+      <div className="h-form-class">
+        <div className="hs-seg" role="radiogroup" aria-label="Tipo">
+          {(['construir', 'largar'] as const).map((k) => (
+            <button type="button" key={k} role="radio" aria-checked={kindNow === k} className={kindNow === k ? 'is-on' : ''} onClick={() => setKind(k)}>
+              {k === 'construir' ? 'Construir um hábito' : 'Largar um hábito'}
+            </button>
+          ))}
+        </div>
+        <div className="hs-cats">
+          {CATEGORIES.map((c) => (
+            <button type="button" key={c} className={cat === c ? 'is-on' : ''} onClick={() => setCat(cat === c ? null : c)}>
+              {c}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="h-form-grid">
