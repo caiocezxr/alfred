@@ -69,7 +69,7 @@ export function useRoute(): Route {
   )
 }
 
-export type Intent = 'new-task' | 'new-habit' | 'new-idea' | 'new-note' | 'refresh-radar'
+export type Intent = 'new-task' | 'new-habit' | 'new-idea' | 'new-note' | 'new-desk' | 'refresh-radar'
 const intentListeners = new Set<(i: Intent) => void>()
 let pendingIntent: { i: Intent; at: number } | null = null
 export function requestIntent(i: Intent) {

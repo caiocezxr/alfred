@@ -26,6 +26,10 @@
   --tc: var(--sx-codex, #6f8cff);
 }
 
+.sx-mark.is-local {
+  --tc: #5fb98a;
+}
+
 .sx-mark svg {
   width: var(--s);
   height: var(--s);

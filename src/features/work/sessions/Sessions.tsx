@@ -33,11 +33,17 @@ const dayLabel = (iso: string) => {
   return d.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'short' })
 }
 
-export function ToolMark({ tool, size = 16 }: { tool: Session['tool']; size?: number }) {
+export function ToolMark({ tool, size = 16 }: { tool: Session['tool'] | 'local'; size?: number }) {
   return (
-    <span className={`sx-mark is-${tool}`} style={{ ['--s' as string]: `${size}px` } as CSSProperties} title={tool === 'claude' ? 'Claude Code' : 'Codex'}>
+    <span className={`sx-mark is-${tool}`} style={{ ['--s' as string]: `${size}px` } as CSSProperties} title={tool === 'claude' ? 'Claude Code' : tool === 'codex' ? 'Codex' : 'Modelo local'}>
       <svg viewBox="0 0 16 16" aria-hidden="true">
-        {tool === 'claude' ? <path d="M8 1.8v12.4M1.8 8h12.4M3.6 3.6l8.8 8.8M12.4 3.6l-8.8 8.8" /> : <path d="M5.6 4.2L2 8l3.6 3.8M10.4 4.2L14 8l-3.6 3.8M9.2 3l-2.4 10" />}
+        {tool === 'claude' ? (
+          <path d="M8 1.8v12.4M1.8 8h12.4M3.6 3.6l8.8 8.8M12.4 3.6l-8.8 8.8" />
+        ) : tool === 'codex' ? (
+          <path d="M5.6 4.2L2 8l3.6 3.8M10.4 4.2L14 8l-3.6 3.8M9.2 3l-2.4 10" />
+        ) : (
+          <path d="M4.5 4.5h7v7h-7zM6.5 2v2.5M9.5 2v2.5M6.5 11.5V14M9.5 11.5V14M2 6.5h2.5M2 9.5h2.5M11.5 6.5H14M11.5 9.5H14" />
+        )}
       </svg>
     </span>
   )

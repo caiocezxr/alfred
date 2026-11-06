@@ -88,6 +88,7 @@ export function App() {
         if (route === 'habits') requestIntent('new-habit')
         else if (route === 'ideas') requestIntent('new-idea')
         else if (route === 'notes') requestIntent('new-note')
+        else if (route === 'oficina') requestIntent('new-desk')
         else {
           if (route !== 'work') navigate('work')
           setTimeout(() => requestIntent('new-task'), 60)

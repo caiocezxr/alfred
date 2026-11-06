@@ -141,6 +141,14 @@ fn spawn(app: &AppHandle, state: &State<AppState>, mesa: &str, agent: &str, cwd:
     if let Some(h) = codex_home {
         cmd.env("CODEX_HOME", h);
     }
+    if agent == "claude" {
+        if let Ok(h) = home() {
+            let own = h.join(".local/bin/claude");
+            if own.exists() {
+                cmd.env("CLAUDE_CODE_EXECUTABLE", own);
+            }
+        }
+    }
     let mut child = cmd.spawn().map_err(|e| format!("não deu para abrir o agente: {e}"))?;
     let stdout = child.stdout.take().ok_or("sem saída")?;
     let stderr = child.stderr.take().ok_or("sem saída de erro")?;
@@ -211,7 +219,27 @@ fn spawn(app: &AppHandle, state: &State<AppState>, mesa: &str, agent: &str, cwd:
 }
 
 #[tauri::command]
-pub async fn oficina_start(app: AppHandle, state: State<'_, AppState>, mesa: String, agent: String, cwd: String, resume: Option<String>, codex_home: Option<String>) -> R<Value> {
+pub(crate) fn session_params(agent: &str, cwd: &str, dirs: &[String], persona: Option<&str>, resume: Option<&str>) -> Value {
+    let mut p = json!({ "cwd": cwd, "mcpServers": [] });
+    if !dirs.is_empty() {
+        p["additionalDirectories"] = json!(dirs);
+    }
+    if let Some(id) = resume {
+        p["sessionId"] = json!(id);
+    }
+    if let Some(text) = persona.filter(|t| !t.trim().is_empty()) {
+        if agent == "claude" {
+            p["_meta"] = json!({ "systemPrompt": { "append": text } });
+        } else {
+            p["systemPrompt"] = json!({ "mode": "append", "content": [{ "type": "text", "text": text }] });
+        }
+    }
+    p
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn oficina_start(app: AppHandle, state: State<'_, AppState>, mesa: String, agent: String, cwd: String, dirs: Option<Vec<String>>, persona: Option<String>, resume: Option<String>, codex_home: Option<String>) -> R<Value> {
     if !valid_id(&mesa) || !valid_id(&agent) {
         return Err("mesa ou agente inválido".into());
     }
@@ -221,6 +249,17 @@ pub async fn oficina_start(app: AppHandle, state: State<'_, AppState>, mesa: Str
         }
     }
     let dir = safe_dir(&cwd)?;
+    let mut extra = vec![];
+    for d in dirs.unwrap_or_default().iter().take(12) {
+        let p = safe_dir(d)?;
+        if p != dir && !extra.contains(&p) {
+            extra.push(p);
+        }
+    }
+    let extra: Vec<String> = extra.iter().map(|p| p.to_string_lossy().to_string()).collect();
+    if persona.as_ref().is_some_and(|p| p.len() > 8000) {
+        return Err("instrução grande demais".into());
+    }
     let codex_home = match codex_home {
         Some(h) => Some(safe_dir(&h)?.to_string_lossy().to_string()),
         None => None,
@@ -229,16 +268,18 @@ pub async fn oficina_start(app: AppHandle, state: State<'_, AppState>, mesa: Str
     stop(&k);
     let conn = spawn(&app, &state, &mesa, &agent, &dir, codex_home)?;
     let cwd_s = dir.to_string_lossy().to_string();
+    let agent = agent.clone();
     tauri::async_runtime::spawn_blocking(move || -> R<Value> {
         let init = call(&conn, "initialize", json!({ "protocolVersion": 1, "clientCapabilities": { "fs": { "readTextFile": false, "writeTextFile": false }, "terminal": false } }), Duration::from_secs(40))?;
+        let params = session_params(&agent, &cwd_s, &extra, persona.as_deref(), resume.as_deref());
         let opened = match &resume {
             Some(id) => {
-                let r = call(&conn, "session/resume", json!({ "sessionId": id, "cwd": cwd_s, "mcpServers": [] }), Duration::from_secs(90))?;
+                let r = call(&conn, "session/resume", params, Duration::from_secs(90))?;
                 let mut r = if r.is_object() { r } else { json!({}) };
                 r["sessionId"] = json!(id);
                 r
             }
-            None => call(&conn, "session/new", json!({ "cwd": cwd_s, "mcpServers": [] }), Duration::from_secs(90))?,
+            None => call(&conn, "session/new", params, Duration::from_secs(90))?,
         };
         let sid = opened.get("sessionId").and_then(Value::as_str).ok_or("o agente não abriu a sessão")?.to_string();
         if let Ok(mut c) = conn.lock() {
@@ -256,13 +297,38 @@ fn session_of(k: &str) -> R<(Shared, String)> {
     Ok((conn, sid))
 }
 
-#[tauri::command]
-pub fn oficina_prompt(mesa: String, agent: String, text: String) -> R<u64> {
-    if text.trim().is_empty() {
+pub(crate) fn prompt_blocks(text: &str, images: &[(String, String)]) -> R<Value> {
+    if text.trim().is_empty() && images.is_empty() {
         return Err("mensagem vazia".into());
     }
+    let mut blocks = vec![];
+    for (mime, data) in images.iter().take(6) {
+        if !matches!(mime.as_str(), "image/png" | "image/jpeg" | "image/gif" | "image/webp") {
+            return Err("formato de imagem não suportado".into());
+        }
+        if data.len() > 12_000_000 {
+            return Err("imagem grande demais".into());
+        }
+        blocks.push(json!({ "type": "image", "mimeType": mime, "data": data }));
+    }
+    if !text.trim().is_empty() {
+        blocks.push(json!({ "type": "text", "text": text }));
+    }
+    Ok(Value::Array(blocks))
+}
+
+#[derive(serde::Deserialize)]
+pub struct Image {
+    mime: String,
+    data: String,
+}
+
+#[tauri::command]
+pub fn oficina_prompt(mesa: String, agent: String, text: String, images: Option<Vec<Image>>) -> R<u64> {
+    let imgs: Vec<(String, String)> = images.unwrap_or_default().into_iter().map(|i| (i.mime, i.data)).collect();
+    let blocks = prompt_blocks(&text, &imgs)?;
     let (conn, sid) = session_of(&key(&mesa, &agent))?;
-    request(&conn, "session/prompt", json!({ "sessionId": sid, "prompt": [{ "type": "text", "text": text }] }))
+    request(&conn, "session/prompt", json!({ "sessionId": sid, "prompt": blocks }))
 }
 
 #[tauri::command]
@@ -307,6 +373,123 @@ pub fn oficina_status(state: State<AppState>) -> Value {
     })
 }
 
+const OLLAMA: &str = "http://127.0.0.1:11434";
+
+static STOPS: Mutex<Option<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>> = Mutex::new(None);
+
+fn ollama() -> ureq::Agent {
+    ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(600))).http_status_as_error(false).build().into()
+}
+
+fn post_json(a: &ureq::Agent, path: &str, body: &Value) -> Result<ureq::http::Response<ureq::Body>, ureq::Error> {
+    a.post(&format!("{OLLAMA}{path}")).header("Content-Type", "application/json").send(body.to_string().as_bytes())
+}
+
+fn read_value(r: &mut ureq::http::Response<ureq::Body>) -> Option<Value> {
+    r.body_mut().with_config().limit(8_000_000).read_to_string().ok().and_then(|t| serde_json::from_str(&t).ok())
+}
+
+fn context_of(show: &Value) -> Option<u64> {
+    show.get("model_info")?.as_object()?.iter().find(|(k, _)| k.ends_with(".context_length")).and_then(|(_, v)| v.as_u64())
+}
+
+#[tauri::command]
+pub async fn oficina_local_models() -> R<Vec<Value>> {
+    tauri::async_runtime::spawn_blocking(|| -> R<Vec<Value>> {
+        let a = ollama();
+        let mut r = a.get(&format!("{OLLAMA}/api/tags")).call().map_err(|_| "o Ollama não está rodando".to_string())?;
+        let tags = read_value(&mut r).ok_or_else(|| "resposta inválida do Ollama".to_string())?;
+        let mut out = vec![];
+        for m in tags.get("models").and_then(Value::as_array).cloned().unwrap_or_default().iter().take(16) {
+            let name = m.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+            if name.is_empty() || name.contains("embed") {
+                continue;
+            }
+            let show = post_json(&a, "/api/show", &json!({ "model": name })).ok().and_then(|mut r| read_value(&mut r)).unwrap_or(Value::Null);
+            out.push(json!({
+                "name": name,
+                "size": m.get("size"),
+                "params": m.pointer("/details/parameter_size"),
+                "context": context_of(&show),
+            }));
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[derive(serde::Deserialize)]
+pub struct Msg {
+    role: String,
+    content: String,
+}
+
+#[tauri::command]
+pub fn oficina_local_chat(app: AppHandle, mesa: String, model: String, messages: Vec<Msg>, persona: Option<String>, context: Option<u64>) -> R<()> {
+    if !valid_id(&mesa) || model.is_empty() || model.len() > 120 || model.contains(char::is_whitespace) {
+        return Err("modelo inválido".into());
+    }
+    let mut msgs = vec![];
+    if let Some(p) = persona.filter(|p| !p.trim().is_empty()) {
+        msgs.push(json!({ "role": "system", "content": p }));
+    }
+    for m in messages.iter().rev().take(40).collect::<Vec<_>>().into_iter().rev() {
+        let role = if m.role == "assistant" { "assistant" } else { "user" };
+        msgs.push(json!({ "role": role, "content": m.content }));
+    }
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let mut g = STOPS.lock().unwrap_or_else(|e| e.into_inner());
+        g.get_or_insert_with(HashMap::new).insert(mesa.clone(), stop.clone());
+    }
+    std::thread::spawn(move || {
+        let note = |kind: &'static str, data: Value| emit(&app, &mesa, "local", kind, data);
+        let update = |u: Value| note("notify", json!({ "method": "session/update", "params": { "update": u } }));
+        let mut opts = json!({});
+        if let Some(c) = context {
+            opts["num_ctx"] = json!(c.min(32768));
+        }
+        let res = post_json(&ollama(), "/api/chat", &json!({ "model": model, "messages": msgs, "stream": true, "options": opts }));
+        let mut resp = match res {
+            Ok(r) if r.status().as_u16() == 200 => r,
+            Ok(r) => {
+                let code = r.status().as_u16();
+                return note("response", json!({ "error": { "message": if code == 404 { format!("o modelo {model} não está baixado no Ollama") } else { format!("o Ollama respondeu {code}") } } }));
+            }
+            Err(_) => return note("response", json!({ "error": { "message": "o Ollama não está rodando" } })),
+        };
+        let reader = BufReader::new(resp.body_mut().as_reader());
+        for line in reader.lines().map_while(Result::ok) {
+            if stop.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
+            let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
+            if let Some(t) = v.pointer("/message/content").and_then(Value::as_str) {
+                if !t.is_empty() {
+                    update(json!({ "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": t } }));
+                }
+            }
+            if v.get("done").and_then(Value::as_bool) == Some(true) {
+                let used = v.get("prompt_eval_count").and_then(Value::as_u64).unwrap_or(0) + v.get("eval_count").and_then(Value::as_u64).unwrap_or(0);
+                if let Some(c) = context {
+                    update(json!({ "sessionUpdate": "usage_update", "used": used, "size": c.min(32768) }));
+                }
+                break;
+            }
+        }
+        note("response", json!({ "result": { "stopReason": "end_turn" } }));
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn oficina_local_cancel(mesa: String) {
+    if let Some(f) = STOPS.lock().ok().and_then(|g| g.as_ref().and_then(|m| m.get(&mesa).cloned())) {
+        f.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -317,6 +500,34 @@ mod tests {
         assert!(auth_refused(&json!({"authStatus": {"kind": "none"}})).is_none());
         assert!(auth_refused(&json!({"authStatus": {"kind": "api-key"}})).is_some());
         assert!(auth_refused(&json!({})).is_none());
+    }
+
+    #[test]
+    fn persona_goes_where_each_agent_reads_it() {
+        let c = session_params("claude", "/x", &[], Some("fala direto"), None);
+        assert_eq!(c["_meta"]["systemPrompt"]["append"], "fala direto");
+        assert!(c.get("systemPrompt").is_none());
+        let x = session_params("codex", "/x", &["/y".into()], Some("fala direto"), Some("s1"));
+        assert_eq!(x["systemPrompt"]["mode"], "append");
+        assert_eq!(x["systemPrompt"]["content"][0]["text"], "fala direto");
+        assert_eq!(x["additionalDirectories"][0], "/y");
+        assert_eq!(x["sessionId"], "s1");
+        assert!(session_params("codex", "/x", &[], None, None).get("systemPrompt").is_none());
+    }
+
+    #[test]
+    fn prompt_blocks_validate() {
+        assert!(prompt_blocks("  ", &[]).is_err());
+        let b = prompt_blocks("oi", &[("image/png".into(), "AAAA".into())]).unwrap();
+        assert_eq!(b[0]["type"], "image");
+        assert_eq!(b[1]["text"], "oi");
+        assert!(prompt_blocks("oi", &[("application/pdf".into(), "AAAA".into())]).is_err());
+    }
+
+    #[test]
+    fn reads_context_length() {
+        assert_eq!(context_of(&json!({"model_info": {"gemma3.context_length": 131072, "x": 1}})), Some(131072));
+        assert_eq!(context_of(&json!({})), None);
     }
 
     #[test]

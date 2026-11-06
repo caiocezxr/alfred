@@ -4,15 +4,17 @@ import { useSyncExternalStore } from 'react'
 import { track } from '../../shared/activity'
 import { api, isTauri } from '../../shared/db/api'
 
-export type AgentId = 'claude' | 'codex'
-export const AGENTS: AgentId[] = ['claude', 'codex']
-export const AGENT_NAME: Record<AgentId, string> = { claude: 'Claude', codex: 'Codex' }
+export type AgentId = 'claude' | 'codex' | 'local'
+export const AGENTS: AgentId[] = ['claude', 'codex', 'local']
+export const AGENT_NAME: Record<AgentId, string> = { claude: 'Claude', codex: 'Codex', local: 'Local' }
+export type LocalModel = { name: string; params: string | null; context: number | null; size: number | null }
 
 export type Mesa = {
   id: string
   companyId: string
   title: string
   cwd: string
+  repos: string[]
   agent: AgentId
   sessions: Partial<Record<AgentId, string>>
   prefs: Partial<Record<AgentId, Record<string, string>>>
@@ -24,6 +26,14 @@ export type Option = { value: string; name: string; description?: string }
 export type ConfigOption = { id: string; name: string; category?: string; currentValue: string; options: Option[] }
 export type PlanEntry = { content: string; status: 'pending' | 'in_progress' | 'completed'; priority?: string }
 export type PermOption = { optionId: string; name: string; kind: string }
+export type Command = { name: string; description: string }
+export type Shot = { mime: string; data: string }
+
+export const PERSONA = `Você é um tech lead brasileiro com mais de 10 anos de experiência em produção: back-end, front-end, banco de dados e infra. Fala com o Caio como parceiro de time no zap: português do Brasil, linguagem de rua, gíria e palavrão quando encaixar natural, sem forçar e sem ser grosseiro com ele.
+Direto ao ponto: primeiro a resposta, depois o porquê em poucas linhas. Nada de textão, de enrolação ou de puxar saco. Um passo de cada vez.
+Opina com firmeza quando tem certeza, avisa o risco quando vê e diz "não sei" quando não sabe. Nunca inventa nome de arquivo, função, comando, tabela ou biblioteca: confere antes de citar.
+Pensa como quem já segurou incidente às 3 da manhã: segurança, dados de cliente, performance e rollback vêm antes de firula. Código é o mínimo que resolve, sem abstração sem uso real, com teste provando o que importa.
+Na hora de escrever código, comentário, mensagem de commit ou descrição de PR, é profissional: limpo, sem gíria e sem palavrão.`
 
 export type Item =
   | { id: string; agent: AgentId; role: 'user'; text: string; at: number }
@@ -43,6 +53,7 @@ export type Live = {
   plan: PlanEntry[]
   usage: { used: number; size: number; cost: number | null } | null
   files: string[]
+  commands: Command[]
   since: number | null
   turns: number
   error: string | null
@@ -50,7 +61,19 @@ export type Live = {
 
 type MesaLive = { items: Item[]; agents: Record<AgentId, Live> }
 
-const blank = (): Live => ({ status: 'off', action: '', account: null, config: [], plan: [], usage: null, files: [], since: null, turns: 0, error: null })
+const cachedConfig = (agent: AgentId): ConfigOption[] => {
+  try {
+    return JSON.parse(localStorage.getItem(`oficina.config.${agent}`) ?? '[]') as ConfigOption[]
+  } catch {
+    return []
+  }
+}
+
+const cacheConfig = (agent: AgentId, c: ConfigOption[]) => {
+  if (c.length) localStorage.setItem(`oficina.config.${agent}`, JSON.stringify(c))
+}
+
+const blank = (agent: AgentId): Live => ({ status: 'off', action: '', account: null, config: cachedConfig(agent), plan: [], usage: null, files: [], commands: [], since: null, turns: 0, error: null })
 
 let mesas: Mesa[] = []
 let loaded = false
@@ -76,7 +99,13 @@ export function useOficina() {
 export function liveOf(id: string): MesaLive {
   let m = live.get(id)
   if (!m) {
-    m = { items: [], agents: { claude: blank(), codex: blank() } }
+    m = { items: [], agents: { claude: blank('claude'), codex: blank('codex'), local: blank('local') } }
+    try {
+      const saved = JSON.parse(localStorage.getItem(`oficina.local.${id}`) ?? '[]') as Item[]
+      if (saved.length) m.items = saved
+    } catch {
+      m.items = []
+    }
     live.set(id, m)
   }
   return m
@@ -88,7 +117,7 @@ export async function loadMesas() {
   if (loaded) return
   try {
     const raw = isTauri ? await api.settingGet(KEY) : localStorage.getItem(KEY)
-    mesas = raw ? (JSON.parse(raw) as Mesa[]) : []
+    mesas = raw ? (JSON.parse(raw) as Mesa[]).map((m) => ({ ...m, repos: m.repos ?? (m.cwd ? [m.cwd] : []) })) : []
   } catch {
     mesas = []
   }
@@ -106,9 +135,9 @@ function save() {
   }, 300)
 }
 
-export function createMesa(companyId: string, cwd: string, agent: AgentId): Mesa {
+export function createMesa(companyId: string, repos: string[], agent: AgentId): Mesa {
   const now = new Date().toISOString()
-  const m: Mesa = { id: crypto.randomUUID(), companyId, title: '', cwd, agent, sessions: {}, prefs: {}, createdAt: now, updatedAt: now }
+  const m: Mesa = { id: crypto.randomUUID(), companyId, title: '', cwd: repos[0] ?? '', repos, agent, sessions: {}, prefs: { claude: { model: 'auto' }, codex: { model: 'auto' }, local: {} }, createdAt: now, updatedAt: now }
   mesas = [m, ...mesas]
   save()
   emit()
@@ -235,7 +264,15 @@ function apply(ev: Out) {
     }
     if (kind === 'config_option_update') {
       const opts = u.configOptions as ConfigOption[] | undefined
-      if (opts) setAgent(mesa, agent, { config: opts })
+      if (opts) {
+        cacheConfig(agent, opts)
+        setAgent(mesa, agent, { config: opts })
+      }
+      return
+    }
+    if (kind === 'available_commands_update') {
+      const cmds = (u.availableCommands as { name: string; description?: string }[] | undefined) ?? []
+      setAgent(mesa, agent, { commands: cmds.map((c) => ({ name: c.name, description: c.description ?? '' })) })
       return
     }
     if (kind === 'session_info_update') {
@@ -258,6 +295,7 @@ function apply(ev: Out) {
     return
   }
   if (ev.kind === 'response') {
+    if (agent === 'local') queueMicrotask(() => saveLocal(mesa))
     const err = ev.data.error as { message?: string } | undefined
     m.items = m.items.map((x) => (x.role === 'agent' || x.role === 'thought') && x.open && x.agent === agent ? { ...x, open: false } : x)
     if (err) push(mesa, { id: uid(), agent, role: 'note', text: err.message ?? 'o agente falhou nesta mensagem', tone: 'error', at: Date.now() })
@@ -287,11 +325,43 @@ export async function listenOficina() {
   await listen<Out>('oficina', (e) => feed(e.payload))
 }
 
+let localModels: LocalModel[] | null = null
+let localLoading: Promise<LocalModel[]> | null = null
+
+export function loadLocalModels(): Promise<LocalModel[]> {
+  if (localModels) return Promise.resolve(localModels)
+  localLoading ??= (isTauri ? invoke<LocalModel[]>('oficina_local_models') : Promise.resolve([]))
+    .then((l) => {
+      localModels = l
+      emit()
+      return l
+    })
+    .catch(() => {
+      localModels = []
+      return []
+    })
+  return localLoading
+}
+
+export const localList = () => localModels ?? []
+
+export function localConfig(): ConfigOption[] {
+  const list = localList()
+  if (!list.length) return []
+  const k = (n: number | null) => (n ? (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n)) : '?')
+  return [{ id: 'model', name: 'Modelo', category: 'model', currentValue: list[0].name, options: list.map((m) => ({ value: m.name, name: m.name, description: `${m.params ?? ''} · contexto de ${k(m.context)} tokens` })) }]
+}
+
+function saveLocal(mesa: string) {
+  const items = liveOf(mesa).items.filter((x) => x.agent === 'local' && (x.role === 'user' || x.role === 'agent')).slice(-80)
+  localStorage.setItem(`oficina.local.${mesa}`, JSON.stringify(items.map((x) => (x.role === 'agent' ? { ...x, open: false } : x))))
+}
+
 export const oficinaApi = {
   status: () => invoke<{ claude: boolean; codex: boolean; open: string[] }>('oficina_status'),
-  start: (mesa: string, agent: AgentId, cwd: string, resume: string | null, codexHome: string | null) =>
-    invoke<{ agent: unknown; session: { sessionId: string; configOptions?: ConfigOption[] } }>('oficina_start', { mesa, agent, cwd, resume, codexHome }),
-  prompt: (mesa: string, agent: AgentId, text: string) => invoke<number>('oficina_prompt', { mesa, agent, text }),
+  start: (mesa: string, agent: AgentId, cwd: string, dirs: string[], persona: string, resume: string | null, codexHome: string | null) =>
+    invoke<{ agent: unknown; session: { sessionId: string; configOptions?: ConfigOption[] } }>('oficina_start', { mesa, agent, cwd, dirs, persona, resume, codexHome }),
+  prompt: (mesa: string, agent: AgentId, text: string, images: Shot[]) => invoke<number>('oficina_prompt', { mesa, agent, text, images }),
   cancel: (mesa: string, agent: AgentId) => invoke<void>('oficina_cancel', { mesa, agent }),
   config: (mesa: string, agent: AgentId, option: string, value: string) => invoke<unknown>('oficina_config', { mesa, agent, option, value }),
   reply: (mesa: string, agent: AgentId, id: unknown, result: unknown) => invoke<void>('oficina_reply', { mesa, agent, id, result }),
@@ -300,7 +370,22 @@ export const oficinaApi = {
 
 const opening = new Map<string, Promise<void>>()
 
-export function ensureAgent(mesa: Mesa, agent: AgentId, codexHome: string | null): Promise<void> {
+export function deskPlace(mesa: Mesa, fallback: string) {
+  const repos = mesa.repos.length ? mesa.repos : []
+  return { cwd: repos[0] ?? fallback, dirs: repos.slice(1) }
+}
+
+export function personaText() {
+  return localStorage.getItem('oficina.persona') ?? PERSONA
+}
+
+export function ensureAgent(mesa: Mesa, agent: AgentId, codexHome: string | null, fallback: string): Promise<void> {
+  if (agent === 'local') {
+    return loadLocalModels().then((l) => {
+      setAgent(mesa.id, agent, l.length ? { status: 'idle', config: localConfig(), account: 'Ollama · nesta máquina' } : { status: 'error', error: 'o Ollama não está rodando ou não tem modelos' })
+      emit()
+    })
+  }
   const k = `${mesa.id}:${agent}`
   const st = liveOf(mesa.id).agents[agent].status
   if (st !== 'off' && st !== 'error') return opening.get(k) ?? Promise.resolve()
@@ -308,12 +393,15 @@ export function ensureAgent(mesa: Mesa, agent: AgentId, codexHome: string | null
     setAgent(mesa.id, agent, { status: 'opening', action: 'abrindo o agente', error: null })
     emit()
     try {
-      const r = await oficinaApi.start(mesa.id, agent, mesa.cwd, mesa.sessions[agent] ?? null, agent === 'codex' ? codexHome : null)
+      const place = deskPlace(mesa, fallback)
+      const r = await oficinaApi.start(mesa.id, agent, place.cwd, place.dirs, personaText(), mesa.sessions[agent] ?? null, agent === 'codex' ? codexHome : null)
       const sid = r.session.sessionId
       if (mesa.sessions[agent] !== sid) patchMesa(mesa.id, { sessions: { ...mesas.find((x) => x.id === mesa.id)?.sessions, [agent]: sid } })
-      setAgent(mesa.id, agent, { status: 'idle', action: '', config: r.session.configOptions ?? liveOf(mesa.id).agents[agent].config })
-      const prefs = mesa.prefs[agent] ?? {}
-      for (const [opt, val] of Object.entries(prefs)) await oficinaApi.config(mesa.id, agent, opt, val).catch(() => {})
+      const cfg = r.session.configOptions ?? liveOf(mesa.id).agents[agent].config
+      cacheConfig(agent, cfg)
+      setAgent(mesa.id, agent, { status: 'idle', action: '', config: cfg })
+      const prefs = mesas.find((x) => x.id === mesa.id)?.prefs[agent] ?? {}
+      for (const [opt, val] of Object.entries(prefs)) if (val !== 'auto') await oficinaApi.config(mesa.id, agent, opt, val).catch(() => {})
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       setAgent(mesa.id, agent, { status: 'error', error: msg, action: '' })
@@ -327,17 +415,64 @@ export function ensureAgent(mesa: Mesa, agent: AgentId, codexHome: string | null
   return p
 }
 
-export async function send(mesa: Mesa, agent: AgentId, text: string, codexHome: string | null) {
-  push(mesa.id, { id: uid(), agent, role: 'user', text, at: Date.now() })
-  if (!mesa.title) patchMesa(mesa.id, { title: text.split('\n')[0].slice(0, 70) })
+const MODEL_KEY: Record<AgentId, string> = { claude: 'model', codex: 'model', local: 'model' }
+const EFFORT_KEY: Record<AgentId, string> = { claude: 'effort', codex: 'reasoning_effort', local: 'effort' }
+export const effortKey = (agent: AgentId) => EFFORT_KEY[agent]
+
+const RISK = /(segurança|seguranca|vazamento|vaza|tenant|isolamento|multi-?tenant|pagamento|cobran|financeir|dinheiro|saldo|token|senha|credencial|lgpd|auth|permiss[aã]o|webhook|produ[cç][aã]o caiu|incidente)/i
+const BIG = /(arquitet|planej|refator|migra|investig|bug|erro|exce[cç][aã]o|stack ?trace|performance|lent|concorr|race|deadlock|desenh|spec|design|integra|banco de dados|query|sql)/i
+const SMALL = /^(explica|o que [eé]|renomeia|traduz|resume|resumo|ajusta (o )?texto|corrige (o )?typo|mensagem de commit|lista|mostra|qual|como)/i
+
+export type Route = { model: string; effort: string; why: string }
+
+export function route(agent: AgentId, text: string, repos: number): Route {
+  const t = text.trim()
+  const pick = (c: string, x: string, e: string, why: string): Route => ({ model: agent === 'claude' ? c : x, effort: e, why })
+  if (RISK.test(t)) return pick('claude-fable-5-1[1m]', 'gpt-6.1-sol', 'xhigh', 'mexe com risco (segurança, dinheiro ou dado de cliente)')
+  if (BIG.test(t) || t.length > 700 || repos > 1) return pick('opus', 'gpt-6.1-sol', 'high', repos > 1 ? 'envolve mais de um repositório' : 'tarefa de raciocínio pesado')
+  if (SMALL.test(t) && t.length < 220) return pick('haiku', 'gpt-6.1-sol', 'low', 'pedido rápido')
+  return pick('sonnet', 'gpt-6.1-sol', 'medium', 'tarefa do dia a dia')
+}
+
+export async function send(mesa: Mesa, agent: AgentId, text: string, images: Shot[], codexHome: string | null, fallback: string) {
+  push(mesa.id, { id: uid(), agent, role: 'user', text: images.length ? `${text}${text ? '\n' : ''}[${images.length} imagem${images.length > 1 ? 's' : ''}]` : text, at: Date.now() })
+  if (!mesa.title && text) patchMesa(mesa.id, { title: text.split('\n')[0].slice(0, 70) })
   emit()
-  await ensureAgent(mesa, agent, codexHome)
+  await ensureAgent(mesa, agent, codexHome, fallback)
   if (liveOf(mesa.id).agents[agent].status === 'error') return
+  const prefs = mesas.find((x) => x.id === mesa.id)?.prefs[agent] ?? {}
+  if (agent === 'local') {
+    const list = localList()
+    const model = list.find((m) => m.name === prefs.model)?.name ?? list[0]?.name
+    const ctx = list.find((m) => m.name === model)?.context ?? null
+    const history = liveOf(mesa.id).items.filter((x) => x.agent === 'local' && (x.role === 'user' || x.role === 'agent')).map((x) => ({ role: x.role === 'agent' ? 'assistant' : 'user', content: (x as { text: string }).text }))
+    setAgent(mesa.id, agent, { status: 'thinking', action: `carregando ${model}`, since: Date.now() })
+    busy(mesa.id, agent, true)
+    emit()
+    await invoke('oficina_local_chat', { mesa: mesa.id, model, messages: history, persona: personaText(), context: ctx }).catch((e) => {
+      push(mesa.id, { id: uid(), agent, role: 'note', text: e instanceof Error ? e.message : String(e), tone: 'error', at: Date.now() })
+      setAgent(mesa.id, agent, { status: 'idle', since: null })
+      busy(mesa.id, agent, false)
+      emit()
+    })
+    return
+  }
+  if ((prefs.model ?? 'auto') === 'auto') {
+    const r = route(agent, text, mesa.repos.length)
+    const cfg = liveOf(mesa.id).agents[agent].config
+    const match = (id: string, v: string) => cfg.find((c) => c.id === id)?.options.find((o) => o.value === v || o.value.startsWith(`${v}[`))?.value
+    const has = (id: string, v: string) => !!match(id, v)
+    const model = match(MODEL_KEY[agent], r.model)
+    if (model) await oficinaApi.config(mesa.id, agent, MODEL_KEY[agent], model).catch(() => {})
+    if (!prefs[EFFORT_KEY[agent]] && has(EFFORT_KEY[agent], r.effort)) await oficinaApi.config(mesa.id, agent, EFFORT_KEY[agent], r.effort).catch(() => {})
+    const name = cfg.find((c) => c.id === MODEL_KEY[agent])?.options.find((o) => o.value === model)?.name ?? r.model
+    push(mesa.id, { id: uid(), agent, role: 'note', text: `Auto: ${name} · esforço ${prefs[EFFORT_KEY[agent]] ?? r.effort}, porque é ${r.why}`, tone: 'info', at: Date.now() })
+  }
   setAgent(mesa.id, agent, { status: 'thinking', action: 'lendo o pedido', since: Date.now() })
   busy(mesa.id, agent, true)
   emit()
   try {
-    await oficinaApi.prompt(mesa.id, agent, text)
+    await oficinaApi.prompt(mesa.id, agent, text, images)
   } catch (e) {
     push(mesa.id, { id: uid(), agent, role: 'note', text: e instanceof Error ? e.message : String(e), tone: 'error', at: Date.now() })
     setAgent(mesa.id, agent, { status: 'idle', since: null })
@@ -356,20 +491,44 @@ export async function answer(mesa: string, agent: AgentId, itemId: string, optio
   await oficinaApi.reply(mesa, agent, it.rpc, { outcome: optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' } })
 }
 
-export async function setOption(mesa: Mesa, agent: AgentId, option: string, value: string) {
-  patchMesa(mesa.id, { prefs: { ...mesa.prefs, [agent]: { ...(mesa.prefs[agent] ?? {}), [option]: value } } })
+export async function setOption(mesa: Mesa, agent: AgentId, option: string, value: string | null) {
+  const cur = { ...(mesas.find((x) => x.id === mesa.id)?.prefs[agent] ?? {}) }
+  if (value === null) delete cur[option]
+  else cur[option] = value
+  patchMesa(mesa.id, { prefs: { ...mesa.prefs, [agent]: cur } })
   const a = liveOf(mesa.id).agents[agent]
-  setAgent(mesa.id, agent, { config: a.config.map((c) => (c.id === option ? { ...c, currentValue: value } : c)) })
+  if (value && value !== 'auto') setAgent(mesa.id, agent, { config: a.config.map((c) => (c.id === option ? { ...c, currentValue: value } : c)) })
   emit()
-  if (a.status !== 'off' && a.status !== 'error' && a.status !== 'opening') await oficinaApi.config(mesa.id, agent, option, value).catch(() => {})
+  if (agent !== 'local' && value && value !== 'auto' && a.status !== 'off' && a.status !== 'error' && a.status !== 'opening') await oficinaApi.config(mesa.id, agent, option, value).catch(() => {})
+}
+
+export async function setRepos(mesa: Mesa, repos: string[]) {
+  patchMesa(mesa.id, { repos, cwd: repos[0] ?? '' })
+  for (const a of AGENTS) if (liveOf(mesa.id).agents[a].status !== 'off') await closeAgent(mesa.id, a)
+}
+
+export async function freshSession(mesa: Mesa, agent: AgentId) {
+  if (agent === 'local') {
+    localStorage.removeItem(`oficina.local.${mesa.id}`)
+    const m = liveOf(mesa.id)
+    m.items = m.items.filter((x) => x.agent !== 'local')
+  }
+  await closeAgent(mesa.id, agent)
+  const sessions = { ...(mesas.find((x) => x.id === mesa.id)?.sessions ?? {}) }
+  delete sessions[agent]
+  patchMesa(mesa.id, { sessions })
+  setAgent(mesa.id, agent, { usage: null, plan: [], files: [] })
+  push(mesa.id, { id: uid(), agent, role: 'note', text: `Sessão nova do ${AGENT_NAME[agent]}: o contexto começa do zero na próxima mensagem.`, tone: 'info', at: Date.now() })
+  emit()
 }
 
 export async function cancel(mesa: string, agent: AgentId) {
+  if (agent === 'local') return void (await invoke('oficina_local_cancel', { mesa }).catch(() => {}))
   await oficinaApi.cancel(mesa, agent).catch(() => {})
 }
 
 export async function closeAgent(mesa: string, agent: AgentId) {
-  await oficinaApi.close(mesa, agent).catch(() => {})
+  if (agent !== 'local') await oficinaApi.close(mesa, agent).catch(() => {})
   setAgent(mesa, agent, { status: 'off', action: '' })
   busy(mesa, agent, false)
   emit()
