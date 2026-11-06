@@ -6,6 +6,7 @@ mod ideas;
 mod meter;
 mod mood;
 mod notes;
+mod oficina;
 mod radar;
 mod sessions;
 mod work;
@@ -112,6 +113,13 @@ pub fn run() {
             sessions::sessions_read,
             sessions::sessions_resume,
             meter::meter_sample,
+            oficina::oficina_start,
+            oficina::oficina_prompt,
+            oficina::oficina_cancel,
+            oficina::oficina_config,
+            oficina::oficina_reply,
+            oficina::oficina_close,
+            oficina::oficina_status,
             radar::radar_item_set,
             radar::radar_cleanup,
             radar::radar_keywords_list,

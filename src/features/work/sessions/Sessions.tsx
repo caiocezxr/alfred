@@ -274,7 +274,7 @@ function Row({ s, i, pr }: { s: Session; i: number; pr: LivePr | null }) {
   )
 }
 
-function Text({ text }: { text: string }) {
+export function Text({ text }: { text: string }) {
   const parts = text.split(/```/)
   return (
     <>

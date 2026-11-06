@@ -11,6 +11,14 @@ export function RouteIcon({ id }: { id: Route }) {
           <path d="M2.8 9h12.4M9 2.8c2 2 2 10.4 0 12.4M9 2.8c-2 2-2 10.4 0 12.4" />
         </svg>
       )
+    case 'oficina':
+      return (
+        <svg {...S} aria-hidden="true">
+          <path d="M3.2 5.4h11.6v8.4H3.2z" />
+          <path d="M5.8 8.2l1.8 1.6-1.8 1.6M9.6 11.4h2.6" />
+          <path d="M6.2 5.4V3.6h5.6v1.8" />
+        </svg>
+      )
     case 'ideas':
       return (
         <svg {...S} aria-hidden="true">

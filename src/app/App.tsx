@@ -23,6 +23,7 @@ const loaders = {
   work: () => import('../features/work/Work'),
   radar: () => import('../features/radar/Radar'),
   notes: () => import('../features/notes/Notes'),
+  oficina: () => import('../features/oficina/Oficina'),
 }
 const BibleReader = lazy(loaders.bible)
 const Home = lazy(loaders.home)
@@ -32,6 +33,7 @@ const Work = lazy(loaders.work)
 const Island = lazy(() => import('../features/work/Island'))
 const Radar = lazy(loaders.radar)
 const Notes = lazy(loaders.notes)
+const Oficina = lazy(loaders.oficina)
 
 function prefetchRoutes() {
   const queue = [loaders.work, loaders.habits, loaders.notes, loaders.ideas, loaders.radar, loaders.bible]
@@ -188,6 +190,7 @@ export function App() {
           {route === 'ideas' && <Ideas />}
           {route === 'radar' && <Radar />}
           {route === 'notes' && <Notes />}
+          {route === 'oficina' && <Oficina />}
         </Suspense>
       </main>
 
