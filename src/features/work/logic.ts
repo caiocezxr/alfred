@@ -1,5 +1,5 @@
 import { addDays, civil, daysBetween, parseCivil, weekday } from '../../shared/dates.ts'
-import type { ChecklistEntry, Company, DayMark, Kind, Priority, Session, Settings, Stage, Todo, TodoCheck, TodoMode, WorkEvent, WorkItem, WorkState } from './types.ts'
+import type { ChecklistEntry, Company, DayMark, Kind, Priority, Seen, Session, Settings, Stage, Todo, TodoCheck, TodoMode, WorkEvent, WorkItem, WorkState } from './types.ts'
 import { STAGES } from './types.ts'
 
 export type Scope = 'all' | string
@@ -120,9 +120,10 @@ export type Capture = {
   remindTime: string | null
   mustNotForget: boolean
   target: 'todo' | 'work' | null
+  url: string | null
 }
 
-export function matchCompany(token: string, companies: Company[]): Company | null {
+export function matchCompany(token: string, companies: Pick<Company, 'id' | 'name'>[]): Pick<Company, 'id' | 'name'> | null {
   const t = fold(token)
   if (!t) return null
   return (
@@ -143,6 +144,7 @@ export function parseCapture(raw: string, today: string, companies: Company[], f
   let weekdaysOnly = false
   let remindTime: string | null = null
   let mustNotForget = false
+  let url: string | null = null
   let text = ` ${raw.trim()} `
   const take = (re: RegExp) => {
     const m = text.match(re)
@@ -170,6 +172,15 @@ export function parseCapture(raw: string, today: string, companies: Company[], f
   }
   const rest: string[] = []
   for (const tok of text.trim().split(/\s+/).filter(Boolean)) {
+    if (/^https?:\/\/\S+$/i.test(tok)) {
+      const m = matchTicketUrl(tok, companies)
+      if (m) {
+        ticket = m.ticket
+        companyId = m.companyId
+        companyExplicit = true
+      } else url = tok
+      continue
+    }
     const at = tok.match(/^@([\p{L}\d-]+)$/u)
     if (at) {
       const c = matchCompany(at[1], companies)
@@ -226,12 +237,12 @@ export function parseCapture(raw: string, today: string, companies: Company[], f
   }
   if (mode === 'daily') dueDate = null
   if (!mode && dueDate) mode = 'dated'
-  const target = ticket || kind || system ? 'work' : mode || remindTime || mustNotForget ? 'todo' : null
-  return { title: rest.join(' ').trim(), companyId, companyExplicit, ticket, priority, dueDate, kind, system, mode, weekdaysOnly, remindTime, mustNotForget, target }
+  const target = ticket || kind || system || url ? 'work' : mode || remindTime || mustNotForget ? 'todo' : null
+  return { title: rest.join(' ').trim(), companyId, companyExplicit, ticket, priority, dueDate, kind, system, mode, weekdaysOnly, remindTime, mustNotForget, target, url }
 }
 
-export type AlertKind = 'returned' | 'overdue' | 'due_today' | 'validation' | 'waiting' | 'unchecked' | 'close' | 'stale' | 'wip'
-export type AlertAction = 'followup' | 'resume' | 'snooze' | 'due_tomorrow' | 'focus' | 'close' | 'open' | 'show_doing'
+export type AlertKind = 'neglect' | 'returned' | 'sla' | 'overdue' | 'due_today' | 'validation' | 'waiting' | 'unchecked' | 'close' | 'stale' | 'wip'
+export type AlertAction = 'open_company' | 'followup' | 'resume' | 'snooze' | 'due_tomorrow' | 'focus' | 'close' | 'open' | 'show_doing' | 'respond'
 
 export type Alert = {
   id: string
@@ -258,7 +269,12 @@ function lastDeliveryEvent(events: WorkEvent[], itemId: string): WorkEvent | nul
   return null
 }
 
-export function computeAlerts(state: Pick<WorkState, 'items' | 'events' | 'checklist' | 'settings'>, today: string, scope: Scope = 'all'): Alert[] {
+export function computeAlerts(
+  state: Pick<WorkState, 'items' | 'events' | 'checklist' | 'settings'> & { companies?: Company[] },
+  today: string,
+  scope: Scope = 'all',
+  nowMs: number = Date.now(),
+): Alert[] {
   const s: Settings = state.settings
   const out: Alert[] = []
   const items = state.items.filter((i) => inScope(scope, i.companyId) && i.stage !== 'done')
@@ -279,6 +295,21 @@ export function computeAlerts(state: Pick<WorkState, 'items' | 'events' | 'check
           days: d,
         })
       }
+    }
+    const co = state.companies?.find((c) => c.id === i.companyId)
+    const sla = co ? slaFor(i, state.events, co, nowMs) : null
+    if (sla && (sla.status === 'breach' || sla.status === 'risk')) {
+      const left = fmtDur(Math.abs(sla.remainingMs))
+      const what = sla.phase === 'response' ? 'Primeira resposta' : 'Resolução'
+      out.push({
+        ...base,
+        id: `sla:${i.id}`,
+        kind: 'sla',
+        severity: sla.status === 'breach' ? 3 : 2,
+        detail: sla.status === 'breach' ? `${what} do SLA estourou há ${left}` : `${what} do SLA vence em ${left}`,
+        action: sla.phase === 'response' ? { kind: 'respond', label: 'Respondi' } : { kind: 'open', label: 'Abrir' },
+        days: Math.round(-sla.remainingMs / 36e5),
+      })
     }
     const due = dueState(i, today)
     if (due === 'late' && i.dueDate) {
@@ -794,6 +825,7 @@ export type Health = {
   level: 'green' | 'amber' | 'red'
   blockers: Blocker[]
   handled: number
+  done: HandledEntry[]
   total: number
   progress: number
 }
@@ -802,24 +834,34 @@ const isForward = (e: WorkEvent) => e.kind === 'stage' && !!e.fromStage && !!e.t
 
 type HealthInput = Pick<WorkState, 'items' | 'events' | 'checklist' | 'settings' | 'todos' | 'todoChecks'>
 
-export function handledToday(state: Pick<WorkState, 'items' | 'events' | 'todos' | 'todoChecks'>, today: string, scope: Scope = 'all'): number {
+export type HandledEntry = { id: string; title: string; detail: string; itemId: string | null; todoId: string | null; companyId: string }
+
+const HANDLED_VERB: Partial<Record<WorkEvent['kind'], string>> = { followup: 'cobrado', resumed: 'retomado', unblocked: 'desbloqueado' }
+
+export function handledEntries(state: Pick<WorkState, 'items' | 'events' | 'todos' | 'todoChecks'>, today: string, scope: Scope = 'all'): HandledEntry[] {
   const byId = new Map(state.items.map((i) => [i.id, i]))
-  let n = 0
+  const out: HandledEntry[] = []
   for (const e of state.events) {
     if (civilOf(e.at) !== today) continue
     const it = byId.get(e.itemId)
     if (!it || !inScope(scope, it.companyId)) continue
-    if (isForward(e) || e.kind === 'followup' || e.kind === 'resumed' || e.kind === 'unblocked') n++
+    if (isForward(e)) out.push({ id: e.id, title: label(it), detail: `foi para ${STAGE_NAMES[e.toStage!]}`, itemId: it.id, todoId: null, companyId: it.companyId })
+    else if (HANDLED_VERB[e.kind]) out.push({ id: e.id, title: label(it), detail: HANDLED_VERB[e.kind]!, itemId: it.id, todoId: null, companyId: it.companyId })
   }
   const todoById = new Map(state.todos.map((t) => [t.id, t]))
   for (const c of state.todoChecks) {
     const t = todoById.get(c.todoId)
-    if (c.date === today && t && inSpace(scope, t.companyId)) n++
+    if (c.date === today && t && inSpace(scope, t.companyId)) out.push({ id: `chk:${t.id}`, title: t.title, detail: 'feito hoje', itemId: null, todoId: t.id, companyId: t.companyId })
   }
   for (const t of state.todos) {
-    if (t.mode !== 'daily' && t.doneAt && civilOf(t.doneAt) === today && inSpace(scope, t.companyId)) n++
+    if (t.mode !== 'daily' && t.doneAt && civilOf(t.doneAt) === today && inSpace(scope, t.companyId))
+      out.push({ id: `done:${t.id}`, title: t.title, detail: 'concluído hoje', itemId: null, todoId: t.id, companyId: t.companyId })
   }
-  return n
+  return out
+}
+
+export function handledToday(state: Pick<WorkState, 'items' | 'events' | 'todos' | 'todoChecks'>, today: string, scope: Scope = 'all'): number {
+  return handledEntries(state, today, scope).length
 }
 
 export function computeHealth(state: HealthInput, today: string, nowLocal: string, scope: Scope = 'all', alerts?: Alert[]): Health {
@@ -851,10 +893,11 @@ export function computeHealth(state: HealthInput, today: string, nowLocal: strin
     blockers.push({ id: a.id, severity: a.severity as 2 | 3, title: a.title, detail: a.detail, itemId: a.itemId, todoId: null, companyId: a.companyId, alert: a })
   }
   blockers.sort((a, b) => b.severity - a.severity)
-  const handled = handledToday(state, today, scope)
+  const done = handledEntries(state, today, scope)
+  const handled = done.length
   const total = handled + blockers.length
   const level = blockers.some((b) => b.severity === 3) ? 'red' : blockers.length ? 'amber' : 'green'
-  return { level, blockers, handled, total, progress: total === 0 ? 1 : handled / total }
+  return { level, blockers, handled, done, total, progress: total === 0 ? 1 : handled / total }
 }
 
 export function healthLabel(h: Health): string {
@@ -894,14 +937,20 @@ export function dayGrid(days: DayMark[], today: string, greenNow: boolean, weeks
   )
 }
 
-export type PlannedNotice = { key: string; title: string; body: string; itemId: string | null }
+export type PlannedNotice = { key: string; title: string; body: string; itemId: string | null; companyId?: string }
+
+export function inQuiet(hour: number, start: number, end: number): boolean {
+  if (start === end) return false
+  return start < end ? hour >= start && hour < end : hour >= start || hour < end
+}
 
 export function planNotifications(
-  state: Pick<WorkState, 'items' | 'events' | 'checklist' | 'settings' | 'todos' | 'todoChecks' | 'companies'>,
+  state: Pick<WorkState, 'items' | 'events' | 'checklist' | 'settings' | 'todos' | 'todoChecks' | 'companies'> & { seen?: Seen[] },
   now: Date,
   sent: Record<string, string>,
 ): PlannedNotice[] {
   const s = state.settings
+  if (inQuiet(now.getHours(), s.quietStart ?? 20, s.quietEnd ?? 8)) return []
   const nowLocal = localNow(now)
   const time = nowLocal.slice(11, 16)
   const today = civil(now)
@@ -929,6 +978,22 @@ export function planNotifications(
       const late = due.filter((a) => a.late).length
       const head = [due.length - late ? `${due.length - late} com prazo hoje` : '', late ? `${late} ${late === 1 ? 'atrasado' : 'atrasados'}` : ''].filter(Boolean).join(' · ')
       out.push({ key, title: `Prazos: ${head}`, body: due.slice(0, 3).map((a) => a.title).join('\n') + (due.length > 3 ? `\n+${due.length - 3}` : ''), itemId: null })
+    }
+  }
+  if (s.notifyNeglect && state.seen) {
+    for (const n of neglectFor({ ...state, seen: state.seen }, now)) {
+      const name = state.companies.find((c) => c.id === n.companyId)?.name ?? n.companyId
+      const others = n.signals.filter((x) => x.kind !== 'unseen')
+      if (n.unseen) {
+        const key = `neglect:${n.companyId}:${today}`
+        if (!sent[key])
+          out.push({ key, title: `${name}: sem olhar hoje`, body: others.length ? others.map((x) => x.text).join(' · ') : 'Abra para revisar o que está em andamento.', itemId: null, companyId: n.companyId })
+      }
+      const stale = n.signals.find((x) => x.kind === 'stale')
+      if (stale) {
+        const key = `stale:${n.companyId}:${today}`
+        if (!sent[key]) out.push({ key, title: `${name}: ${stale.text}`, body: 'Atualize, cobre ou mova esses itens.', itemId: stale.itemIds[0] ?? null, companyId: n.companyId })
+      }
     }
   }
   if (s.notifyValidation) {
@@ -1085,6 +1150,7 @@ export type Nudge = {
   text: string
   itemIds: string[]
   action: { kind: AlertAction; label: string } | null
+  companyId?: string
 }
 
 export function nudges(alerts: Alert[]): Nudge[] {
@@ -1100,6 +1166,7 @@ export function nudges(alerts: Alert[]): Nudge[] {
     out.push({ id: `group:${kind}`, kind, tone: tone(list[0]), text: text(list.length, list), itemIds: list.map((a) => a.itemId!).filter(Boolean), action: list[0].action ? { kind: list[0].action.kind, label } : null })
   }
   for (const a of by.get('returned') ?? []) out.push(single(a))
+  for (const a of by.get('sla') ?? []) out.push(single(a))
   group('overdue', (n) => `${n} prazos vencidos`, 'Todos para amanhã')
   group('validation', (n, l) => `${n} entregas sem validação há ${Math.min(...l.map((a) => a.days))}+ dias`, 'Cobrei todas')
   group('waiting', (n) => `${n} itens aguardando alguém`, 'Cobrei todos')
@@ -1111,23 +1178,314 @@ export function nudges(alerts: Alert[]): Nudge[] {
   return out
 }
 
-export type WeekScore = { delivered: number; validated: number; done: number; byCompany: Record<string, number> }
+export type WeekStage = 'delivered' | 'validated' | 'done'
+export type WeekScore = {
+  delivered: number
+  validated: number
+  done: number
+  byCompany: Record<string, number>
+  split: Record<string, Record<WeekStage, number>>
+  last: WeekStage | null
+  lastAt: string | null
+}
 
 export function weekScore(state: Pick<WorkState, 'items' | 'events'>, today: string, scope: Scope = 'all'): WeekScore {
   const ws = weekStart(today)
   const company = new Map(state.items.map((i) => [i.id, i.companyId]))
-  const out: WeekScore = { delivered: 0, validated: 0, done: 0, byCompany: {} }
+  const out: WeekScore = { delivered: 0, validated: 0, done: 0, byCompany: {}, split: {}, last: null, lastAt: null }
+  const bump = (co: string, k: WeekStage, at: string) => {
+    out[k]++
+    const sp = (out.split[co] ??= { delivered: 0, validated: 0, done: 0 })
+    sp[k]++
+    if (!out.lastAt || at >= out.lastAt) {
+      out.lastAt = at
+      out.last = k
+    }
+  }
   for (const e of state.events) {
     if (e.kind !== 'stage' || !e.fromStage || !e.toStage || civilOf(e.at) < ws) continue
     const co = company.get(e.itemId)
     if (!co || !inScope(scope, co)) continue
     if (stageIndex(e.toStage) <= stageIndex(e.fromStage)) continue
     if (crossesDelivery(e.fromStage, e.toStage)) {
-      out.delivered++
+      bump(co, 'delivered', e.at)
       out.byCompany[co] = (out.byCompany[co] ?? 0) + 1
     }
-    if (e.toStage === 'validated') out.validated++
-    if (e.toStage === 'done') out.done++
+    if (e.toStage === 'validated') bump(co, 'validated', e.at)
+    if (e.toStage === 'done') bump(co, 'done', e.at)
   }
   return out
+}
+
+export const ticketId = (ticket: string) => ticket.trim().replace(/^#/, '')
+
+export function ticketUrl(item: Pick<WorkItem, 'url' | 'ticket'>, company: Pick<Company, 'ticketUrl'> | null | undefined): string | null {
+  if (item.url) return item.url
+  if (!item.ticket || !company?.ticketUrl) return null
+  return company.ticketUrl.replace('{id}', encodeURIComponent(ticketId(item.ticket)))
+}
+
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
+
+export function matchTicketUrl(url: string, companies: Pick<Company, 'id' | 'ticketUrl'>[]): { companyId: string; ticket: string } | null {
+  for (const c of companies) {
+    if (!c.ticketUrl) continue
+    const [pre, post = ''] = c.ticketUrl.split('{id}')
+    const m = url.match(new RegExp(`^${esc(pre)}([A-Za-z0-9._-]+)${esc(post)}(?:[/?#].*)?$`, 'i'))
+    if (m) return { companyId: c.id, ticket: /^\d+$/.test(m[1]) ? `#${m[1]}` : m[1] }
+  }
+  return null
+}
+
+export type Sla = { phase: 'response' | 'resolution'; targetMs: number; remainingMs: number; status: 'ok' | 'risk' | 'breach' | 'paused' }
+
+const RESPONSE_KINDS = new Set(['stage', 'followup', 'note', 'waiting', 'resumed', 'returned'])
+
+export function slaFor(item: WorkItem, events: WorkEvent[], company: Pick<Company, 'slaResponseMin' | 'slaResolutionMin'>, nowMs: number): Sla | null {
+  if (!item.ticket || item.stage === 'done') return null
+  if (!company.slaResponseMin && !company.slaResolutionMin) return null
+  const start = Date.parse(item.createdAt)
+  const mine = events.filter((e) => e.itemId === item.id).sort((a, b) => a.at.localeCompare(b.at))
+  const pauses: [number, number][] = []
+  let open: number | null = null
+  for (const e of mine) {
+    if (e.kind === 'waiting' && open === null) open = Date.parse(e.at)
+    if ((e.kind === 'unblocked' || e.kind === 'returned' || (e.kind === 'stage' && e.toStage === 'done')) && open !== null) {
+      pauses.push([open, Date.parse(e.at)])
+      open = null
+    }
+  }
+  if (open !== null) pauses.push([open, item.waitingOn ? nowMs : open])
+  const paused = (until: number) => pauses.reduce((t, [a, b]) => t + Math.max(0, Math.min(b, until) - Math.max(a, start)), 0)
+  const responded = mine.some((e) => RESPONSE_KINDS.has(e.kind) && Date.parse(e.at) >= start)
+  let phase: Sla['phase'] | null = null
+  let target = 0
+  if (!responded && company.slaResponseMin) {
+    phase = 'response'
+    target = company.slaResponseMin * 6e4
+  } else if (!isPost(item.stage) && company.slaResolutionMin) {
+    phase = 'resolution'
+    target = company.slaResolutionMin * 6e4
+  }
+  if (!phase) return null
+  const elapsed = nowMs - start - paused(nowMs)
+  const remainingMs = target - elapsed
+  const status: Sla['status'] = item.waitingOn ? 'paused' : remainingMs < 0 ? 'breach' : remainingMs < target * 0.25 ? 'risk' : 'ok'
+  return { phase, targetMs: target, remainingMs, status }
+}
+
+export type HoursRow = { itemId: string; label: string; ticket: string | null; title: string; minutes: number }
+export type HoursCompany = { companyId: string; minutes: number; rows: HoursRow[] }
+export type HoursDay = { date: string; minutes: number; companies: HoursCompany[] }
+export type HoursReport = { days: HoursDay[]; minutes: number; byCompany: Record<string, number> }
+
+export function roundMinutes(min: number, step: number) {
+  if (min <= 0) return 0
+  return step > 0 ? Math.ceil(min / step) * step : min
+}
+
+export function hoursReport(
+  state: Pick<WorkState, 'items' | 'sessions' | 'companies'>,
+  fromDay: string,
+  toDay: string,
+  step: number,
+  scope: Scope,
+  nowMs: number,
+): HoursReport {
+  const byId = new Map(state.items.map((i) => [i.id, i]))
+  const acc = new Map<string, Map<string, number>>()
+  for (let d = fromDay; d <= toDay; d = addDays(d, 1)) acc.set(d, new Map())
+  for (const s of state.sessions) {
+    const it = byId.get(s.itemId)
+    if (!it || !inScope(scope, it.companyId)) continue
+    for (const [day, m] of acc) {
+      const a = parseCivil(day).getTime()
+      const b = parseCivil(addDays(day, 1)).getTime()
+      const ms = Math.max(0, Math.min(s.endedAt ? Date.parse(s.endedAt) : nowMs, b) - Math.max(Date.parse(s.startedAt), a))
+      if (ms) m.set(it.id, (m.get(it.id) ?? 0) + ms)
+    }
+  }
+  const order = new Map(state.companies.map((c, i) => [c.id, i]))
+  const byCompany: Record<string, number> = {}
+  const days: HoursDay[] = []
+  for (const [date, m] of acc) {
+    const cos = new Map<string, HoursCompany>()
+    for (const [itemId, ms] of m) {
+      const it = byId.get(itemId)!
+      const minutes = roundMinutes(Math.round(ms / 6e4), step)
+      if (!minutes) continue
+      const c = cos.get(it.companyId) ?? { companyId: it.companyId, minutes: 0, rows: [] }
+      c.rows.push({ itemId, label: label(it), ticket: it.ticket, title: it.title, minutes })
+      c.minutes += minutes
+      cos.set(it.companyId, c)
+    }
+    const companies = [...cos.values()].sort((a, b) => (order.get(a.companyId) ?? 99) - (order.get(b.companyId) ?? 99))
+    for (const c of companies) {
+      c.rows.sort((a, b) => b.minutes - a.minutes)
+      byCompany[c.companyId] = (byCompany[c.companyId] ?? 0) + c.minutes
+    }
+    days.push({ date, minutes: companies.reduce((t, c) => t + c.minutes, 0), companies })
+  }
+  return { days, minutes: days.reduce((t, d) => t + d.minutes, 0), byCompany }
+}
+
+export const fmtHours = (min: number) => `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}`
+
+const dayLong = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'short' })
+
+export function hoursText(report: HoursReport, companies: Pick<Company, 'id' | 'name'>[]): string {
+  const name = (id: string) => companies.find((c) => c.id === id)?.name ?? id
+  const days = report.days.filter((d) => d.minutes > 0)
+  if (!days.length) return 'Nenhum tempo registrado no período.'
+  const lines: string[] = []
+  for (const d of days) {
+    if (report.days.length > 1 || lines.length) lines.push(`${clean(dayLong.format(parseCivil(d.date)))} — ${fmtHours(d.minutes)}`)
+    for (const c of d.companies) {
+      lines.push(`${report.days.length > 1 ? '  ' : ''}${name(c.companyId)} — ${fmtHours(c.minutes)}`)
+      for (const r of c.rows) lines.push(`${report.days.length > 1 ? '    ' : '  '}• ${r.label} — ${fmtHours(r.minutes)}`)
+    }
+    if (report.days.length > 1) lines.push('')
+  }
+  if (report.days.length > 1) lines.push(`Total — ${fmtHours(report.minutes)}`)
+  else lines.push(`Total — ${fmtHours(report.minutes)}`)
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n')
+}
+
+const csvCell = (v: string) => (/[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
+
+export function hoursCsv(report: HoursReport, companies: Pick<Company, 'id' | 'name'>[]): string {
+  const name = (id: string) => companies.find((c) => c.id === id)?.name ?? id
+  const out = ['data;empresa;chamado;titulo;minutos;horas']
+  for (const d of report.days)
+    for (const c of d.companies)
+      for (const r of c.rows) out.push([d.date, name(c.companyId), r.ticket ?? '', r.title, String(r.minutes), (r.minutes / 60).toFixed(2).replace('.', ',')].map(csvCell).join(';'))
+  return out.join('\n')
+}
+
+export function renderSnippet(body: string, item: WorkItem, company: Pick<Company, 'name' | 'ticketUrl'> | null | undefined, today: string): string {
+  const prazo = item.dueDate ? (item.dueDate === today ? 'hoje' : item.dueDate.split('-').reverse().slice(0, 2).join('/')) : 'o fim do dia'
+  const vars: Record<string, string> = {
+    chamado: item.ticket ?? item.title,
+    titulo: item.title,
+    prazo,
+    solicitante: item.requester ?? '',
+    empresa: company?.name ?? '',
+    link: ticketUrl(item, company) ?? '',
+  }
+  return body.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? vars[k] : m))
+}
+
+export function commitMessage(item: Pick<WorkItem, 'kind' | 'title' | 'ticket'>): string {
+  const type = item.kind === 'bug' ? 'fix' : item.kind === 'feature' ? 'feat' : item.kind === 'melhoria' ? 'refactor' : item.kind === 'chamado' ? 'fix' : 'chore'
+  const title = item.title.charAt(0).toLowerCase() + item.title.slice(1)
+  return `${type}: ${title}${item.ticket ? ` (${item.ticket})` : ''}`
+}
+
+export type SearchHit = { kind: 'item' | 'note' | 'todo'; id: string; itemId: string | null; todoId: string | null; title: string; sub: string; score: number; companyId: string }
+
+export function searchWork(state: Pick<WorkState, 'items' | 'events' | 'todos' | 'companies'>, query: string, limit = 30): SearchHit[] {
+  const terms = fold(query).trim().split(/\s+/).filter(Boolean)
+  if (!terms.length) return []
+  const hit = (hay: string) => terms.every((t) => hay.includes(t))
+  const co = (id: string) => state.companies.find((c) => c.id === id)?.name ?? ''
+  const out: SearchHit[] = []
+  const byId = new Map(state.items.map((i) => [i.id, i]))
+  for (const i of state.items) {
+    const hay = fold([i.ticket ?? '', i.title, i.system ?? '', i.requester ?? '', i.notes].join(' '))
+    if (!hit(hay)) continue
+    const t = i.ticket ? normTicket(i.ticket) : ''
+    const score = (t && terms.some((x) => x.replace(/^#/, '') === t) ? 100 : 0) + (fold(i.title).startsWith(terms[0]) ? 30 : 10) + (i.stage === 'done' ? 0 : 5)
+    out.push({ kind: 'item', id: i.id, itemId: i.id, todoId: null, title: label(i), sub: `${co(i.companyId)} · ${STAGE_NAMES[i.stage]}`, score, companyId: i.companyId })
+  }
+  for (const e of state.events) {
+    if (e.kind !== 'note' || !hit(fold(e.note))) continue
+    const it = byId.get(e.itemId)
+    if (!it) continue
+    out.push({ kind: 'note', id: e.id, itemId: it.id, todoId: null, title: e.note.length > 90 ? `${e.note.slice(0, 90)}…` : e.note, sub: `Anotação em ${label(it)}`, score: 8, companyId: it.companyId })
+  }
+  for (const t of state.todos) {
+    if (!hit(fold(`${t.title} ${t.note}`))) continue
+    out.push({ kind: 'todo', id: t.id, itemId: null, todoId: t.id, title: t.title, sub: `To-do · ${co(t.companyId)}${t.doneAt ? ' · feito' : ''}`, score: t.doneAt ? 4 : 9, companyId: t.companyId })
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, limit)
+}
+
+const STAGE_NAMES: Record<Stage, string> = { todo: 'A fazer', doing: 'Fazendo', delivered: 'Entregue', tested: 'Testado', validated: 'Validado', done: 'Concluído' }
+
+export type GaugeSegment = { id: string; state: 'done' | 'pending' | 'late'; title: string; detail: string; companyId: string | null; itemId: string | null; todoId: string | null }
+
+export function gaugeSegments(health: Health, max = 48): GaugeSegment[] {
+  const done: GaugeSegment[] = health.done.map((d) => ({ id: d.id, state: 'done', title: d.title, detail: d.detail, companyId: d.companyId, itemId: d.itemId, todoId: d.todoId }))
+  const open: GaugeSegment[] = health.blockers.map((b) => ({
+    id: b.id,
+    state: b.severity === 3 ? 'late' : 'pending',
+    title: b.title,
+    detail: b.detail,
+    companyId: b.companyId,
+    itemId: b.itemId,
+    todoId: b.todoId,
+  }))
+  const all = [...done, ...open.filter((x) => x.state === 'pending'), ...open.filter((x) => x.state === 'late')]
+  return all.slice(0, max)
+}
+
+export function healthSummary(h: Health, todos?: Pick<Todo, 'id' | 'remindTime'>[]): string {
+  if (!h.total) return 'Nada para resolver hoje'
+  const head = `${h.handled} de ${h.total} ${h.total === 1 ? 'resolvida' : 'resolvidas'} hoje`
+  const next = h.blockers[0]
+  if (!next) return `${head} · tudo em dia`
+  const time = next.todoId ? todos?.find((t) => t.id === next.todoId)?.remindTime : null
+  return `${head} · ${next.title}${time ? ` (${time})` : ''} pendente${h.blockers.length > 1 ? ` +${h.blockers.length - 1}` : ''}`
+}
+
+export type NeglectKind = 'unseen' | 'stale' | 'overdue' | 'validation'
+export type NeglectSignal = { kind: NeglectKind; count: number; text: string; itemIds: string[] }
+export type CompanyNeglect = { companyId: string; unseen: boolean; signals: NeglectSignal[]; attention: boolean; label: string }
+
+export function neglectFor(
+  state: Pick<WorkState, 'items' | 'events' | 'todos' | 'todoChecks' | 'companies' | 'seen' | 'settings'>,
+  now: Date,
+): CompanyNeglect[] {
+  const today = civil(now)
+  const s = state.settings
+  const lastEvent = new Map<string, string>()
+  for (const e of state.events) if (!lastEvent.has(e.itemId) || e.at > lastEvent.get(e.itemId)!) lastEvent.set(e.itemId, e.at)
+  const out: CompanyNeglect[] = []
+  for (const co of state.companies) {
+    const items = state.items.filter((i) => i.companyId === co.id && i.stage !== 'done')
+    const todos = state.todos.filter((t) => t.companyId === co.id && !t.doneAt)
+    if (!items.length && !todos.length) continue
+    const seen = state.seen.find((x) => x.companyId === co.id)
+    const unseen = isWorkday(today) && now.getHours() >= (s.neglectHour ?? 11) && (!seen || civilOf(seen.seenAt) !== today)
+    const signals: NeglectSignal[] = []
+    if (unseen) signals.push({ kind: 'unseen', count: 1, text: 'sem olhar hoje', itemIds: [] })
+    const days = s.neglectDays ?? 3
+    const stale = items.filter((i) => daysSince(lastEvent.get(i.id) ?? i.updatedAt, today) >= days)
+    if (stale.length) signals.push({ kind: 'stale', count: stale.length, text: `${stale.length} ${stale.length === 1 ? 'item' : 'itens'} sem atualização há ${days}+ dias`, itemIds: stale.map((i) => i.id) })
+    const lateItems = items.filter((i) => dueState(i, today) === 'late')
+    const lateTodos = todos.filter((t) => t.mode === 'dated' && t.dueDate! < today)
+    const late = lateItems.length + lateTodos.length
+    if (late) signals.push({ kind: 'overdue', count: late, text: `${late} ${late === 1 ? 'tarefa atrasada' : 'tarefas atrasadas'}`, itemIds: lateItems.map((i) => i.id) })
+    const val = items.filter((i) => (i.stage === 'delivered' || i.stage === 'tested') && i.deliveredAt && daysSince(i.deliveredAt, today) >= s.validationDays)
+    if (val.length) signals.push({ kind: 'validation', count: val.length, text: `${val.length} ${val.length === 1 ? 'entrega sem validação' : 'entregas sem validação'}`, itemIds: val.map((i) => i.id) })
+    out.push({ companyId: co.id, unseen, signals, attention: signals.length > 0, label: signals.map((x) => x.text).join(' · ') })
+  }
+  return out
+}
+
+export function neglectNudges(list: CompanyNeglect[], companies: Pick<Company, 'id' | 'name'>[]): Nudge[] {
+  return list
+    .filter((n) => n.unseen || n.signals.some((x) => x.kind === 'stale'))
+    .map((n) => {
+      const name = companies.find((c) => c.id === n.companyId)?.name ?? n.companyId
+      return {
+        id: `neglect:${n.companyId}`,
+        kind: 'neglect' as const,
+        tone: 'amber' as const,
+        text: `${name}: ${n.label}`,
+        itemIds: [],
+        action: { kind: 'open_company' as const, label: `Abrir ${name}` },
+        companyId: n.companyId,
+      }
+    })
 }

@@ -2,7 +2,7 @@ import { isPermissionGranted, requestPermission, sendNotification } from '@tauri
 import { civil } from '../../shared/dates'
 import { isTauri } from '../../shared/db/api'
 import { planNotifications, pruneSent } from './logic'
-import { getWork, loadWork, readUi, subscribeWork, syncDay, writeUi } from './store'
+import { getWork, loadWork, readUi, setScope, subscribeWork, syncDay, writeUi } from './store'
 
 const SENT_KEY = 'ps.work.notified.v1'
 
@@ -47,13 +47,29 @@ export async function askPermission(): Promise<Permission> {
   }
 }
 
-async function send(title: string, body: string): Promise<boolean> {
+function focusCompany(companyId?: string) {
+  try {
+    window.focus()
+  } catch {
+    return
+  }
+  if (location.hash !== '#/work') location.hash = '#/work'
+  if (companyId) setScope(companyId)
+}
+
+async function send(title: string, body: string, companyId?: string): Promise<boolean> {
   let p = await permission()
   if (p === 'default' && !readUi().asked) p = await askPermission()
   if (p !== 'granted') return false
   try {
     if (isTauri) sendNotification({ title, body })
-    else new Notification(title, { body, silent: false })
+    else {
+      const n = new Notification(title, { body, silent: false, tag: companyId ? `wk-${companyId}` : undefined })
+      n.onclick = () => {
+        focusCompany(companyId)
+        n.close()
+      }
+    }
     return true
   } catch {
     return false
@@ -78,7 +94,7 @@ async function tick() {
     const today = civil(now)
     let sent = pruneSent(readSent(), today)
     for (const n of planNotifications(st, now, sent)) {
-      const ok = await send(n.title, n.body)
+      const ok = await send(n.title, n.body, n.companyId)
       if (!ok && (await permission()) !== 'granted') break
       sent = { ...sent, [n.key]: today }
     }

@@ -1,12 +1,24 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
 import { CompanyMark, coStyle } from './brand'
 import { Icon } from './icons'
-import { boardColumns, checklistFor, crossesDelivery, dueLabel, dueState, fmtDur, isPost, itemTimeMs, label, parseCapture, pendingChecks, shortDay, type Scope } from './logic'
+import { boardColumns, checklistFor, crossesDelivery, dueLabel, dueState, fmtDur, isPost, itemTimeMs, label, parseCapture, pendingChecks, shortDay, slaFor, ticketUrl, type Scope, type Sla } from './logic'
 import { Roll } from './Roll'
 import {
-  createItem, doMove, openDialog, openItemFrom, readUi, reorderColumn, requestMove, resume, select, setFocus, toggleTimer, useWork, writeUi,
+  createItem, doMove, openDialog, openItemFrom, openTicket, readUi, reorderColumn, requestMove, resume, select, setFocus, toggleTimer, useWork, writeUi,
 } from './store'
 import { NEXT_ACTION, STAGE_LABEL, type Company, type Stage, type WorkItem, type WorkState } from './types'
+
+const EMPTY: Record<Stage, string> = {
+  todo: 'Fila limpa. Capture com / ou cole o link de um chamado.',
+  doing: 'Nada em andamento. Selecione um cartão e aperte E.',
+  delivered: 'Nada esperando teste.',
+  tested: 'Nada esperando validação.',
+  validated: 'Nada para fechar.',
+  done: 'Concluídos da semana aparecem aqui.',
+}
+
+const SLA_LABEL = (s: Sla) =>
+  s.status === 'paused' ? 'SLA pausado' : s.status === 'breach' ? `SLA estourou ${fmtDur(-s.remainingMs)}` : `${s.phase === 'response' ? 'resposta' : 'SLA'} ${fmtDur(s.remainingMs)}`
 
 const reduced = () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
@@ -378,11 +390,14 @@ export function Board({ state, today, scope }: { state: WorkState; today: string
                     selected={selectedId === it.id}
                     live={running === it.id}
                     timeMs={itemTimeMs(state.sessions, it.id, Date.now())}
+                    sla={companies.get(it.companyId) ? slaFor(it, state.events, companies.get(it.companyId)!, Date.now()) : null}
+                    linked={!!ticketUrl(it, companies.get(it.companyId))}
                     onPointerDown={(e) => startDrag(e, it)}
                     suppress={suppress}
                   />,
                 ])}
                 {over && hint!.index >= list.length && placeholder}
+                {list.length === 0 && !over && <p className="wk-col-empty">{EMPTY[c.stage]}</p>}
                 {(c.stage === 'todo' || c.stage === 'doing') && !dragId && <QuickAdd stage={c.stage} state={state} scope={scope} today={today} />}
               </div>
             )}
@@ -401,9 +416,9 @@ function QuickAdd({ stage, state, scope, today }: { stage: 'todo' | 'doing'; sta
   const fallback = scope !== 'all' ? scope : last && ids.includes(last) ? last : ids[0]
   const submit = async () => {
     const q = parseCapture(v, today, state.companies, fallback)
-    if (!q.title) return
+    if (!q.title && !q.ticket) return
     setV('')
-    await createItem({ companyId: q.companyId, title: q.title, ticket: q.ticket, priority: q.priority, dueDate: q.dueDate, kind: q.kind ?? undefined, system: q.system, stage })
+    await createItem({ companyId: q.companyId, title: q.title || q.ticket || 'Chamado', ticket: q.ticket, priority: q.priority, dueDate: q.dueDate, kind: q.kind ?? undefined, system: q.system, url: q.url, stage })
   }
   if (!open)
     return (
@@ -435,7 +450,7 @@ function QuickAdd({ stage, state, scope, today }: { stage: 'todo' | 'doing'; sta
   )
 }
 
-function Card({ item, company, today, note, attachments, pending, totalChecks, celebrating, landed, selected, live, timeMs, onPointerDown, suppress }: {
+function Card({ item, company, today, note, attachments, pending, totalChecks, celebrating, landed, selected, live, timeMs, sla, linked, onPointerDown, suppress }: {
   item: WorkItem
   company?: Company
   today: string
@@ -448,6 +463,8 @@ function Card({ item, company, today, note, attachments, pending, totalChecks, c
   selected: boolean
   live: boolean
   timeMs: number
+  sla: Sla | null
+  linked: boolean
   onPointerDown: (e: RPointerEvent<HTMLElement>) => void
   suppress: React.RefObject<number>
 }) {
@@ -463,6 +480,7 @@ function Card({ item, company, today, note, attachments, pending, totalChecks, c
     <article
       data-card={item.id}
       data-flip={item.id}
+      data-tilt
       className={`wk-card ${celebrating ? 'is-celebrating' : ''} ${landed ? 'is-landed' : ''} ${selected ? 'is-selected' : ''} ${live ? 'is-live' : ''} ${item.focusedAt ? 'is-focus' : ''} ${item.returnOpen ? 'is-returned' : ''} ${item.stage === 'done' ? 'is-done' : ''} ${due === 'late' ? 'is-late' : ''}`}
       style={coStyle(company)}
       role="button"
@@ -480,7 +498,25 @@ function Card({ item, company, today, note, attachments, pending, totalChecks, c
     >
       <div className="wk-card-top">
         <CompanyMark company={company} size={14} />
-        {item.ticket ? <span className="wk-ticket">{item.ticket}</span> : <span className="wk-kind">{item.kind === 'pendencia' ? 'pendência' : item.kind}</span>}
+        {item.ticket ? (
+          linked ? (
+            <button
+              className="wk-ticket is-link"
+              onClick={(e) => {
+                e.stopPropagation()
+                openTicket(item.id)
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              title="Abrir o chamado"
+            >
+              {item.ticket}
+            </button>
+          ) : (
+            <span className="wk-ticket">{item.ticket}</span>
+          )
+        ) : (
+          <span className="wk-kind">{item.kind === 'pendencia' ? 'pendência' : item.kind}</span>
+        )}
         {item.priority !== 'normal' && <span className={`wk-prio is-${item.priority}`} title={item.priority === 'urgente' ? 'Urgente' : 'Alta'} />}
         {live && (
           <span className="wk-live-badge" title="Cronômetro rodando">
@@ -498,6 +534,12 @@ function Card({ item, company, today, note, attachments, pending, totalChecks, c
       <h4 className="wk-card-title">{item.title}</h4>
       {note && item.stage !== 'done' && <p className="wk-card-note">{note.last}</p>}
       <div className="wk-card-meta">
+        {sla && (
+          <span className={`wk-chip is-sla-${sla.status}`} title={sla.phase === 'response' ? 'Prazo de primeira resposta' : 'Prazo de resolução'}>
+            <Icon name="alarm" size={10} />
+            {SLA_LABEL(sla)}
+          </span>
+        )}
         {item.returnOpen ? (
           <span className="wk-chip is-warn">
             <Icon name="back" size={10} />

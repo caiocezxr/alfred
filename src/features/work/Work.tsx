@@ -10,12 +10,12 @@ import { Delivered } from './Delivered'
 import { DialogHost } from './Dialogs'
 import { Drawer } from './Drawer'
 import { Icon } from './icons'
-import { boardColumns, computeAlerts, computeHealth, forgetList, isPost, localNow, moveSelection, nudges, rulerModel, weekScore } from './logic'
+import { boardColumns, computeAlerts, computeHealth, forgetList, isPost, localNow, moveSelection, neglectFor, neglectNudges, nudges, rulerModel, weekScore } from './logic'
 import { startNotifier } from './notify'
 import { Ruler } from './Ruler'
 import {
-  dismissToast, getWork, initScope, loadWork, openDialog, openItemFrom, readUi, requestMove, select, setFocus, setScope, toggleTimer, useWork,
-  writeUi,
+  copyCommit, copyReply, dismissToast, touchCompany, getWork, initScope, loadWork, openDialog, openItemFrom, readUi, requestMove, select, setFocus, setScope, toggleTimer,
+  useWork, writeUi,
 } from './store'
 import { NEXT_ACTION } from './types'
 import './work.css'
@@ -68,6 +68,27 @@ export default function Work() {
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !document.querySelector('.wk-scrim')) {
+        const k = e.key.toLowerCase()
+        if (k === '/' && !e.shiftKey) {
+          e.preventDefault()
+          capture.current?.focus()
+          return
+        }
+        if (k === 'f' && !e.shiftKey) {
+          e.preventDefault()
+          openDialog({ kind: 'search' })
+          return
+        }
+        if (k === 'c' && e.shiftKey) {
+          const id = getWork().openId ?? getWork().selectedId
+          if (id) {
+            e.preventDefault()
+            void copyReply(id)
+          }
+          return
+        }
+      }
       if (e.metaKey || e.ctrlKey || e.altKey) return
       const t = e.target as HTMLElement
       if (t.closest('input, textarea, select, [contenteditable="true"]')) return
@@ -121,6 +142,8 @@ export default function Work() {
         if (item.stage !== 'done') void setFocus(item.id, !item.focusedAt)
       } else if (e.key === 't') {
         if (item.stage !== 'done') void toggleTimer(item.id)
+      } else if (e.key === 'c') {
+        copyCommit(item.id)
       } else if (e.key === 'w') {
         if (item.stage !== 'done') openDialog({ kind: 'wait', itemId: item.id })
       }
@@ -135,10 +158,16 @@ export default function Work() {
     const health = computeHealth(state, today, nowLocal, validScope, alerts)
     const perCompany = state.companies.map((company) => ({ company, health: computeHealth(state, today, nowLocal, company.id) }))
     const forget = forgetList(state.todos, state.todoChecks, today, nowLocal, validScope)
-    return { health, perCompany, forget, nudges: nudges(alerts), ruler: rulerModel(state, today, now, validScope), score: weekScore(state, today, validScope) }
+    const neglect = neglectFor(state, now).filter((n) => n.attention && (validScope === 'all' || n.companyId === validScope))
+    const list = [...neglectNudges(neglect.filter((n) => n.companyId !== validScope), state.companies), ...nudges(alerts)]
+    return { health, perCompany, forget, nudges: list, neglect, ruler: rulerModel(state, today, now, validScope), score: weekScore(state, today, validScope) }
   }, [state, today, nowLocal, validScope, now])
 
   const company = state?.companies.find((c) => c.id === validScope) ?? null
+  const loaded = !!state
+  useEffect(() => {
+    if (loaded && validScope !== 'all') touchCompany(validScope)
+  }, [loaded, validScope])
   const tint = company?.color ?? rootAccent()
   const style = {
     '--wk-tint': tint,
@@ -192,6 +221,12 @@ export default function Work() {
               { id: 'delivered', label: 'Entregues' },
             ]}
           />
+          <button className="wk-tool" onClick={() => openDialog({ kind: 'search' })} aria-label="Buscar" title="Buscar (⌘F)">
+            <Icon name="search" size={15} />
+          </button>
+          <button className="wk-tool" onClick={() => openDialog({ kind: 'hours', range: 'day' })} aria-label="Relatório de horas" title="Horas">
+            <Icon name="hours" size={15} />
+          </button>
           <button className="wk-tool" onClick={() => openDialog({ kind: 'standup' })} aria-label="Daily" title="Gerar a daily">
             <Icon name="text" size={15} />
           </button>
@@ -214,7 +249,15 @@ export default function Work() {
         nudges={derived.nudges}
         forget={forget}
         onOpenHoje={() => setHoje(true)}
+        neglect={derived.neglect}
       />
+
+      <div className="wk-section-label reveal" style={{ ['--i' as string]: 2 }}>
+        <span>{view === 'board' ? 'Quadro' : 'Entregues'}</span>
+        {view === 'board' && <em>{openCount} {openCount === 1 ? 'aberto' : 'abertos'}</em>}
+        <span className="wk-grow" />
+        {view === 'board' && <em className="wk-section-hint">J/K para navegar · E avança · ? atalhos</em>}
+      </div>
 
       <div className="wk-main">
         <div key={view} className={`wk-view is-${view} reveal`} style={{ ['--i' as string]: 2 }}>
@@ -237,7 +280,7 @@ export default function Work() {
                   dismissToast()
                 }}
               >
-                Desfazer
+                {toast.undoLabel ?? 'Desfazer'}
               </button>
             )}
           </div>,

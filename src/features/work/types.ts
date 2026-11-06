@@ -3,7 +3,18 @@ export type Kind = 'chamado' | 'feature' | 'bug' | 'melhoria' | 'pendencia'
 export type Priority = 'normal' | 'alta' | 'urgente'
 export type EventKind = 'created' | 'stage' | 'returned' | 'resumed' | 'waiting' | 'unblocked' | 'followup' | 'note' | 'due'
 
-export type Company = { id: string; name: string; color: string; logo: string | null; sort: number }
+export type Company = {
+  id: string
+  name: string
+  color: string
+  logo: string | null
+  sort: number
+  ticketUrl: string | null
+  slaResponseMin: number | null
+  slaResolutionMin: number | null
+}
+export type Snippet = { id: string; companyId: string; title: string; body: string; isDefault: boolean; sort: number }
+export type SnippetInput = { id?: string | null; companyId: string; title: string; body: string; isDefault?: boolean }
 export type ChecklistEntry = { id: string; companyId: string; label: string; sort: number }
 export type Settings = {
   wipLimit: number
@@ -16,7 +27,14 @@ export type Settings = {
   notifyDue: boolean
   notifyValidation: boolean
   notifyHour: number
+  notifyNeglect: boolean
+  neglectHour: number
+  neglectDays: number
+  quietStart: number
+  quietEnd: number
 }
+
+export type Seen = { companyId: string; seenAt: string }
 
 export type TodoMode = 'daily' | 'fixed' | 'dated'
 export type Todo = {
@@ -112,6 +130,8 @@ export type WorkState = {
   secrets: SecretMeta[]
   days: DayMark[]
   sessions: Session[]
+  snippets: Snippet[]
+  seen: Seen[]
 }
 
 export type ItemChange = { item: WorkItem; events: WorkEvent[]; sessions: Session[] }
@@ -143,7 +163,7 @@ export type ItemPatch = {
   requester?: string | null
 }
 
-export type CompanyPatch = { name?: string; color?: string; logo?: string | null }
+export type CompanyPatch = { name?: string; color?: string; logo?: string | null; ticketUrl?: string | null; slaResponseMin?: number | null; slaResolutionMin?: number | null }
 
 export const STAGES: Stage[] = ['todo', 'doing', 'delivered', 'tested', 'validated', 'done']
 
@@ -197,6 +217,11 @@ export const DEFAULT_SETTINGS: Settings = {
   notifyDue: true,
   notifyValidation: true,
   notifyHour: 9,
+  notifyNeglect: true,
+  neglectHour: 11,
+  neglectDays: 3,
+  quietStart: 20,
+  quietEnd: 8,
 }
 
 export const MODE_LABEL: Record<TodoMode, string> = { daily: 'Diário', fixed: 'Fixo', dated: 'Com prazo' }

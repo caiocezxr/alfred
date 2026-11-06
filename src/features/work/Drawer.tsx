@@ -4,9 +4,9 @@ import { openExternal } from '../../shared/openExternal'
 import { secretsAvailable, workApi } from './api'
 import { CompanyMark, coStyle } from './brand'
 import { Icon, type IconName } from './icons'
-import { checklistFor, civilOf, dueLabel, dueState, fmtClock, fmtDur, isPost, itemTimeMs, pendingChecks, sessionMs, when } from './logic'
+import { checklistFor, civilOf, dueLabel, dueState, fmtClock, fmtDur, isPost, itemTimeMs, pendingChecks, renderSnippet, sessionMs, slaFor, ticketUrl, when } from './logic'
 import {
-  addNote, attach, canMorph, closeItem, deleteNote, deleteSession, detach, followup, openDialog, openItem, requestMove, resume, secretAdd,
+  addNote, attach, canMorph, closeItem, copyCommit, copyReply, respond, deleteNote, deleteSession, detach, followup, openDialog, openItem, requestMove, resume, secretAdd,
   secretDelete, setCheck, setFocus, setWaiting, toast, toggleTimer, updateItem, useWork,
 } from './store'
 import {
@@ -93,8 +93,8 @@ export function Drawer({ state, today }: { state: WorkState; today: string }) {
           </label>
           <InlineField className="wk-dr-ticket" value={item.ticket ?? ''} placeholder="#chamado" label="Código do chamado" onSave={(v) => updateItem(item.id, { ticket: v || null })} />
           <span className="wk-grow" />
-          {item.url && (
-            <button className="btn quiet" onClick={() => void openExternal(item.url!)} title={item.url}>
+          {ticketUrl(item, company) && (
+            <button className="btn quiet" onClick={() => void openExternal(ticketUrl(item, company)!)} title={ticketUrl(item, company)!}>
               <Icon name="link" size={14} />
               Abrir chamado
             </button>
@@ -121,6 +121,7 @@ export function Drawer({ state, today }: { state: WorkState; today: string }) {
               </span>
             )}
             {item.requester && <span className="wk-chip is-quiet">pedido por {item.requester}</span>}
+            {company && <SlaChip item={item} state={state} />}
           </div>
 
           <Stepper item={item} events={events} today={today} />
@@ -163,14 +164,25 @@ export function Drawer({ state, today }: { state: WorkState; today: string }) {
                 Cobrei hoje
               </button>
             )}
+            {item.ticket && company && slaFor(item, state.events, company, Date.now())?.phase === 'response' && (
+              <button className="btn wk-big" onClick={() => void respond(item.id)}>
+                <Icon name="check" size={14} />
+                Respondi
+              </button>
+            )}
             <button className="btn quiet wk-big" onClick={() => openDialog({ kind: 'todo', draft: { title: item.ticket ? `${item.ticket} ${item.title}` : item.title, companyId: item.companyId, mustNotForget: true } })}>
               <Icon name="alarm" size={14} />
               Não posso esquecer
+            </button>
+            <button className="btn quiet wk-big" onClick={() => copyCommit(item.id)} title="Copiar mensagem de commit (C)">
+              <Icon name="copy" size={14} />
+              Commit
             </button>
           </div>
 
           <ChecklistBlock item={item} state={state} />
           <TimeBlock item={item} sessions={state.sessions.filter((x) => x.itemId === item.id)} today={today} />
+          <RepliesBlock item={item} state={state} today={today} />
           <NotesBlock item={item} events={events} today={today} />
           <AttachmentsBlock item={item} attachments={state.attachments.filter((a) => a.itemId === item.id)} />
           <SecretsBlock owner={{ itemId: item.id }} secrets={state.secrets.filter((x) => x.itemId === item.id)} />
@@ -784,6 +796,62 @@ function TimeBlock({ item, sessions, today }: { item: WorkItem; sessions: Sessio
           </li>
         ))}
       </ul>
+    </Block>
+  )
+}
+
+function SlaChip({ item, state }: { item: WorkItem; state: WorkState }) {
+  useSecondTick(false)
+  const company = state.companies.find((c) => c.id === item.companyId)
+  const sla = company ? slaFor(item, state.events, company, Date.now()) : null
+  if (!sla) return null
+  const what = sla.phase === 'response' ? 'Primeira resposta' : 'Resolução'
+  const text = sla.status === 'paused' ? `${what}: SLA pausado (aguardando)` : sla.status === 'breach' ? `${what}: estourou há ${fmtDur(-sla.remainingMs)}` : `${what}: ${fmtDur(sla.remainingMs)} restantes`
+  return (
+    <span className={`wk-chip is-sla-${sla.status}`}>
+      <Icon name="alarm" size={10} />
+      {text}
+    </span>
+  )
+}
+
+function RepliesBlock({ item, state, today }: { item: WorkItem; state: WorkState; today: string }) {
+  const company = state.companies.find((c) => c.id === item.companyId)
+  const list = state.snippets.filter((x) => x.companyId === item.companyId)
+  const [open, setOpen] = useState<string | null>(null)
+  return (
+    <Block
+      title="Respostas rápidas"
+      icon="text"
+      aside={
+        <button className="wk-link" onClick={() => openDialog({ kind: 'settings', tab: 'replies' })}>
+          editar
+        </button>
+      }
+    >
+      {list.length === 0 ? (
+        <p className="wk-muted">Nenhuma resposta para {company?.name ?? 'este espaço'}. Crie em Ajustes › Respostas.</p>
+      ) : (
+        <ul className="wk-replies">
+          {list.map((sn) => {
+            const text = renderSnippet(sn.body, item, company, today)
+            return (
+              <li key={sn.id} className={open === sn.id ? 'is-open' : ''}>
+                <button className="wk-reply-head" onClick={() => setOpen(open === sn.id ? null : sn.id)} aria-expanded={open === sn.id}>
+                  <b>{sn.title}</b>
+                  {sn.isDefault && <span className="wk-chip is-quiet">padrão · ⌘⇧C</span>}
+                  <span className="wk-reply-prev">{text}</span>
+                </button>
+                <button className="btn quiet wk-reply-copy" onClick={() => void copyReply(item.id, sn.id)}>
+                  <Icon name="copy" size={12} />
+                  Copiar
+                </button>
+                {open === sn.id && <p className="wk-reply-full">{text}</p>}
+              </li>
+            )
+          })}
+        </ul>
+      )}
     </Block>
   )
 }

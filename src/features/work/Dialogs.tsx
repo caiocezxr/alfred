@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { addDays, civil } from '../../shared/dates'
-import { CompanyMark } from './brand'
+import { addDays, civil, parseCivil } from '../../shared/dates'
+import { CompanyMark, coStyle } from './brand'
 import { Icon } from './icons'
-import { checklistFor, isPost, label, standup, type Scope } from './logic'
+import { checklistFor, fmtHours, hoursCsv, hoursReport, hoursText, isPost, label, searchWork, standup, weekStart, type Scope, type SearchHit } from './logic'
 import {
-  convertTodo, createTodo, deleteItem, deleteTodo, doMove, giveBack, openDialog, setCheck, setWaiting, toast, todoById, updateTodo, useWork,
-  type Dialog,
+  convertTodo, copyText, createTodo, deleteItem, deleteTodo, doMove, giveBack, openDialog, openItemFrom, readUi, setCheck, setWaiting, toast, todoById,
+  updateTodo, useWork, writeUi, type Dialog,
 } from './store'
 import { MODE_LABEL, PRIORITIES, PRIORITY_LABEL, STAGE_LABEL, type NewTodo, type Priority, type TodoMode, type WorkState } from './types'
 import { WorkSettings } from './WorkSettings'
@@ -68,6 +68,10 @@ function DialogSwitch({ dialog, state, scope }: { dialog: Dialog; state: WorkSta
       return <WorkSettings state={state} tab={dialog.tab} onClose={close} />
     case 'keys':
       return <KeysDialog />
+    case 'hours':
+      return <HoursDialog state={state} scope={scope} initial={dialog.range ?? 'day'} />
+    case 'search':
+      return <SearchDialog state={state} />
   }
 }
 
@@ -478,10 +482,13 @@ const KEYS: [string[], string][] = [
   [['F'], 'Pôr ou tirar do foco'],
   [['T'], 'Começar ou pausar o cronômetro'],
   [['W'], 'Marcar como aguardando'],
-  [['/', 'N'], 'Capturar algo novo'],
+  [['/', 'N', '⌘/'], 'Capturar algo novo'],
   [['0', '1', '2', '3'], 'Todos, Statix, Livelo, Pessoal'],
   [['Esc'], 'Limpar seleção ou fechar'],
   [['Y'], 'Abrir ou fechar Hoje (foco e to-dos)'],
+  [['C'], 'Copiar mensagem de commit do item'],
+  [['⌘', '⇧', 'C'], 'Copiar a resposta padrão do chamado'],
+  [['⌘', 'F'], 'Buscar itens, anotações e to-dos'],
   [['?'], 'Esta lista'],
 ]
 
@@ -507,6 +514,205 @@ function KeysDialog() {
           Entendi
         </button>
       </div>
+    </Modal>
+  )
+}
+
+const fmtDayHead = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
+const fmtDayShort = new Intl.DateTimeFormat('pt-BR', { weekday: 'short', day: 'numeric' })
+
+function HoursDialog({ state, scope, initial }: { state: WorkState; scope: Scope; initial: 'day' | 'week' }) {
+  const today = civil()
+  const [range, setRange] = useState<'day' | 'week'>(initial)
+  const [anchor, setAnchor] = useState(today)
+  const [step, setStepRaw] = useState<number>(() => readUi().hoursStep ?? 15)
+  const setStep = (n: number) => {
+    setStepRaw(n)
+    writeUi({ hoursStep: n })
+  }
+  const from = range === 'day' ? anchor : weekStart(anchor)
+  const to = range === 'day' ? anchor : addDays(from, 6)
+  const report = useMemo(() => hoursReport(state, from, to, step, scope, Date.now()), [state, from, to, step, scope])
+  const name = (id: string) => state.companies.find((c) => c.id === id)
+  const raw = range === 'day' ? fmtDayHead.format(parseCivil(anchor)) : `semana de ${fmtDayHead.format(parseCivil(from)).replace(/^[^,]+, /, '')}`
+  const head = raw.charAt(0).toUpperCase() + raw.slice(1)
+  const coIds = Object.keys(report.byCompany)
+  const download = () => {
+    const blob = new Blob([hoursCsv(report, state.companies)], { type: 'text/csv;charset=utf-8' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `horas-${from}${from !== to ? `-a-${to}` : ''}.csv`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+  }
+  return (
+    <Modal label="Relatório de horas" onClose={close} className="is-hours">
+      <header className="wk-hours-head">
+        <h2 className="display">Horas</h2>
+        <span className="wk-grow" />
+        <div className="wk-seg-mini" role="tablist" aria-label="Período">
+          <button role="tab" aria-selected={range === 'day'} className={range === 'day' ? 'is-on' : ''} onClick={() => setRange('day')}>
+            Dia
+          </button>
+          <button role="tab" aria-selected={range === 'week'} className={range === 'week' ? 'is-on' : ''} onClick={() => setRange('week')}>
+            Semana
+          </button>
+        </div>
+      </header>
+      <div className="wk-hours-nav">
+        <button className="wk-icon-btn" onClick={() => setAnchor(addDays(anchor, range === 'day' ? -1 : -7))} aria-label="Anterior">
+          <Icon name="back" size={13} />
+        </button>
+        <b>{head}</b>
+        <button className="wk-icon-btn" onClick={() => setAnchor(addDays(anchor, range === 'day' ? 1 : 7))} disabled={to >= today} aria-label="Próximo">
+          <Icon name="arrow" size={13} />
+        </button>
+        <span className="wk-grow" />
+        <span className="wk-muted">Arredondar</span>
+        <div className="wk-seg-mini" role="radiogroup" aria-label="Arredondamento">
+          {[0, 15, 30].map((n) => (
+            <button key={n} role="radio" aria-checked={step === n} className={step === n ? 'is-on' : ''} onClick={() => setStep(n)}>
+              {n ? `${n} min` : 'exato'}
+            </button>
+          ))}
+        </div>
+      </div>
+      {report.minutes === 0 ? (
+        <p className="wk-hours-empty">Nenhum tempo contado {range === 'day' ? 'neste dia' : 'nesta semana'}. Aperte T num cartão ou o play em Próximo para contar.</p>
+      ) : range === 'day' ? (
+        <div className="wk-hours-day">
+          {report.days[0].companies.map((c) => (
+            <section key={c.companyId} style={coStyle(name(c.companyId))}>
+              <h3>
+                <CompanyMark company={name(c.companyId)} size={14} />
+                {name(c.companyId)?.name}
+                <span className="wk-mono">{fmtHours(c.minutes)}</span>
+              </h3>
+              <ul>
+                {c.rows.map((r) => (
+                  <li key={r.itemId}>
+                    <span>{r.label}</span>
+                    <span className="wk-mono">{fmtHours(r.minutes)}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <table className="wk-hours-week">
+          <thead>
+            <tr>
+              <th />
+              {coIds.map((id) => (
+                <th key={id} style={coStyle(name(id))}>
+                  {name(id)?.name}
+                </th>
+              ))}
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.days.map((d) => (
+              <tr key={d.date} className={d.minutes ? '' : 'is-empty'}>
+                <td>{fmtDayShort.format(parseCivil(d.date)).replace('.', '')}</td>
+                {coIds.map((id) => (
+                  <td key={id} className="wk-mono">
+                    {(() => {
+                      const m = d.companies.find((c) => c.companyId === id)?.minutes ?? 0
+                      return m ? fmtHours(m) : '—'
+                    })()}
+                  </td>
+                ))}
+                <td className="wk-mono">{d.minutes ? fmtHours(d.minutes) : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <footer className="wk-hours-foot">
+        <span>
+          Total <b className="wk-mono">{fmtHours(report.minutes)}</b>
+        </span>
+        <span className="wk-grow" />
+        <button className="btn quiet" onClick={download} disabled={!report.minutes}>
+          Baixar CSV
+        </button>
+        <button className="btn quiet" onClick={() => void copyText(hoursCsv(report, state.companies), 'CSV')} disabled={!report.minutes}>
+          Copiar CSV
+        </button>
+        <button className="btn primary" data-autofocus onClick={() => void copyText(hoursText(report, state.companies), 'Relatório de horas')} disabled={!report.minutes}>
+          <Icon name="copy" size={14} />
+          Copiar para enviar
+        </button>
+      </footer>
+    </Modal>
+  )
+}
+
+const KIND_LABEL_SEARCH: Record<SearchHit['kind'], string> = { item: 'Itens', note: 'Anotações', todo: 'To-dos' }
+
+function SearchDialog({ state }: { state: WorkState }) {
+  const [q, setQ] = useState('')
+  const [active, setActive] = useState(0)
+  const hits = useMemo(() => searchWork(state, q), [state, q])
+  const list = useRef<HTMLUListElement>(null)
+  useEffect(() => setActive(0), [q])
+  useEffect(() => {
+    list.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' })
+  }, [active])
+  const go = (h: SearchHit) => {
+    close()
+    if (h.todoId) return setTimeout(() => openDialog({ kind: 'todo', todoId: h.todoId! }), 0)
+    if (h.itemId) openItemFrom(h.itemId, document.querySelector<HTMLElement>(`[data-card="${h.itemId}"]`))
+  }
+  const companies = new Map(state.companies.map((c) => [c.id, c]))
+  let lastKind: string | null = null
+  return (
+    <Modal label="Buscar" onClose={close} className="is-search">
+      <div className="wk-search-in">
+        <Icon name="search" size={16} />
+        <input
+          data-autofocus
+          value={q}
+          placeholder="Buscar chamados, títulos, anotações, to-dos…"
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault()
+              setActive((a) => Math.min(hits.length - 1, a + 1))
+            }
+            if (e.key === 'ArrowUp') {
+              e.preventDefault()
+              setActive((a) => Math.max(0, a - 1))
+            }
+            if (e.key === 'Enter' && hits[active]) go(hits[active])
+          }}
+          aria-label="Buscar"
+        />
+        <kbd>esc</kbd>
+      </div>
+      {q.trim() && (
+        <ul className="wk-search-list" ref={list} role="listbox">
+          {hits.length === 0 && <li className="wk-search-empty">Nada encontrado para “{q}”.</li>}
+          {hits.map((h, i) => {
+            const head = h.kind !== lastKind ? KIND_LABEL_SEARCH[h.kind] : null
+            lastKind = h.kind
+            return (
+              <li key={`${h.kind}${h.id}`} role="option" aria-selected={i === active}>
+                {head && <span className="wk-search-group">{head}</span>}
+                <button className={`wk-search-hit ${i === active ? 'is-active' : ''}`} data-active={i === active} onMouseEnter={() => setActive(i)} onClick={() => go(h)} style={coStyle(companies.get(h.companyId))}>
+                  <CompanyMark company={companies.get(h.companyId)} size={14} />
+                  <span>
+                    <b>{h.title}</b>
+                    <em>{h.sub}</em>
+                  </span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
     </Modal>
   )
 }

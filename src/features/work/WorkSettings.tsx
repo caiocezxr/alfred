@@ -6,12 +6,12 @@ import { Icon } from './icons'
 import { checklistFor } from './logic'
 import { askPermission, permission, testNotification, type Permission } from './notify'
 import {
-  checklistAdd, checklistRemove, checklistRename, checklistReorder, companyCreate, companyDelete, companyUpdate, readUi, saveSettings, toast,
-  writeUi,
+  checklistAdd, checklistRemove, checklistRename, checklistReorder, companyCreate, companyDelete, companyUpdate, readUi, saveSettings, snippetDelete,
+  snippetSave, toast, writeUi,
 } from './store'
-import type { Company, Settings, WorkState } from './types'
+import type { Company, Settings, Snippet, WorkState } from './types'
 
-type Tab = 'alerts' | 'notify' | 'companies' | 'checklist'
+type Tab = 'alerts' | 'notify' | 'companies' | 'checklist' | 'tickets' | 'replies'
 
 export function WorkSettings({ state, tab: initial, onClose }: { state: WorkState; tab?: Tab; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>(initial ?? 'alerts')
@@ -20,6 +20,8 @@ export function WorkSettings({ state, tab: initial, onClose }: { state: WorkStat
     { id: 'notify', label: 'Notificações' },
     { id: 'companies', label: 'Espaços' },
     { id: 'checklist', label: 'Checklist' },
+    { id: 'tickets', label: 'Chamados' },
+    { id: 'replies', label: 'Respostas' },
   ]
   return (
     <Modal label="Ajustes da Workstation" onClose={onClose} className="is-settings">
@@ -41,6 +43,8 @@ export function WorkSettings({ state, tab: initial, onClose }: { state: WorkStat
         {tab === 'notify' && <NotifyTab settings={state.settings} />}
         {tab === 'companies' && <CompaniesTab state={state} />}
         {tab === 'checklist' && <ChecklistTab state={state} />}
+        {tab === 'tickets' && <TicketsTab state={state} />}
+        {tab === 'replies' && <RepliesTab state={state} />}
       </div>
     </Modal>
   )
@@ -128,6 +132,16 @@ function NotifyTab({ settings }: { settings: Settings }) {
       <Toggle on={settings.notifyReminders} onChange={(v) => set({ notifyReminders: v })} label="Lembretes de to-dos" hint="Na hora marcada, incluindo os “não pode esquecer”" />
       <Toggle on={settings.notifyDue} onChange={(v) => set({ notifyDue: v })} label="Prazos do dia" hint="Um aviso de manhã com o que vence hoje e o que atrasou" />
       <Toggle on={settings.notifyValidation} onChange={(v) => set({ notifyValidation: v })} label="Cobrar validação" hint="Um aviso de manhã com entregas paradas sem validação" />
+      <Toggle
+        on={settings.notifyNeglect}
+        onChange={(v) => set({ notifyNeglect: v })}
+        label="Empresa sem olhar"
+        hint={`Um aviso por empresa se você não abriu nada dela até as ${String(settings.neglectHour).padStart(2, '0')}h (dias úteis), e outro para itens parados`}
+      />
+      <NumberRow label="Hora do aviso de abandono" hint={`A partir das ${String(settings.neglectHour).padStart(2, '0')}h`} value={settings.neglectHour} min={0} max={23} onChange={(n) => set({ neglectHour: n })} />
+      <NumberRow label="Item parado" hint={`Sem nenhuma atualização há ${settings.neglectDays} ${settings.neglectDays === 1 ? 'dia' : 'dias'}`} value={settings.neglectDays} min={1} max={60} onChange={(n) => set({ neglectDays: n })} />
+      <NumberRow label="Silêncio a partir de" hint={`Nada de notificação das ${String(settings.quietStart).padStart(2, '0')}h às ${String(settings.quietEnd).padStart(2, '0')}h`} value={settings.quietStart} min={0} max={23} onChange={(n) => set({ quietStart: n })} />
+      <NumberRow label="Silêncio até" hint="Quando as notificações voltam" value={settings.quietEnd} min={0} max={23} onChange={(n) => set({ quietEnd: n })} />
       <NumberRow label="Hora do aviso da manhã" hint={`Prazos e validações a partir das ${String(settings.notifyHour).padStart(2, '0')}h`} value={settings.notifyHour} min={0} max={23} onChange={(n) => set({ notifyHour: n })} />
       <Toggle
         on={sound}
@@ -292,5 +306,140 @@ function ChecklistEditRow({ id, label, first, last, onUp, onDown }: { id: string
         <Icon name="trash" size={13} />
       </button>
     </li>
+  )
+}
+
+const toHours = (m: number | null) => (m == null ? '' : String(Math.round((m / 60) * 100) / 100).replace('.', ','))
+const fromHours = (v: string) => {
+  const n = Number(v.replace(',', '.'))
+  return v.trim() === '' || !Number.isFinite(n) || n <= 0 ? null : Math.round(n * 60)
+}
+
+function TicketRow({ c }: { c: Company }) {
+  const [url, setUrl] = useState(c.ticketUrl ?? '')
+  const [resp, setResp] = useState(toHours(c.slaResponseMin))
+  const [res, setRes] = useState(toHours(c.slaResolutionMin))
+  useEffect(() => {
+    setUrl(c.ticketUrl ?? '')
+    setResp(toHours(c.slaResponseMin))
+    setRes(toHours(c.slaResolutionMin))
+  }, [c.ticketUrl, c.slaResponseMin, c.slaResolutionMin])
+  return (
+    <li className="wk-tk-row">
+      <span className="wk-tk-name">
+        <CompanyMark company={c} size={16} />
+        {c.name}
+      </span>
+      <label className="wk-tk-url">
+        <span>Link do chamado</span>
+        <input
+          className="field"
+          value={url}
+          placeholder="https://empresa.zendesk.com/agent/tickets/{id}"
+          onChange={(e) => setUrl(e.target.value)}
+          onBlur={() => (url.trim() || null) !== c.ticketUrl && void companyUpdate(c.id, { ticketUrl: url.trim() || null })}
+        />
+      </label>
+      <label>
+        <span>1ª resposta (h)</span>
+        <input className="field" inputMode="decimal" value={resp} placeholder="—" onChange={(e) => setResp(e.target.value)} onBlur={() => fromHours(resp) !== c.slaResponseMin && void companyUpdate(c.id, { slaResponseMin: fromHours(resp) })} />
+      </label>
+      <label>
+        <span>Resolução (h)</span>
+        <input className="field" inputMode="decimal" value={res} placeholder="—" onChange={(e) => setRes(e.target.value)} onBlur={() => fromHours(res) !== c.slaResolutionMin && void companyUpdate(c.id, { slaResolutionMin: fromHours(res) })} />
+      </label>
+    </li>
+  )
+}
+
+function TicketsTab({ state }: { state: WorkState }) {
+  return (
+    <div className="wk-set-list">
+      <p className="wk-muted">
+        Use <b>{'{id}'}</b> onde entra o número. Com o link configurado, os códigos viram clicáveis e colar a URL de um chamado na captura já cria o item no espaço certo. O SLA conta em horas corridas desde a criação e pausa enquanto o item está aguardando alguém.
+      </p>
+      <ul className="wk-tk-list">
+        {state.companies.map((c) => (
+          <TicketRow key={c.id} c={c} />
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function SnippetEditor({ sn, companyId, onDone }: { sn?: Snippet; companyId: string; onDone?: () => void }) {
+  const [title, setTitle] = useState(sn?.title ?? '')
+  const [body, setBody] = useState(sn?.body ?? '')
+  const [def, setDef] = useState(sn?.isDefault ?? false)
+  const [confirm, setConfirm] = useState(false)
+  useEffect(() => {
+    if (!sn) return
+    setTitle(sn.title)
+    setBody(sn.body)
+    setDef(sn.isDefault)
+  }, [sn?.title, sn?.body, sn?.isDefault])
+  const dirty = !sn || title !== sn.title || body !== sn.body || def !== sn.isDefault
+  return (
+    <li className="wk-sn">
+      <div className="wk-sn-head">
+        <input className="field" value={title} placeholder="Título (ex.: Recebido)" onChange={(e) => setTitle(e.target.value)} aria-label="Título da resposta" />
+        <label className="wk-inline-check">
+          <input type="checkbox" checked={def} onChange={(e) => setDef(e.target.checked)} />
+          padrão
+        </label>
+        {sn && (
+          <button className={`wk-icon-btn ${confirm ? 'is-confirm' : ''}`} onClick={() => (confirm ? void snippetDelete(sn.id) : setConfirm(true))} onBlur={() => setConfirm(false)} aria-label="Excluir resposta">
+            {confirm ? 'Excluir?' : <Icon name="trash" size={13} />}
+          </button>
+        )}
+      </div>
+      <textarea className="field" rows={3} value={body} placeholder="Olá! Recebi o {chamado}…" onChange={(e) => setBody(e.target.value)} aria-label="Texto da resposta" />
+      {dirty && (
+        <div className="wk-row-end">
+          <button
+            className="btn primary"
+            disabled={!title.trim() || !body.trim()}
+            onClick={async () => {
+              if (await snippetSave({ id: sn?.id ?? null, companyId, title, body, isDefault: def })) {
+                if (!sn) {
+                  setTitle('')
+                  setBody('')
+                  setDef(false)
+                }
+                onDone?.()
+              }
+            }}
+          >
+            {sn ? 'Salvar' : 'Adicionar'}
+          </button>
+        </div>
+      )}
+    </li>
+  )
+}
+
+function RepliesTab({ state }: { state: WorkState }) {
+  const [co, setCo] = useState(state.companies[0]?.id ?? '')
+  const list = state.snippets.filter((x) => x.companyId === co)
+  return (
+    <div className="wk-set-list">
+      <div className="wk-chips-pick">
+        {state.companies.map((c) => (
+          <button key={c.id} className={`wk-chip-btn ${co === c.id ? 'is-on' : ''}`} onClick={() => setCo(c.id)} aria-pressed={co === c.id}>
+            <CompanyMark company={c} size={13} />
+            {c.name}
+          </button>
+        ))}
+      </div>
+      <p className="wk-muted">
+        Variáveis: <b>{'{chamado}'}</b> <b>{'{titulo}'}</b> <b>{'{prazo}'}</b> <b>{'{solicitante}'}</b> <b>{'{empresa}'}</b> <b>{'{link}'}</b>. A padrão é copiada com ⌘⇧C no cartão selecionado.
+      </p>
+      <ul className="wk-sn-list">
+        {list.map((sn) => (
+          <SnippetEditor key={sn.id} sn={sn} companyId={co} />
+        ))}
+        <SnippetEditor key={`new-${co}`} companyId={co} />
+      </ul>
+    </div>
   )
 }

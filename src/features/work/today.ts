@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { civil } from '../../shared/dates'
-import { computeHealth, dueState, forgetList, healthLabel, label, localNow, todayTodos } from './logic'
+import { computeHealth, dueState, forgetList, healthLabel, label, localNow, neglectFor, todayTodos, type CompanyNeglect } from './logic'
 import { startNotifier } from './notify'
 import { loadWork, openItem, toggleTodo, useWork } from './store'
 
@@ -93,4 +93,19 @@ export { toggleTodo }
 
 export function openWorkItem(id: string) {
   openItem(id)
+}
+
+export type Neglect = { loaded: boolean; list: CompanyNeglect[]; byCompany: Record<string, CompanyNeglect> }
+
+export function useNeglect(): Neglect {
+  const { state } = useWork()
+  const tick = useMinute()
+  useEffect(() => {
+    void loadWork()
+  }, [])
+  return useMemo(() => {
+    if (!state) return { loaded: false, list: [], byCompany: {} }
+    const list = neglectFor(state, new Date(tick)).filter((n) => n.attention)
+    return { loaded: true, list, byCompany: Object.fromEntries(list.map((n) => [n.companyId, n])) }
+  }, [state, tick])
 }

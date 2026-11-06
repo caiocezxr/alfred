@@ -23,6 +23,30 @@ pub struct Company {
     color: String,
     logo: Option<String>,
     sort: f64,
+    ticket_url: Option<String>,
+    sla_response_min: Option<i64>,
+    sla_resolution_min: Option<i64>,
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Snippet {
+    pub id: String,
+    pub company_id: String,
+    pub title: String,
+    pub body: String,
+    pub is_default: bool,
+    pub sort: f64,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SnippetInput {
+    pub id: Option<String>,
+    pub company_id: String,
+    pub title: String,
+    pub body: String,
+    pub is_default: Option<bool>,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -47,6 +71,39 @@ pub struct Settings {
     pub notify_due: bool,
     pub notify_validation: bool,
     pub notify_hour: i64,
+    #[serde(default = "yes")]
+    pub notify_neglect: bool,
+    #[serde(default = "eleven")]
+    pub neglect_hour: i64,
+    #[serde(default = "three")]
+    pub neglect_days: i64,
+    #[serde(default = "twenty")]
+    pub quiet_start: i64,
+    #[serde(default = "eight")]
+    pub quiet_end: i64,
+}
+
+fn yes() -> bool {
+    true
+}
+fn eleven() -> i64 {
+    11
+}
+fn three() -> i64 {
+    3
+}
+fn twenty() -> i64 {
+    20
+}
+fn eight() -> i64 {
+    8
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Seen {
+    pub company_id: String,
+    pub seen_at: String,
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -110,6 +167,8 @@ pub struct WorkState {
     secrets: Vec<SecretMeta>,
     days: Vec<DayMark>,
     sessions: Vec<Session>,
+    snippets: Vec<Snippet>,
+    seen: Vec<Seen>,
 }
 
 #[derive(Serialize, Debug)]
@@ -179,6 +238,12 @@ pub struct CompanyPatch {
     pub color: Option<String>,
     #[serde(default, with = "double_option")]
     pub logo: Option<Option<String>>,
+    #[serde(default, with = "double_option")]
+    pub ticket_url: Option<Option<String>>,
+    #[serde(default, with = "double_option")]
+    pub sla_response_min: Option<Option<i64>>,
+    #[serde(default, with = "double_option")]
+    pub sla_resolution_min: Option<Option<i64>>,
 }
 
 mod double_option {
@@ -376,10 +441,8 @@ fn pending_count(c: &Connection, item: &Item) -> Res<i64> {
 
 pub fn load(c: &Connection) -> Res<WorkState> {
     let companies = {
-        let mut st = db(c.prepare("SELECT id, name, color, logo, sort FROM work_companies ORDER BY sort, name"))?;
-        db(st
-            .query_map([], |r| Ok(Company { id: r.get(0)?, name: r.get(1)?, color: r.get(2)?, logo: r.get(3)?, sort: r.get(4)? }))
-            .and_then(|m| m.collect()))?
+        let mut st = db(c.prepare(&format!("SELECT {COMPANY_COLS} FROM work_companies ORDER BY sort, name")))?;
+        db(st.query_map([], company_from).and_then(|m| m.collect()))?
     };
     let checklist = list_checklist(c)?;
     let mut items: Vec<Item> = {
@@ -418,6 +481,8 @@ pub fn load(c: &Connection) -> Res<WorkState> {
         secrets: list_secrets(c)?,
         days: list_days(c)?,
         sessions: list_sessions(c, None)?,
+        snippets: list_snippets(c)?,
+        seen: list_seen(c)?,
     })
 }
 
@@ -780,12 +845,45 @@ pub fn checklist_reorder(c: &mut Connection, company_id: &str, ids: &[String]) -
     list_checklist(c)
 }
 
-fn get_company(c: &Connection, id: &str) -> Res<Company> {
-    db(c.query_row("SELECT id, name, color, logo, sort FROM work_companies WHERE id = ?1", params![id], |r| {
-        Ok(Company { id: r.get(0)?, name: r.get(1)?, color: r.get(2)?, logo: r.get(3)?, sort: r.get(4)? })
+const COMPANY_COLS: &str = "id, name, color, logo, sort, ticket_url, sla_response_min, sla_resolution_min";
+
+fn company_from(r: &Row) -> rusqlite::Result<Company> {
+    Ok(Company {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        color: r.get(2)?,
+        logo: r.get(3)?,
+        sort: r.get(4)?,
+        ticket_url: r.get(5)?,
+        sla_response_min: r.get(6)?,
+        sla_resolution_min: r.get(7)?,
     })
-    .optional())?
-    .ok_or_else(|| "empresa não encontrada".into())
+}
+
+fn get_company(c: &Connection, id: &str) -> Res<Company> {
+    db(c.query_row(&format!("SELECT {COMPANY_COLS} FROM work_companies WHERE id = ?1"), params![id], company_from).optional())?
+        .ok_or_else(|| "empresa não encontrada".into())
+}
+
+fn check_ticket_url(u: Option<String>) -> Res<Option<String>> {
+    match u.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()) {
+        None => Ok(None),
+        Some(v) => {
+            let l = v.to_lowercase();
+            if !(l.starts_with("https://") || l.starts_with("http://")) || !v.contains("{id}") || v.len() > 500 || v.chars().any(char::is_whitespace) {
+                return Err("o link do chamado precisa começar com http(s):// e ter {id} no lugar do número".into());
+            }
+            Ok(Some(v))
+        }
+    }
+}
+
+fn check_sla(v: Option<i64>) -> Res<Option<i64>> {
+    match v {
+        None => Ok(None),
+        Some(m) if (1..=525_600).contains(&m) => Ok(Some(m)),
+        Some(_) => Err("prazo de SLA inválido".into()),
+    }
 }
 
 fn check_logo(logo: Option<String>) -> Res<Option<String>> {
@@ -832,6 +930,15 @@ pub fn company_update(c: &Connection, id: &str, p: CompanyPatch) -> Res<Company>
     if let Some(l) = p.logo {
         db(c.execute("UPDATE work_companies SET logo = ?2 WHERE id = ?1", params![id, check_logo(l)?]))?;
     }
+    if let Some(u) = p.ticket_url {
+        db(c.execute("UPDATE work_companies SET ticket_url = ?2 WHERE id = ?1", params![id, check_ticket_url(u)?]))?;
+    }
+    if let Some(v) = p.sla_response_min {
+        db(c.execute("UPDATE work_companies SET sla_response_min = ?2 WHERE id = ?1", params![id, check_sla(v)?]))?;
+    }
+    if let Some(v) = p.sla_resolution_min {
+        db(c.execute("UPDATE work_companies SET sla_resolution_min = ?2 WHERE id = ?1", params![id, check_sla(v)?]))?;
+    }
     db(c.execute(&format!("UPDATE work_companies SET updated_at = {NOW} WHERE id = ?1"), params![id]))?;
     get_company(c, id)
 }
@@ -863,7 +970,8 @@ pub fn company_delete(c: &Connection, vault: &dyn Vault, id: &str) -> Res<()> {
 pub fn get_settings(c: &Connection) -> Res<Settings> {
     db(c.query_row(
         "SELECT wip_limit, validation_days, waiting_days, stale_days, return_days, close_days,
-                notify_reminders, notify_due, notify_validation, notify_hour FROM work_settings WHERE id = 1",
+                notify_reminders, notify_due, notify_validation, notify_hour, notify_neglect, neglect_hour, neglect_days,
+                quiet_start, quiet_end FROM work_settings WHERE id = 1",
         [],
         |r| {
             Ok(Settings {
@@ -877,6 +985,11 @@ pub fn get_settings(c: &Connection) -> Res<Settings> {
                 notify_due: r.get(7)?,
                 notify_validation: r.get(8)?,
                 notify_hour: r.get(9)?,
+                notify_neglect: r.get(10)?,
+                neglect_hour: r.get(11)?,
+                neglect_days: r.get(12)?,
+                quiet_start: r.get(13)?,
+                quiet_end: r.get(14)?,
             })
         },
     ))
@@ -894,14 +1007,18 @@ pub fn set_settings(c: &Connection, s: Settings) -> Res<Settings> {
     if !(1..=60).contains(&s.stale_days) {
         return Err("os dias parado vão de 1 a 60".into());
     }
-    if !(0..=23).contains(&s.notify_hour) {
-        return Err("a hora do aviso vai de 0 a 23".into());
+    if !(0..=23).contains(&s.notify_hour) || !(0..=23).contains(&s.neglect_hour) || !(0..=23).contains(&s.quiet_start) || !(0..=23).contains(&s.quiet_end) {
+        return Err("as horas vão de 0 a 23".into());
+    }
+    if !(1..=60).contains(&s.neglect_days) {
+        return Err("os dias sem atualização vão de 1 a 60".into());
     }
     db(c.execute(
         &format!(
             "UPDATE work_settings SET wip_limit = ?1, validation_days = ?2, waiting_days = ?3, stale_days = ?4,
                return_days = ?5, close_days = ?6, notify_reminders = ?7, notify_due = ?8, notify_validation = ?9,
-               notify_hour = ?10, updated_at = {NOW} WHERE id = 1"
+               notify_hour = ?10, notify_neglect = ?11, neglect_hour = ?12, neglect_days = ?13, quiet_start = ?14, quiet_end = ?15,
+               updated_at = {NOW} WHERE id = 1"
         ),
         params![
             s.wip_limit,
@@ -913,7 +1030,12 @@ pub fn set_settings(c: &Connection, s: Settings) -> Res<Settings> {
             s.notify_reminders,
             s.notify_due,
             s.notify_validation,
-            s.notify_hour
+            s.notify_hour,
+            s.notify_neglect,
+            s.neglect_hour,
+            s.neglect_days,
+            s.quiet_start,
+            s.quiet_end
         ],
     ))?;
     get_settings(c)
@@ -1503,6 +1625,71 @@ pub fn session_delete(c: &Connection, id: &str) -> Res<TimerChange> {
     timer_change(c, vec![item])
 }
 
+fn list_snippets(c: &Connection) -> Res<Vec<Snippet>> {
+    let mut st = db(c.prepare("SELECT id, company_id, title, body, is_default, sort FROM work_snippets ORDER BY company_id, sort, created_at"))?;
+    db(st
+        .query_map([], |r| Ok(Snippet { id: r.get(0)?, company_id: r.get(1)?, title: r.get(2)?, body: r.get(3)?, is_default: r.get(4)?, sort: r.get(5)? }))
+        .and_then(|m| m.collect()))
+}
+
+pub fn snippet_save(c: &mut Connection, s: SnippetInput) -> Res<Vec<Snippet>> {
+    let company = clip(&s.company_id, 40);
+    if !company_exists(c, &company)? {
+        return Err("empresa desconhecida".into());
+    }
+    let title = required(&s.title, 80, "o título")?;
+    let body = s.body.trim().chars().take(4000).collect::<String>();
+    if body.is_empty() {
+        return Err("o texto da resposta está vazio".into());
+    }
+    let default = s.is_default.unwrap_or(false);
+    let tx = db(c.transaction())?;
+    if default {
+        db(tx.execute("UPDATE work_snippets SET is_default = 0 WHERE company_id = ?1", params![company]))?;
+    }
+    match s.id.filter(|x| !x.is_empty()) {
+        Some(id) => {
+            let n = db(tx.execute(
+                &format!("UPDATE work_snippets SET company_id = ?2, title = ?3, body = ?4, is_default = ?5, updated_at = {NOW} WHERE id = ?1"),
+                params![id, company, title, body, default],
+            ))?;
+            if n == 0 {
+                return Err("resposta não encontrada".into());
+            }
+        }
+        None => {
+            db(tx.execute(
+                "INSERT INTO work_snippets (id, company_id, title, body, is_default, sort)
+                 VALUES (?1, ?2, ?3, ?4, ?5, (SELECT COALESCE(MAX(sort), 0) + 1 FROM work_snippets WHERE company_id = ?2))",
+                params![new_id(), company, title, body, default],
+            ))?;
+        }
+    }
+    db(tx.commit())?;
+    list_snippets(c)
+}
+
+pub fn snippet_delete(c: &Connection, id: &str) -> Res<Vec<Snippet>> {
+    db(c.execute("DELETE FROM work_snippets WHERE id = ?1", params![id]))?;
+    list_snippets(c)
+}
+
+fn list_seen(c: &Connection) -> Res<Vec<Seen>> {
+    let mut st = db(c.prepare("SELECT company_id, seen_at FROM work_seen ORDER BY company_id"))?;
+    db(st.query_map([], |r| Ok(Seen { company_id: r.get(0)?, seen_at: r.get(1)? })).and_then(|m| m.collect()))
+}
+
+pub fn seen_touch(c: &Connection, company_id: &str) -> Res<Vec<Seen>> {
+    if !company_exists(c, company_id)? {
+        return Err("empresa desconhecida".into());
+    }
+    db(c.execute(
+        &format!("INSERT INTO work_seen (company_id) VALUES (?1) ON CONFLICT (company_id) DO UPDATE SET seen_at = {NOW}"),
+        params![company_id],
+    ))?;
+    list_seen(c)
+}
+
 fn run<T>(state: &State<AppState>, f: impl FnOnce(&mut Connection) -> Res<T>) -> R<T> {
     let mut out: Option<Res<T>> = None;
     with_conn(state, |c| {
@@ -1718,6 +1905,21 @@ pub fn work_timer_stop(state: State<AppState>) -> R<TimerChange> {
 #[tauri::command]
 pub fn work_session_delete(state: State<AppState>, id: String) -> R<TimerChange> {
     run(&state, |c| session_delete(c, &id))
+}
+
+#[tauri::command]
+pub fn work_snippet_save(state: State<AppState>, input: SnippetInput) -> R<Vec<Snippet>> {
+    run(&state, |c| snippet_save(c, input))
+}
+
+#[tauri::command]
+pub fn work_snippet_delete(state: State<AppState>, id: String) -> R<Vec<Snippet>> {
+    run(&state, |c| snippet_delete(c, &id))
+}
+
+#[tauri::command]
+pub fn work_seen_touch(state: State<AppState>, company_id: String) -> R<Vec<Seen>> {
+    run(&state, |c| seen_touch(c, &company_id))
 }
 
 #[cfg(test)]
@@ -2220,5 +2422,63 @@ mod tests {
         assert!(timer_start(&mut c, &a.id).is_err());
         delete(&mut c, &t.0, &MemVault::default(), &a.id).unwrap();
         assert_eq!(load(&c).unwrap().sessions.len(), 1);
+    }
+
+    #[test]
+    fn chamados_link_sla_e_respostas() {
+        let (mut c, _t) = fresh();
+        let st = load(&c).unwrap();
+        assert_eq!(st.snippets.iter().filter(|x| x.company_id == "statix").count(), 2);
+        assert!(st.snippets.iter().any(|x| x.company_id == "livelo" && x.is_default));
+        let co = company_update(
+            &c,
+            "statix",
+            CompanyPatch { ticket_url: Some(Some("https://statix.zendesk.com/agent/tickets/{id}".into())), sla_response_min: Some(Some(240)), sla_resolution_min: Some(Some(2880)), ..Default::default() },
+        )
+        .unwrap();
+        assert_eq!(co.ticket_url.as_deref(), Some("https://statix.zendesk.com/agent/tickets/{id}"));
+        assert_eq!((co.sla_response_min, co.sla_resolution_min), (Some(240), Some(2880)));
+        assert!(company_update(&c, "statix", CompanyPatch { ticket_url: Some(Some("https://x/tickets/123".into())), ..Default::default() }).is_err());
+        assert!(company_update(&c, "statix", CompanyPatch { ticket_url: Some(Some("ftp://x/{id}".into())), ..Default::default() }).is_err());
+        assert!(company_update(&c, "statix", CompanyPatch { sla_response_min: Some(Some(0)), ..Default::default() }).is_err());
+        let co = company_update(&c, "statix", CompanyPatch { sla_response_min: Some(None), ..Default::default() }).unwrap();
+        assert!(co.sla_response_min.is_none());
+        assert_eq!(co.sla_resolution_min, Some(2880));
+
+        let list = snippet_save(&mut c, SnippetInput { id: None, company_id: "statix".into(), title: "Cobrança".into(), body: "Conseguiu validar o {chamado}?".into(), is_default: Some(true) }).unwrap();
+        let mine: Vec<_> = list.iter().filter(|x| x.company_id == "statix").collect();
+        assert_eq!(mine.len(), 3);
+        assert_eq!(mine.iter().filter(|x| x.is_default).count(), 1);
+        assert_eq!(mine.iter().find(|x| x.is_default).unwrap().title, "Cobrança");
+        let id = mine.iter().find(|x| x.title == "Cobrança").unwrap().id.clone();
+        let list = snippet_save(&mut c, SnippetInput { id: Some(id.clone()), company_id: "statix".into(), title: "Cobrança gentil".into(), body: "Oi! {chamado}".into(), is_default: Some(false) }).unwrap();
+        assert!(list.iter().any(|x| x.title == "Cobrança gentil"));
+        assert!(snippet_save(&mut c, SnippetInput { id: None, company_id: "acme".into(), title: "x".into(), body: "y".into(), is_default: None }).is_err());
+        assert!(snippet_save(&mut c, SnippetInput { id: None, company_id: "statix".into(), title: "x".into(), body: "  ".into(), is_default: None }).is_err());
+        assert!(snippet_save(&mut c, SnippetInput { id: Some("nada".into()), company_id: "statix".into(), title: "x".into(), body: "y".into(), is_default: None }).is_err());
+        let list = snippet_delete(&c, &id).unwrap();
+        assert!(list.iter().all(|x| x.id != id));
+    }
+
+    #[test]
+    fn visto_por_empresa_e_ajustes_de_abandono() {
+        let (c, _t) = fresh();
+        assert!(load(&c).unwrap().seen.is_empty());
+        let s1 = seen_touch(&c, "statix").unwrap();
+        assert_eq!(s1.len(), 1);
+        let first = s1[0].seen_at.clone();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let s2 = seen_touch(&c, "statix").unwrap();
+        assert!(s2[0].seen_at > first);
+        assert!(seen_touch(&c, "acme").is_err());
+        let st = get_settings(&c).unwrap();
+        assert!(st.notify_neglect);
+        assert_eq!((st.neglect_hour, st.neglect_days, st.quiet_start, st.quiet_end), (11, 3, 20, 8));
+        let ok = set_settings(&c, Settings { neglect_hour: 10, neglect_days: 5, quiet_start: 22, quiet_end: 7, ..st.clone() }).unwrap();
+        assert_eq!((ok.neglect_hour, ok.neglect_days, ok.quiet_start, ok.quiet_end), (10, 5, 22, 7));
+        assert!(set_settings(&c, Settings { neglect_days: 0, ..st.clone() }).is_err());
+        assert!(set_settings(&c, Settings { quiet_end: 24, ..st }).is_err());
+        let json: Settings = serde_json::from_str(r#"{"wipLimit":3,"validationDays":2,"waitingDays":2,"staleDays":4,"returnDays":0,"closeDays":2,"notifyReminders":true,"notifyDue":true,"notifyValidation":true,"notifyHour":9}"#).unwrap();
+        assert_eq!(json.neglect_hour, 11);
     }
 }

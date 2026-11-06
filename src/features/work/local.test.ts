@@ -1,5 +1,5 @@
 import { createLocal, slugify } from './local.ts'
-import type { ItemChange, TimerChange, Todo, TodoCheck, WorkState } from './types.ts'
+import type { Company, ItemChange, Seen, Settings, Snippet, TimerChange, Todo, TodoCheck, WorkState } from './types.ts'
 
 type Assert = {
   equal(actual: unknown, expected: unknown, message?: string): void
@@ -117,6 +117,34 @@ test('cronômetro: um por vez, para ao entregar e some com o item', () => {
   assert.equal(x<TimerChange>('work_timer_stop').itemIds.length, 0)
   x('work_item_delete', { id: a.id })
   assert.equal(x<WorkState>('work_load').sessions.length, 1)
+})
+
+test('chamados: link, SLA e respostas rápidas', () => {
+  const { x } = setup()
+  const co = x<Company>('work_company_update', { id: 'statix', patch: { ticketUrl: 'https://s.zendesk.com/agent/tickets/{id}', slaResponseMin: 240 } })
+  assert.equal(co.ticketUrl, 'https://s.zendesk.com/agent/tickets/{id}')
+  assert.equal(co.slaResponseMin, 240)
+  assert.throws(() => x('work_company_update', { id: 'statix', patch: { ticketUrl: 'https://s/tickets/1' } }), /\{id\}/)
+  assert.throws(() => x('work_company_update', { id: 'statix', patch: { slaResolutionMin: 0 } }), /SLA/)
+  assert.equal(x<WorkState>('work_load').snippets.length, 4)
+  const list = x<Snippet[]>('work_snippet_save', { input: { companyId: 'statix', title: 'Cobrança', body: 'Validou o {chamado}?', isDefault: true } })
+  assert.equal(list.filter((s) => s.companyId === 'statix' && s.isDefault).length, 1)
+  assert.equal(list.find((s) => s.isDefault && s.companyId === 'statix')!.title, 'Cobrança')
+  const id = list.find((s) => s.title === 'Cobrança')!.id
+  assert.equal(x<Snippet[]>('work_snippet_delete', { id }).length, 4)
+})
+
+test('visto por empresa e ajustes de abandono', () => {
+  const { x } = setup()
+  assert.deepEqual(x<WorkState>('work_load').seen, [])
+  const s1 = x<Seen[]>('work_seen_touch', { companyId: 'livelo' })
+  assert.equal(s1.length, 1)
+  assert.throws(() => x('work_seen_touch', { companyId: 'acme' }), /empresa/)
+  const st = x<WorkState>('work_load').settings
+  assert.equal(st.neglectHour, 11)
+  const out = x<Settings>('work_settings_set', { settings: { ...st, neglectHour: 10, quietStart: 22 } })
+  assert.equal(out.neglectHour, 10)
+  assert.throws(() => x('work_settings_set', { settings: { ...st, neglectDays: 0 } }), /dias/)
 })
 
 test('utilitários', () => {

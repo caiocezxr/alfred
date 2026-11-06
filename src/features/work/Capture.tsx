@@ -1,14 +1,36 @@
-import { forwardRef, useMemo, useState } from 'react'
+import { forwardRef, useEffect, useMemo, useState } from 'react'
 import { CompanyMark, coStyle } from './brand'
 import { Icon } from './icons'
 import { dueLabel, findDuplicate, parseCapture, type Scope } from './logic'
 import { createItem, createTodo, openDialog, openItem, readUi, writeUi } from './store'
 import { KIND_LABEL, MODE_LABEL, PERSONAL_ID, PRIORITY_LABEL, type WorkState } from './types'
 
+const TOKENS: { label: string; insert: string; hint?: string }[] = [
+  { label: '#chamado', insert: '#', hint: 'código' },
+  { label: '@empresa', insert: '@', hint: 'espaço' },
+  { label: '!', insert: '!', hint: 'prioridade' },
+  { label: 'sexta', insert: 'sexta', hint: 'prazo' },
+  { label: 'às 15h', insert: 'às 15h', hint: 'lembrete' },
+  { label: 'todo dia', insert: 'todo dia', hint: 'recorrente' },
+]
+
 export const Capture = forwardRef<HTMLInputElement, { state: WorkState; today: string; scope: Scope }>(function Capture({ state, today, scope }, ref) {
   const [draft, setDraft] = useState('')
   const [pref, setPref] = useState<'todo' | 'work'>(() => readUi().captureTarget ?? 'work')
   const [space, setSpace] = useState<string | null>(null)
+  useEffect(() => {
+    const on = (e: Event) => {
+      const add = (e as CustomEvent<string>).detail
+      setDraft((d) => `${d.replace(/\s+(?:às\s+)?\d{1,2}(?:h\d{0,2}|:\d{2})\s*$/i, '').trimEnd()}${d.trim() ? ' ' : ''}${add}`)
+      const el = typeof ref === 'object' && ref ? ref.current : null
+      requestAnimationFrame(() => {
+        el?.focus()
+        el?.setSelectionRange(0, 0)
+      })
+    }
+    window.addEventListener('wk:prefill', on)
+    return () => window.removeEventListener('wk:prefill', on)
+  }, [ref])
   const ids = state.companies.map((c) => c.id)
   const fallback = space ?? (scope !== 'all' ? scope : (readUi().lastCompany && ids.includes(readUi().lastCompany!) ? readUi().lastCompany! : ids[0]))
   const systems = useMemo(() => [...new Set(state.items.map((i) => i.system).filter((s): s is string => !!s))], [state.items])
@@ -17,6 +39,23 @@ export const Capture = forwardRef<HTMLInputElement, { state: WorkState; today: s
   const company = state.companies.find((c) => c.id === q.companyId)
   const dup = target === 'work' ? findDuplicate(state.items, q.companyId, q.ticket) : null
 
+  const insert = (token: string) => {
+    const el = typeof ref === 'object' && ref ? ref.current : null
+    const start = el?.selectionStart ?? draft.length
+    const end = el?.selectionEnd ?? draft.length
+    const before = draft.slice(0, start)
+    const after = draft.slice(end)
+    const glue = (token === '#' || token === '@') ? '' : ' '
+    const pre = before && !/\s$/.test(before) ? ' ' : ''
+    const piece = `${pre}${token}${glue}`
+    const next = `${before}${piece}${after.replace(/^\s+/, glue ? '' : '')}`
+    setDraft(next)
+    requestAnimationFrame(() => {
+      el?.focus()
+      const pos = before.length + piece.length
+      el?.setSelectionRange(pos, pos)
+    })
+  }
   const cycleSpace = () => {
     const i = ids.indexOf(q.companyId)
     setSpace(ids[(i + 1) % ids.length])
@@ -27,7 +66,7 @@ export const Capture = forwardRef<HTMLInputElement, { state: WorkState; today: s
     writeUi({ captureTarget: next })
   }
   const submit = async (force: boolean) => {
-    if (!q.title) return
+    if (!q.title && !q.ticket) return
     if (dup && !force) {
       setDraft('')
       openItem(dup.id)
@@ -47,12 +86,15 @@ export const Capture = forwardRef<HTMLInputElement, { state: WorkState; today: s
         mustNotForget: q.mustNotForget,
       })
     } else {
-      await createItem({ companyId: q.companyId, title: q.title, ticket: q.ticket, priority: q.priority, dueDate: q.dueDate, kind: q.kind ?? undefined, system: q.system })
+      await createItem({ companyId: q.companyId, title: q.title || q.ticket || 'Chamado', ticket: q.ticket, priority: q.priority, dueDate: q.dueDate, kind: q.kind ?? undefined, system: q.system, url: q.url })
     }
   }
 
   return (
-    <div className="panel wk-capture reveal" style={{ ['--i' as string]: 1, ...coStyle(company) }}>
+    <div className="wk-capture" style={coStyle(company)}>
+      <span className="wk-cap-plus" aria-hidden="true">
+        <Icon name="plus" size={14} />
+      </span>
       <button className="wk-cap-space" onClick={cycleSpace} title="Trocar espaço (ou escreva @statix, @livelo, @pessoal)" aria-label={`Espaço: ${company?.name}. Trocar`}>
         <CompanyMark company={company} size={20} />
       </button>
@@ -60,7 +102,7 @@ export const Capture = forwardRef<HTMLInputElement, { state: WorkState; today: s
         ref={ref}
         className="wk-cap-input"
         value={draft}
-        placeholder={target === 'todo' ? 'Novo to-do… (“todo dia”, “fixo”, “sexta”, “às 15h”)' : 'Novo chamado ou entrega… (#9488, @livelo, !, sexta)'}
+        placeholder={target === 'todo' ? 'Novo to-do…' : 'Capturar chamado, entrega ou ideia…'}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
@@ -95,8 +137,15 @@ export const Capture = forwardRef<HTMLInputElement, { state: WorkState; today: s
             {q.mustNotForget && <span className="wk-chip is-forget">não pode esquecer</span>}
             {q.kind && <span className="wk-chip">{KIND_LABEL[q.kind]}</span>}
             {q.system && <span className="wk-chip">{q.system}</span>}
+            {q.url && (
+              <span className="wk-chip">
+                <Icon name="link" size={10} />
+                link
+              </span>
+            )}
           </>
         )}
+        {!draft && <kbd className="wk-cap-kbd" title="Focar a captura">⌘/</kbd>}
         <button className="wk-icon-btn wk-cap-forget" onClick={() => openDialog({ kind: 'todo', draft: { title: q.title, companyId: q.companyId, mustNotForget: true, remindTime: q.remindTime, dueDate: q.dueDate, mode: q.mode ?? undefined } })} title="Não pode esquecer" aria-label="Criar um não pode esquecer">
           <Icon name="alarm" size={15} />
         </button>
@@ -104,11 +153,22 @@ export const Capture = forwardRef<HTMLInputElement, { state: WorkState; today: s
       <span id="wk-cap-hint" className="wk-cap-hint">
         {dup ? (
           <span className="wk-cap-dup">
-            <Icon name="flag" size={11} /> {dup.ticket} já existe: “{dup.title}”. <b>Enter</b> abre o existente · <b>Shift+Enter</b> cria outro
+            <Icon name="flag" size={11} /> {dup.ticket} já existe: “{dup.title}”. <kbd>Enter</kbd> abre · <kbd>⇧ Enter</kbd> cria outro
           </span>
         ) : (
           <>
-            <b>@espaço</b> · <b>#código</b> · <b>!</b> alta · <b>!!</b> urgente · <b>sexta</b>, <b>amanhã</b>, <b>15/11</b> · <b>todo dia</b>, <b>fixo</b>, <b>às 15h</b> · <b>não esquecer</b> · <b>/bug</b> <b>+sistema</b> · Enter salva
+            {TOKENS.map((t) => (
+              <button key={t.label} type="button" className="wk-cap-token" onMouseDown={(e) => e.preventDefault()} onClick={() => insert(t.insert)} title={t.hint}>
+                <kbd>{t.label}</kbd>
+                {t.hint && <span>{t.hint}</span>}
+              </button>
+            ))}
+            <span className="wk-cap-paste">ou cole o link do chamado</span>
+            <span className="wk-grow" />
+            <kbd>Enter</kbd>
+            <span>salva</span>
+            <kbd>Esc</kbd>
+            <span>limpa</span>
           </>
         )}
       </span>

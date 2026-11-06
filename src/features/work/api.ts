@@ -3,7 +3,7 @@ import { isTauri } from '../../shared/db/api'
 import { createLocal } from './local'
 import type {
   Attachment, ChecklistEntry, Company, CompanyPatch, DayMark, ImportTask, ItemChange, ItemPatch, NewItem, NewTodo, SecretMeta, Settings,
-  Stage, TimerChange, Todo, TodoCheck, TodoPatch, WorkState,
+  Seen, Snippet, SnippetInput, Stage, TimerChange, Todo, TodoCheck, TodoPatch, WorkState,
 } from './types'
 
 const local = typeof window !== 'undefined' && !isTauri ? createLocal(window.localStorage) : null
@@ -123,6 +123,11 @@ export const workApi = {
   timerStart: (itemId: string) => call<TimerChange>('work_timer_start', { itemId }),
   timerStop: () => call<TimerChange>('work_timer_stop'),
   sessionDelete: (id: string) => call<TimerChange>('work_session_delete', { id }),
+
+  snippetSave: (input: SnippetInput) => call<Snippet[]>('work_snippet_save', { input }),
+  snippetDelete: (id: string) => call<Snippet[]>('work_snippet_delete', { id }),
+
+  seenTouch: (companyId: string) => call<Seen[]>('work_seen_touch', { companyId }),
 
   daySet: (d: DayMark) => call<DayMark>('work_day_set', { date: d.date, green: d.green, openCount: d.openCount, handledCount: d.handledCount }),
 }

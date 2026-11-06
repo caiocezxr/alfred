@@ -6,6 +6,10 @@ import type { Company } from './types'
 
 const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
 
+export function prefillCapture(text: string) {
+  window.dispatchEvent(new CustomEvent('wk:prefill', { detail: text }))
+}
+
 export function Ruler({ model, companies }: { model: RulerModel; companies: Company[] }) {
   const span = model.endMin - model.startMin
   const pct = (m: number) => `${((Math.min(model.endMin, Math.max(model.startMin, m)) - model.startMin) / span) * 100}%`
@@ -19,6 +23,7 @@ export function Ruler({ model, companies }: { model: RulerModel; companies: Comp
         <div className="wk-ruler-allday">
           {model.allDay.slice(0, 2).map((p) => (
             <button key={p.id} className={`wk-ruler-chip is-${p.kind}`} style={coStyle(co(p.companyId))} onClick={() => open(p)} title={`Hoje: ${p.title}`}>
+              <Icon name="flag" size={10} />
               <CompanyMark company={co(p.companyId)} size={11} />
               <span>{p.title}</span>
             </button>
@@ -26,10 +31,21 @@ export function Ruler({ model, companies }: { model: RulerModel; companies: Comp
           {model.allDay.length > 2 && <span className="wk-ruler-more">+{model.allDay.length - 2}</span>}
         </div>
       )}
-      <div className="wk-ruler-track">
+      <div
+        className="wk-ruler-track"
+        title="Clique num horário para capturar algo para essa hora"
+        onClick={(e) => {
+          if (e.target !== e.currentTarget && !(e.target as HTMLElement).classList.contains('wk-ruler-past')) return
+          const r = e.currentTarget.getBoundingClientRect()
+          const m = Math.round((model.startMin + ((e.clientX - r.left) / r.width) * span) / 15) * 15
+          const h = Math.floor(m / 60)
+          const mm = m % 60
+          prefillCapture(`às ${h}h${mm ? String(mm).padStart(2, '0') : ''}`)
+        }}
+      >
         {hours.map((h) => (
-          <span key={h} className={`wk-ruler-hour ${h % 3 === 0 ? 'is-major' : ''}`} style={{ left: pct(h * 60) }}>
-            {h % 3 === 0 && <em>{h}h</em>}
+          <span key={h} className={`wk-ruler-hour ${h % 2 === 0 ? 'is-major' : ''}`} style={{ left: pct(h * 60) }}>
+            {h % 2 === 0 && <em>{h}h</em>}
           </span>
         ))}
         {model.segments.map((s) => (
@@ -54,7 +70,7 @@ export function Ruler({ model, companies }: { model: RulerModel; companies: Comp
             onClick={() => open(p)}
             aria-label={`${hhmm(p.minute!)} ${p.title}`}
           >
-            {p.kind === 'forget' ? <Icon name="alarm" size={10} /> : p.done ? <Icon name="check" size={9} /> : null}
+            {p.done ? <Icon name="check" size={10} /> : <Icon name="alarm" size={10} />}
             <span className="wk-ruler-tip">
               <b>{hhmm(p.minute!)}</b> {p.title}
             </span>

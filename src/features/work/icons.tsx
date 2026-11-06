@@ -33,6 +33,8 @@ const P = {
   sound: <path d="M3 6.2h2.2L8.5 3.5v9L5.2 9.8H3zM11 5.8a3 3 0 010 4.4M12.6 4.3a5.2 5.2 0 010 7.4" />,
   mute: <path d="M3 6.2h2.2L8.5 3.5v9L5.2 9.8H3zM11 6.2l3 3.6M14 6.2l-3 3.6" />,
   refresh: <path d="M12.8 6.4A5 5 0 003.6 5.2M3.2 9.6a5 5 0 009.2 1.2M3.4 2.8v2.6H6M12.6 13.2v-2.6H10" />,
+  search: <><circle cx="7" cy="7" r="4.3" /><path d="M10.2 10.2l3.3 3.3" /></>,
+  hours: <><circle cx="8" cy="8.4" r="5.4" /><path d="M8 5.4v3l2 1.2M6.3 1.8h3.4" /></>,
   shield: <path d="M8 2l5 1.8v3.9c0 3.2-2.2 5.4-5 6.3-2.8-.9-5-3.1-5-6.3V3.8z" />,
 } satisfies Record<string, ReactNode>
 

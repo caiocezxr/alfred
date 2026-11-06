@@ -1,4 +1,5 @@
 import type {
+  Seen, Snippet, SnippetInput,
   Attachment, ChecklistEntry, Company, CompanyPatch, DayMark, ImportTask, ItemChange, ItemPatch, NewItem, NewTodo, SecretMeta, Settings,
   Session, Stage, TimerChange, Todo, TodoCheck, TodoMode, TodoPatch, WorkEvent, WorkItem, WorkState,
 } from './types.ts'
@@ -18,6 +19,8 @@ type Db = {
   attachments: Attachment[]
   days: DayMark[]
   sessions: Session[]
+  snippets: Snippet[]
+  seen: Seen[]
 }
 
 export const LOCAL_KEY = 'ps.work.v1'
@@ -27,9 +30,9 @@ function seed(): Db {
   const ck = (id: string, companyId: string, label: string, sort: number) => ({ id, companyId, label, sort, archivedAt: null })
   return {
     companies: [
-      { id: 'statix', name: 'Statix', color: '#2D62DB', logo: null, sort: 1 },
-      { id: 'livelo', name: 'Livelo', color: '#E5008C', logo: null, sort: 2 },
-      { id: 'pessoal', name: 'Pessoal', color: '#8C8F96', logo: null, sort: 3 },
+      { id: 'statix', name: 'Statix', color: '#2D62DB', logo: null, sort: 1, ticketUrl: null, slaResponseMin: null, slaResolutionMin: null },
+      { id: 'livelo', name: 'Livelo', color: '#E5008C', logo: null, sort: 2, ticketUrl: null, slaResponseMin: null, slaResolutionMin: null },
+      { id: 'pessoal', name: 'Pessoal', color: '#8C8F96', logo: null, sort: 3, ticketUrl: null, slaResponseMin: null, slaResolutionMin: null },
     ],
     checklist: [
       ck('statix-local', 'statix', 'Testei localmente', 1),
@@ -51,6 +54,13 @@ function seed(): Db {
     attachments: [],
     days: [],
     sessions: [],
+    seen: [],
+    snippets: [
+      { id: 'statix-recebido', companyId: 'statix', title: 'Recebido', body: 'Olá! Recebi o chamado {chamado} ({titulo}) e já estou analisando. Retorno com uma posição até {prazo}.', isDefault: true, sort: 1 },
+      { id: 'statix-entregue', companyId: 'statix', title: 'Entregue para validação', body: 'O ajuste do chamado {chamado} foi entregue. Pode validar, por favor? Qualquer divergência me avise por aqui.', isDefault: false, sort: 2 },
+      { id: 'livelo-recebido', companyId: 'livelo', title: 'Recebido', body: 'Oi! Peguei o {chamado} ({titulo}). Sigo com a análise e atualizo o ticket até {prazo}.', isDefault: true, sort: 1 },
+      { id: 'livelo-hml', companyId: 'livelo', title: 'Disponível em HML', body: 'O {chamado} está disponível em homologação com as evidências anexadas. Podem testar?', isDefault: false, sort: 2 },
+    ],
   }
 }
 
@@ -107,7 +117,12 @@ export function createLocal(storage: Storage, clock: () => Date = () => new Date
   const read = (): Db => {
     try {
       const raw = storage.getItem(LOCAL_KEY)
-      if (raw) return { ...seed(), ...(JSON.parse(raw) as Partial<Db>) } as Db
+      if (raw) {
+        const d = { ...seed(), ...(JSON.parse(raw) as Partial<Db>) } as Db
+        d.settings = { ...DEFAULT_SETTINGS, ...d.settings }
+        d.companies = d.companies.map((c) => ({ ...c, ticketUrl: c.ticketUrl ?? null, slaResponseMin: c.slaResponseMin ?? null, slaResolutionMin: c.slaResolutionMin ?? null }))
+        return d
+      }
     } catch {
       return seed()
     }
@@ -158,6 +173,7 @@ export function createLocal(storage: Storage, clock: () => Date = () => new Date
       if (m === 'dated' && !dueDate) throw new Error('to-do com prazo precisa de uma data')
       return { mode: m, weekdaysOnly: m === 'daily' && weekdaysOnly, dueDate }
     }
+    const snippetsOut = (): Snippet[] => [...db.snippets].sort((x, y) => x.companyId.localeCompare(y.companyId) || x.sort - y.sort)
     const secretsUnavailable = () => {
       throw new Error('segredos ficam no Keychain: disponível no app instalado')
     }
@@ -177,6 +193,8 @@ export function createLocal(storage: Storage, clock: () => Date = () => new Date
           secrets: [] as SecretMeta[],
           days: [...db.days].sort((x, y) => x.date.localeCompare(y.date)),
           sessions: [...db.sessions].sort((x, y) => x.startedAt.localeCompare(y.startedAt)),
+          snippets: snippetsOut(),
+          seen: db.seen,
         }
         return state
       }
@@ -424,7 +442,9 @@ export function createLocal(storage: Storage, clock: () => Date = () => new Date
         if (!base) throw new Error('use letras ou números no nome')
         let id = base
         for (let n = 2; companyExists(id); n++) id = `${base}-${n}`
-        const co: Company = { id, name, color: color.toUpperCase(), logo: null, sort: Math.max(0, ...db.companies.map((c) => c.sort)) + 1 }
+        const co: Company = {
+          id, name, color: color.toUpperCase(), logo: null, sort: Math.max(0, ...db.companies.map((c) => c.sort)) + 1, ticketUrl: null, slaResponseMin: null, slaResolutionMin: null,
+        }
         db.companies.push(co)
         return save(co)
       }
@@ -441,6 +461,17 @@ export function createLocal(storage: Storage, clock: () => Date = () => new Date
           if (p.logo && (!p.logo.startsWith('data:image/') || p.logo.length > 600000)) throw new Error('logo inválido ou grande demais (até ~400 KB)')
           co.logo = p.logo || null
         }
+        if (p.ticketUrl !== undefined) {
+          const u = p.ticketUrl?.trim() || null
+          if (u && (!/^https?:\/\/\S+$/i.test(u) || !u.includes('{id}') || u.length > 500)) throw new Error('o link do chamado precisa começar com http(s):// e ter {id} no lugar do número')
+          co.ticketUrl = u
+        }
+        for (const k of ['slaResponseMin', 'slaResolutionMin'] as const) {
+          if (p[k] === undefined) continue
+          const v = p[k]
+          if (v !== null && !(Number.isInteger(v) && v >= 1 && v <= 525600)) throw new Error('prazo de SLA inválido')
+          co[k] = v
+        }
         return save({ ...co })
       }
       case 'work_company_delete': {
@@ -449,6 +480,7 @@ export function createLocal(storage: Storage, clock: () => Date = () => new Date
         if (db.companies.filter((c) => c.id !== a.id).length === 0) throw new Error('mantenha pelo menos um espaço')
         db.companies = db.companies.filter((c) => c.id !== a.id)
         db.checklist = db.checklist.filter((c) => c.companyId !== a.id)
+        db.snippets = db.snippets.filter((c) => c.companyId !== a.id)
         return save(undefined)
       }
       case 'work_settings_set': {
@@ -456,8 +488,9 @@ export function createLocal(storage: Storage, clock: () => Date = () => new Date
         if (!(s.wipLimit >= 1 && s.wipLimit <= 20)) throw new Error('o limite de itens em andamento vai de 1 a 20')
         for (const d of [s.validationDays, s.waitingDays, s.returnDays, s.closeDays]) if (!(d >= 0 && d <= 60)) throw new Error('os dias dos alertas vão de 0 a 60')
         if (!(s.staleDays >= 1 && s.staleDays <= 60)) throw new Error('os dias parado vão de 1 a 60')
-        if (!(s.notifyHour >= 0 && s.notifyHour <= 23)) throw new Error('a hora do aviso vai de 0 a 23')
-        db.settings = { ...s }
+        for (const h of [s.notifyHour, s.neglectHour, s.quietStart, s.quietEnd]) if (!(Number.isInteger(h) && h >= 0 && h <= 23)) throw new Error('as horas vão de 0 a 23')
+        if (!(s.neglectDays >= 1 && s.neglectDays <= 60)) throw new Error('os dias sem atualização vão de 1 a 60')
+        db.settings = { ...DEFAULT_SETTINGS, ...s }
         return save(db.settings)
       }
       case 'work_todo_create': {
@@ -591,6 +624,33 @@ export function createLocal(storage: Storage, clock: () => Date = () => new Date
         if (!x) throw new Error('sessão não encontrada')
         db.sessions = db.sessions.filter((y) => y.id !== x.id)
         return save(timerChange([x.itemId]))
+      }
+      case 'work_snippet_save': {
+        const i = a.input as SnippetInput
+        const companyId = clip(i.companyId ?? '', 40)
+        if (!companyExists(companyId)) throw new Error('empresa desconhecida')
+        const title = req(i.title, 80, 'o título')
+        const body = clip(i.body ?? '', 4000)
+        if (!body) throw new Error('o texto da resposta está vazio')
+        if (i.isDefault) for (const x of db.snippets) if (x.companyId === companyId) x.isDefault = false
+        if (i.id) {
+          const x = db.snippets.find((y) => y.id === i.id)
+          if (!x) throw new Error('resposta não encontrada')
+          Object.assign(x, { companyId, title, body, isDefault: !!i.isDefault })
+        } else {
+          const sort = Math.max(0, ...db.snippets.filter((x) => x.companyId === companyId).map((x) => x.sort)) + 1
+          db.snippets.push({ id: uid(), companyId, title, body, isDefault: !!i.isDefault, sort })
+        }
+        return save(snippetsOut())
+      }
+      case 'work_snippet_delete':
+        db.snippets = db.snippets.filter((x) => x.id !== a.id)
+        return save(snippetsOut())
+      case 'work_seen_touch': {
+        const co = a.companyId as string
+        if (!companyExists(co)) throw new Error('empresa desconhecida')
+        db.seen = [...db.seen.filter((x) => x.companyId !== co), { companyId: co, seenAt: now() }].sort((x, y) => x.companyId.localeCompare(y.companyId))
+        return save(db.seen)
       }
       case 'work_day_set': {
         const date = a.date as string

@@ -1,5 +1,6 @@
 import {
-  boardColumns, weekScore, fmtClock, fmtDur, itemTimeMs, moveSelection, nudges, rangeTimeMs, rulerModel, runningSession, sumTime,
+  commitMessage, fmtHours, hoursCsv, hoursReport, hoursText, matchTicketUrl, renderSnippet, roundMinutes, searchWork, slaFor, ticketUrl,
+  boardColumns, weekScore, gaugeSegments, handledEntries, healthSummary, inQuiet, neglectFor, neglectNudges, fmtClock, fmtDur, itemTimeMs, moveSelection, nudges, rangeTimeMs, rulerModel, runningSession, sumTime,
   computeAlerts, computeHealth, computeMetrics, dayGrid, deliveryCycles, deliveryWeeks, dueState, findDuplicate, fixedTodos, forgetList,
   handledToday, healthLabel, parseCapture, parseDateWord, pendingChecks, planNotifications, previousWorkday, pruneSent, standup, streak,
   suggestFocus, todayTodos, upcomingTodos, weekStart,
@@ -21,9 +22,9 @@ const TODAY = '2026-11-06'
 const at = (day: string, h = 12) => new Date(`${day}T${String(h).padStart(2, '0')}:00:00`).toISOString()
 
 const COMPANIES: Company[] = [
-  { id: 'statix', name: 'Statix', color: '#2D62DB', logo: null, sort: 1 },
-  { id: 'livelo', name: 'Livelo', color: '#E5008C', logo: null, sort: 2 },
-  { id: 'pessoal', name: 'Pessoal', color: '#8C8F96', logo: null, sort: 3 },
+  { id: 'statix', name: 'Statix', color: '#2D62DB', logo: null, sort: 1, ticketUrl: 'https://statix.zendesk.com/agent/tickets/{id}', slaResponseMin: 240, slaResolutionMin: 2880 },
+  { id: 'livelo', name: 'Livelo', color: '#E5008C', logo: null, sort: 2, ticketUrl: 'https://jira.livelo.com.br/browse/{id}', slaResponseMin: null, slaResolutionMin: null },
+  { id: 'pessoal', name: 'Pessoal', color: '#8C8F96', logo: null, sort: 3, ticketUrl: null, slaResponseMin: null, slaResolutionMin: null },
 ]
 const CHECKLIST: ChecklistEntry[] = [
   { id: 's1', companyId: 'statix', label: 'Testei', sort: 1 },
@@ -452,6 +453,183 @@ test('placar da semana: entregas, validações e conclusões', () => {
     st(a.id, 'doing', 'delivered', at('2026-10-30')),
   ]
   const w = weekScore(base([a, b], events), TODAY)
-  assert.deepEqual(w, { delivered: 2, validated: 1, done: 2, byCompany: { statix: 1, livelo: 1 } })
+  assert.equal(w.delivered, 2)
+  assert.equal(w.validated, 1)
+  assert.equal(w.done, 2)
+  assert.deepEqual(w.byCompany, { statix: 1, livelo: 1 })
+  assert.deepEqual(w.split.livelo, { delivered: 1, validated: 0, done: 1 })
+  assert.equal(w.last, 'done')
   assert.equal(weekScore(base([a, b], events), TODAY, 'livelo').delivered, 1)
+})
+
+test('links de chamado: monta, reconhece URL colada e captura', () => {
+  const i = mk({ ticket: '#9488' })
+  assert.equal(ticketUrl(i, COMPANIES[0]), 'https://statix.zendesk.com/agent/tickets/9488')
+  assert.equal(ticketUrl({ ...i, url: 'https://github.com/x/pull/1' }, COMPANIES[0]), 'https://github.com/x/pull/1')
+  assert.equal(ticketUrl(i, COMPANIES[2]), null)
+  assert.deepEqual(matchTicketUrl('https://statix.zendesk.com/agent/tickets/9501?tab=1', COMPANIES), { companyId: 'statix', ticket: '#9501' })
+  assert.deepEqual(matchTicketUrl('https://jira.livelo.com.br/browse/LIV-77', COMPANIES), { companyId: 'livelo', ticket: 'LIV-77' })
+  assert.equal(matchTicketUrl('https://example.com/a', COMPANIES), null)
+  const c = parseCapture('Erro no fechamento https://statix.zendesk.com/agent/tickets/9600 !', TODAY, COMPANIES, 'livelo')
+  assert.equal(c.ticket, '#9600')
+  assert.equal(c.companyId, 'statix')
+  assert.equal(c.title, 'Erro no fechamento')
+  assert.equal(c.target, 'work')
+  const d = parseCapture('Revisar PR https://github.com/acme/repo/pull/12', TODAY, COMPANIES, 'statix')
+  assert.equal(d.url, 'https://github.com/acme/repo/pull/12')
+  assert.equal(d.ticket, null)
+})
+
+test('SLA: resposta, resolução, pausa aguardando e alerta', () => {
+  const co = COMPANIES[0]
+  const created = at(TODAY, 8)
+  const now = Date.parse(at(TODAY, 11)) + 30 * 6e4
+  const fresh = mk({ ticket: '#1', createdAt: created })
+  const s1 = slaFor(fresh, [], co, now)!
+  assert.equal(s1.phase, 'response')
+  assert.equal(s1.status, 'risk')
+  assert.equal(Math.round(s1.remainingMs / 6e4), 30)
+  const late = mk({ ticket: '#2', createdAt: at(TODAY, 6) })
+  assert.equal(slaFor(late, [], co, now)!.status, 'breach')
+  const answered = mk({ ticket: '#3', createdAt: created, stage: 'doing' })
+  const s3 = slaFor(answered, [st(answered.id, 'todo', 'doing', at(TODAY, 9))], co, now)!
+  assert.equal(s3.phase, 'resolution')
+  assert.equal(s3.status, 'ok')
+  const waiting = mk({ ticket: '#4', createdAt: created, waitingOn: 'Ana', waitingSince: at(TODAY, 9) })
+  const s4 = slaFor(waiting, [ev(waiting.id, 'waiting', at(TODAY, 9))], co, now)!
+  assert.equal(s4.status, 'paused')
+  assert.equal(slaFor(mk({ createdAt: created }), [], co, now), null)
+  assert.equal(slaFor(mk({ ticket: '#5', stage: 'delivered' }), [st('x', 'a' as never, 'b' as never, created)], { slaResponseMin: null, slaResolutionMin: 60 }, now), null)
+  const alerts = computeAlerts({ ...base([fresh, late]), companies: COMPANIES }, TODAY, 'all', now)
+  const sla = alerts.filter((a) => a.kind === 'sla')
+  assert.equal(sla.length, 2)
+  assert.equal(sla.find((a) => a.itemId === late.id)!.severity, 3)
+  assert.deepEqual(sla.find((a) => a.itemId === fresh.id)!.action, { kind: 'respond', label: 'Respondi' })
+})
+
+test('relatório de horas: por dia, empresa, arredondamento, texto e CSV', () => {
+  const a = mk({ ticket: '#9488', title: 'Divergência' })
+  const b = mk({ companyId: 'livelo', ticket: 'LIV-1', title: 'Extrato; paginação' })
+  const now = Date.parse(at(TODAY, 18))
+  const sessions = [
+    { id: 's1', itemId: a.id, startedAt: at(TODAY, 9), endedAt: new Date(Date.parse(at(TODAY, 10)) + 7 * 6e4).toISOString() },
+    { id: 's2', itemId: b.id, startedAt: at(TODAY, 14), endedAt: new Date(Date.parse(at(TODAY, 14)) + 20 * 6e4).toISOString() },
+    { id: 's3', itemId: a.id, startedAt: at('2026-11-05', 15), endedAt: at('2026-11-05', 16) },
+  ]
+  const st0 = { items: [a, b], sessions, companies: COMPANIES }
+  const r = hoursReport(st0, TODAY, TODAY, 15, 'all', now)
+  assert.equal(r.days.length, 1)
+  assert.deepEqual(r.days[0].companies.map((c) => [c.companyId, c.minutes]), [['statix', 75], ['livelo', 30]])
+  assert.equal(r.minutes, 105)
+  assert.equal(roundMinutes(67, 0), 67)
+  assert.equal(roundMinutes(0, 30), 0)
+  assert.equal(fmtHours(105), '1h45')
+  const txt = hoursText(r, COMPANIES)
+  assert.ok(txt.includes('Statix — 1h15'))
+  assert.ok(txt.includes('• #9488 Divergência — 1h15'))
+  assert.ok(txt.endsWith('Total — 1h45'))
+  const csv = hoursCsv(r, COMPANIES)
+  assert.ok(csv.includes('Livelo;LIV-1;"Extrato; paginação";30;0,50'))
+  const w = hoursReport(st0, '2026-11-02', '2026-11-08', 30, 'statix', now)
+  assert.equal(w.days.length, 7)
+  assert.equal(w.byCompany.statix, 60 + 90)
+  assert.equal(w.byCompany.livelo, undefined)
+  assert.equal(hoursText(hoursReport(st0, '2026-11-09', '2026-11-09', 0, 'all', now), COMPANIES), 'Nenhum tempo registrado no período.')
+})
+
+test('respostas rápidas, commit e busca', () => {
+  const i = mk({ ticket: '#9488', title: 'Divergência no relatório', dueDate: TODAY, requester: 'Marcos', kind: 'bug' })
+  const txt = renderSnippet('Oi {solicitante}, recebi o {chamado} ({titulo}). Retorno até {prazo}. {link} {nada}', i, COMPANIES[0], TODAY)
+  assert.equal(txt, 'Oi Marcos, recebi o #9488 (Divergência no relatório). Retorno até hoje. https://statix.zendesk.com/agent/tickets/9488 {nada}')
+  assert.equal(renderSnippet('{prazo}', { ...i, dueDate: '2026-11-13' }, COMPANIES[0], TODAY), '13/11')
+  assert.equal(commitMessage(i), 'fix: divergência no relatório (#9488)')
+  assert.equal(commitMessage({ kind: 'feature', title: 'Extrato', ticket: null }), 'feat: extrato')
+  const other = mk({ title: 'Paginação do extrato', companyId: 'livelo' })
+  const done = mk({ title: 'Relatório antigo', stage: 'done', doneAt: at(TODAY) })
+  const t = td({ title: 'Mandar relatório de horas' })
+  const events = [ev(other.id, 'note', at(TODAY), { note: 'falar com o time do relatório' })]
+  const hits = searchWork({ items: [i, other, done], events, todos: [t], companies: COMPANIES }, 'relatório')
+  assert.deepEqual(hits.map((h) => h.kind), ['item', 'item', 'todo', 'note'])
+  assert.equal(hits[0].itemId, done.id)
+  assert.equal(hits[1].itemId, i.id)
+  assert.equal(searchWork({ items: [i, other], events: [], todos: [], companies: COMPANIES }, '9488')[0].score >= 100, true)
+  assert.equal(searchWork({ items: [i], events: [], todos: [], companies: COMPANIES }, '  ').length, 0)
+})
+
+test('segmentos do medidor: feitos, pendentes e atrasados em ordem', () => {
+  const now = `${TODAY}T10:00`
+  const won = mk({ stage: 'validated', ticket: '#7' })
+  const val = mk({ stage: 'delivered', deliveredAt: at('2026-11-02') })
+  const late = td({ mode: 'dated', dueDate: '2026-11-01', title: 'Boleto' })
+  const daily = td({ mode: 'daily', title: 'Fila' })
+  const s = base([won, val], [st(won.id, 'tested', 'validated', at(TODAY, 9))], [late, daily], [{ todoId: daily.id, date: TODAY }])
+  const entries = handledEntries(s, TODAY)
+  assert.deepEqual(entries.map((e) => e.detail), ['foi para Validado', 'feito hoje'])
+  const h = computeHealth(s, TODAY, now)
+  assert.equal(h.done.length, 2)
+  const segs = gaugeSegments(h)
+  assert.deepEqual(segs.map((x) => x.state), ['done', 'done', 'pending', 'late'])
+  assert.equal(segs[3].todoId, late.id)
+  assert.equal(gaugeSegments(h, 3).length, 3)
+})
+
+test('resumo do medidor diz o que falta', () => {
+  const now = `${TODAY}T10:00`
+  assert.equal(healthSummary(computeHealth(base([]), TODAY, now)), 'Nada para resolver hoje')
+  const r = td({ title: 'Mandar as horas', mustNotForget: true, remindTime: '09:00' })
+  const won = mk({ stage: 'validated' })
+  const s = base([won], [st(won.id, 'tested', 'validated', at(TODAY, 9))], [r])
+  assert.equal(healthSummary(computeHealth(s, TODAY, now), s.todos), '1 de 2 resolvidas hoje · Mandar as horas (09:00) pendente')
+})
+
+test('abandono: sem olhar hoje, itens parados, atrasados e validação por empresa', () => {
+  const old = at('2026-11-01')
+  const stale = mk({ stage: 'doing', updatedAt: old, ticket: '#1' })
+  const late = mk({ companyId: 'livelo', dueDate: '2026-11-04', updatedAt: at(TODAY) })
+  const val = mk({ companyId: 'livelo', stage: 'delivered', deliveredAt: at('2026-11-03'), updatedAt: at(TODAY) })
+  const events = [ev(stale.id, 'created', old), ev(late.id, 'created', at(TODAY, 9)), ev(val.id, 'created', at(TODAY, 9))]
+  const morning = new Date(`${TODAY}T09:30:00`)
+  const noon = new Date(`${TODAY}T12:00:00`)
+  const st0 = { ...base([stale, late, val], events), seen: [{ companyId: 'livelo', seenAt: at(TODAY, 8) }] }
+  const early = neglectFor(st0, morning)
+  assert.equal(early.find((n) => n.companyId === 'statix')!.unseen, false)
+  const list = neglectFor(st0, noon)
+  const sx = list.find((n) => n.companyId === 'statix')!
+  assert.ok(sx.unseen)
+  assert.deepEqual(sx.signals.map((x) => x.kind), ['unseen', 'stale'])
+  assert.equal(sx.signals[1].text, '1 item sem atualização há 3+ dias')
+  const lv = list.find((n) => n.companyId === 'livelo')!
+  assert.equal(lv.unseen, false)
+  assert.deepEqual(lv.signals.map((x) => x.kind), ['overdue', 'validation'])
+  assert.equal(list.find((n) => n.companyId === 'pessoal'), undefined)
+  const saturday = neglectFor(st0, new Date('2026-11-07T12:00:00'))
+  assert.equal(saturday.find((n) => n.companyId === 'statix')!.unseen, false)
+  const nudges = neglectNudges(list, COMPANIES)
+  assert.equal(nudges.length, 1)
+  assert.equal(nudges[0].text, 'Statix: sem olhar hoje · 1 item sem atualização há 3+ dias')
+  assert.deepEqual(nudges[0].action, { kind: 'open_company', label: 'Abrir Statix' })
+  assert.equal(nudges[0].companyId, 'statix')
+})
+
+test('notificações de abandono, sem repetir e respeitando o silêncio', () => {
+  const stale = mk({ stage: 'doing', updatedAt: at('2026-11-01') })
+  const st0 = { ...base([stale], [ev(stale.id, 'created', at('2026-11-01'))]), seen: [] as { companyId: string; seenAt: string }[] }
+  const noon = new Date(`${TODAY}T12:00:00`)
+  const n = planNotifications(st0, noon, {})
+  const keys = n.map((x) => x.key)
+  assert.ok(keys.includes(`neglect:statix:${TODAY}`))
+  assert.ok(keys.includes(`stale:statix:${TODAY}`))
+  const digest = n.find((x) => x.key.startsWith('neglect:'))!
+  assert.equal(digest.title, 'Statix: sem olhar hoje')
+  assert.equal(digest.body, '1 item sem atualização há 3+ dias')
+  assert.equal(digest.companyId, 'statix')
+  const sent = Object.fromEntries(n.map((x) => [x.key, TODAY]))
+  assert.equal(planNotifications(st0, noon, sent).filter((x) => x.key.includes('statix')).length, 0)
+  assert.equal(planNotifications(st0, new Date(`${TODAY}T21:00:00`), {}).length, 0)
+  assert.equal(planNotifications({ ...st0, settings: { ...DEFAULT_SETTINGS, notifyNeglect: false } }, noon, {}).some((x) => x.key.startsWith('neglect')), false)
+  assert.equal(inQuiet(21, 20, 8), true)
+  assert.equal(inQuiet(7, 20, 8), true)
+  assert.equal(inQuiet(12, 20, 8), false)
+  assert.equal(inQuiet(13, 12, 14), true)
+  assert.equal(inQuiet(10, 9, 9), false)
 })

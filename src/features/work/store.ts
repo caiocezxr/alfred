@@ -4,8 +4,9 @@ import { addDays, civil } from '../../shared/dates'
 import { api as legacyApi } from '../../shared/db/api'
 import { HYBRID, getProfile, onProfile, profileFromScope, profileScope, setProfile } from '../../shared/profile'
 import { workApi } from './api'
-import { computeHealth, crossesDelivery, isPost, localNow, pendingChecks, todoDoneOn, type Nudge } from './logic'
-import type { ChecklistEntry, Company, ItemChange, ItemPatch, NewItem, NewTodo, Settings, Stage, TimerChange, Todo, TodoPatch, WorkItem, WorkState } from './types'
+import { commitMessage, computeHealth, crossesDelivery, isPost, localNow, pendingChecks, renderSnippet, ticketUrl, todoDoneOn, type Nudge } from './logic'
+import { openExternal } from '../../shared/openExternal'
+import type { ChecklistEntry, Company, ItemChange, SnippetInput, ItemPatch, NewItem, NewTodo, Settings, Stage, TimerChange, Todo, TodoPatch, WorkItem, WorkState } from './types'
 
 export type Dialog =
   | { kind: 'deliver'; itemId: string; to: Stage }
@@ -14,11 +15,13 @@ export type Dialog =
   | { kind: 'wait'; itemId: string }
   | { kind: 'standup' }
   | { kind: 'todo'; todoId?: string; draft?: Partial<NewTodo> }
-  | { kind: 'settings'; tab?: 'alerts' | 'companies' | 'checklist' | 'notify' }
+  | { kind: 'settings'; tab?: 'alerts' | 'companies' | 'checklist' | 'notify' | 'tickets' | 'replies' }
   | { kind: 'delete'; itemId: string }
   | { kind: 'keys' }
+  | { kind: 'hours'; range?: 'day' | 'week' }
+  | { kind: 'search' }
 
-export type Toast = { id: number; text: string; tone?: 'error' | 'ok'; undo?: () => void }
+export type Toast = { id: number; text: string; tone?: 'error' | 'ok'; undo?: () => void; undoLabel?: string }
 export type Celebration = { id: number; itemId: string | null; todoId: string | null; color: string | null }
 
 type S = {
@@ -59,7 +62,7 @@ export const subscribeWork = (fn: () => void) => {
 
 let toastSeq = 0
 let toastTimer: ReturnType<typeof setTimeout> | undefined
-export function toast(text: string, opts: { tone?: 'error' | 'ok'; undo?: () => void } = {}) {
+export function toast(text: string, opts: { tone?: 'error' | 'ok'; undo?: () => void; undoLabel?: string } = {}) {
   clearTimeout(toastTimer)
   set({ toast: { id: ++toastSeq, text, ...opts } })
   toastTimer = setTimeout(() => set({ toast: null }), opts.undo ? 6000 : 3600)
@@ -68,7 +71,7 @@ export const dismissToast = () => set({ toast: null })
 const fail = (e: unknown) => toast(e instanceof Error ? e.message : String(e), { tone: 'error' })
 
 const UI_KEY = 'ps.work.ui.v1'
-export type UiPrefs = { scope?: string; view?: 'board' | 'delivered'; sound?: boolean; lastCompany?: string; asked?: boolean; captureTarget?: 'todo' | 'work'; todoTab?: 'today' | 'fixed' | 'upcoming' | 'done'; slimDone?: boolean; hojeTab?: string }
+export type UiPrefs = { scope?: string; view?: 'board' | 'delivered'; sound?: boolean; lastCompany?: string; asked?: boolean; captureTarget?: 'todo' | 'work'; todoTab?: 'today' | 'fixed' | 'upcoming' | 'done'; slimDone?: boolean; hojeTab?: string; hoursStep?: number }
 export function readUi(): UiPrefs {
   try {
     return JSON.parse(localStorage.getItem(UI_KEY) ?? '{}') as UiPrefs
@@ -166,6 +169,7 @@ export async function deleteSession(id: string) {
 
 export const select = (id: string | null) => s.selectedId !== id && set({ selectedId: id })
 export function setScope(scope: string) {
+  if (scope !== 'all') touchCompany(scope)
   if (scope === s.scope) return
   set({ scope })
   setProfile(profileFromScope(scope), s.state?.companies.find((c) => c.id === scope)?.color ?? null)
@@ -199,6 +203,7 @@ function morph(update: () => void, el: HTMLElement | null) {
 
 export function openItemFrom(id: string, el?: HTMLElement | null) {
   select(id)
+  touchCompany(itemById(id)?.companyId)
   morph(() => set({ openId: id }), el ?? null)
 }
 
@@ -251,22 +256,115 @@ export async function runNudge(n: Nudge) {
       return ids[0] && openItemFrom(ids[0], document.querySelector<HTMLElement>(`[data-card="${ids[0]}"]`))
     case 'show_doing':
       return document.getElementById('wk-col-doing')?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+    case 'respond':
+      for (const id of ids) await respond(id)
+      return
+    case 'open_company':
+      if (n.companyId) setScope(n.companyId)
+      return
+  }
+}
+
+export async function respond(id: string) {
+  const it = await run(workApi.followup(id, 'primeira resposta'))
+  if (it) toast('Resposta registrada no chamado', { tone: 'ok' })
+  return it
+}
+
+export async function copyText(text: string, what: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    toast(`${what} copiado`, { tone: 'ok' })
+    return true
+  } catch {
+    toast('Não consegui copiar; selecione o texto e use ⌘C', { tone: 'error' })
+    return false
+  }
+}
+
+export function itemTicketUrl(id: string) {
+  const it = itemById(id)
+  return it ? ticketUrl(it, companyById(it.companyId)) : null
+}
+
+export function openTicket(id: string) {
+  const url = itemTicketUrl(id)
+  if (url) void openExternal(url)
+  else toast('Sem link: configure o modelo de link do chamado em Ajustes › Chamados')
+}
+
+export async function copyReply(itemId: string, snippetId?: string) {
+  const it = itemById(itemId)
+  const st = s.state
+  if (!it || !st) return
+  const list = st.snippets.filter((x) => x.companyId === it.companyId)
+  const sn = snippetId ? list.find((x) => x.id === snippetId) : (list.find((x) => x.isDefault) ?? list[0])
+  if (!sn) return toast('Nenhuma resposta rápida para este espaço. Crie em Ajustes › Respostas')
+  const text = renderSnippet(sn.body, it, companyById(it.companyId), civil())
+  try {
+    await navigator.clipboard.writeText(text)
+    toast(`“${sn.title}” copiada para colar no chamado`, { tone: 'ok', undo: () => void respond(itemId), undoLabel: 'Registrar como resposta' })
+  } catch {
+    toast('Não consegui copiar', { tone: 'error' })
+  }
+}
+
+export function copyCommit(itemId: string) {
+  const it = itemById(itemId)
+  if (it) void copyText(commitMessage(it), 'Mensagem de commit')
+}
+
+export async function snippetSave(input: SnippetInput) {
+  try {
+    const snippets = await workApi.snippetSave(input)
+    patchState((st) => ({ ...st, snippets }))
+    return true
+  } catch (e) {
+    fail(e)
+    return false
+  }
+}
+export async function snippetDelete(id: string) {
+  try {
+    const snippets = await workApi.snippetDelete(id)
+    patchState((st) => ({ ...st, snippets }))
+  } catch (e) {
+    fail(e)
   }
 }
 
 async function run(p: Promise<ItemChange>): Promise<WorkItem | null> {
   try {
-    return apply(await p)
+    const it = apply(await p)
+    touchCompany(it.companyId)
+    return it
   } catch (e) {
     fail(e)
     return null
   }
 }
 
+const lastTouch = new Map<string, number>()
+export function touchCompany(companyId: string | null | undefined) {
+  if (!companyId || !s.state?.companies.some((c) => c.id === companyId)) return
+  const today = civil()
+  const seen = s.state.seen.find((x) => x.companyId === companyId)
+  const recent = Date.now() - (lastTouch.get(companyId) ?? 0) < 10 * 60 * 1000
+  if (recent && seen && civil(new Date(seen.seenAt)) === today) return
+  lastTouch.set(companyId, Date.now())
+  workApi
+    .seenTouch(companyId)
+    .then((seenList) => patchState((st) => ({ ...st, seen: seenList })))
+    .catch(() => lastTouch.delete(companyId))
+}
+
 export const itemById = (id: string | null) => (id ? (s.state?.items.find((i) => i.id === id) ?? null) : null)
 export const companyById = (id: string | null) => (id ? (s.state?.companies.find((c) => c.id === id) ?? null) : null)
 
-export const openItem = (id: string | null) => set({ openId: id })
+export const openItem = (id: string | null) => {
+  set({ openId: id })
+  if (id) touchCompany(itemById(id)?.companyId)
+}
 export const openDialog = (d: Dialog | null) => set({ dialog: d })
 
 let celebSeq = 0
@@ -402,6 +500,7 @@ export async function updateTodo(id: string, patch: TodoPatch) {
 export async function toggleTodo(id: string, day = civil()) {
   const t = todoById(id)
   if (!t || !s.state) return
+  touchCompany(t.companyId)
   const done = todoDoneOn(t, s.state.todoChecks, day)
   try {
     if (t.mode === 'daily') {
@@ -487,7 +586,7 @@ export async function companyCreate(name: string, color: string): Promise<Compan
     return null
   }
 }
-export async function companyUpdate(id: string, patch: { name?: string; color?: string; logo?: string | null }) {
+export async function companyUpdate(id: string, patch: import('./types').CompanyPatch) {
   try {
     putCompany(await workApi.companyUpdate(id, patch))
   } catch (e) {

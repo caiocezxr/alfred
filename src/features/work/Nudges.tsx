@@ -4,7 +4,9 @@ import type { AlertKind, Nudge } from './logic'
 import { openItemFrom, runNudge } from './store'
 
 const ICON: Record<AlertKind, IconName> = {
+  neglect: 'eye',
   returned: 'back',
+  sla: 'alarm',
   overdue: 'flag',
   due_today: 'cal',
   validation: 'user',

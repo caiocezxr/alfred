@@ -1,14 +1,14 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { addDays, parseCivil } from '../../shared/dates'
 import { CompanyMark, coStyle } from './brand'
-import { Gauge } from './Gauge'
+import { Gauge, GaugeCenter } from './Gauge'
 import { Icon } from './icons'
 import {
-  dayGrid, dueLabel, fixedTodos, fmtDur, healthLabel, itemTimeMs, label, runningSession, streak, suggestFocus, todayTodos, todoDoneOn,
-  upcomingTodos, type ForgetEntry, type Health, type Nudge, type Scope, type WeekScore,
+  dayGrid, dueLabel, fixedTodos, fmtDur, gaugeSegments, healthLabel, healthSummary, itemTimeMs, label, runningSession, streak, suggestFocus,
+  todayTodos, todoDoneOn, upcomingTodos, type CompanyNeglect, type ForgetEntry, type Health, type Nudge, type Scope, type WeekScore as Score,
 } from './logic'
 import { NudgeLine } from './Nudges'
-import { Odometer } from './Odometer'
+import { WeekScore } from './WeekScore'
 import {
   convertTodo, deleteTodo, openDialog, openItemFrom, readUi, resume, setFocus, setScope, toggleTimer, toggleTodo, useWork, writeUi,
 } from './store'
@@ -67,16 +67,17 @@ type NextRow =
   | { kind: 'focus'; key: string; item: WorkItem }
   | { kind: 'todo'; key: string; todo: Todo; late: boolean }
 
-export function Cockpit({ state, health, perCompany, today, scope, score, nudges, forget, onOpenHoje }: {
+export function Cockpit({ state, health, perCompany, today, scope, score, nudges, forget, onOpenHoje, neglect = [] }: {
   state: WorkState
   health: Health
   perCompany: { company: Company; health: Health }[]
   today: string
   scope: Scope
-  score: WeekScore
+  score: Score
   nudges: Nudge[]
   forget: ForgetEntry[]
   onOpenHoje: () => void
+  neglect?: CompanyNeglect[]
 }) {
   const green = health.level === 'green'
   const days = streak(state.days, today, green)
@@ -102,17 +103,10 @@ export function Cockpit({ state, health, perCompany, today, scope, score, nudges
   }
 
   return (
-    <section className={`wk-cockpit reveal is-${health.level}`} style={{ ['--i' as string]: 1 }} aria-label="Painel do dia">
+    <section className={`wk-cockpit reveal is-${health.level} ${neglect.some((n) => n.unseen) ? 'has-neglect' : ''}`} style={{ ['--i' as string]: 1 }} aria-label="Painel do dia">
       <div className={`wk-ck-gauge ${scope === 'all' ? 'has-rings' : ''}`} tabIndex={scope === 'all' ? 0 : undefined}>
-        <Gauge progress={health.progress} red={red} level={health.level}>
-          {health.total ? (
-            <span className="wk-gauge-num">
-              {health.handled}
-              <small>/{health.total}</small>
-            </span>
-          ) : (
-            <span className="wk-gauge-num is-ok">OK</span>
-          )}
+        <Gauge progress={health.progress} red={red} level={health.level} segments={gaugeSegments(health)} companies={state.companies} summary={healthSummary(health, state.todos)}>
+          <GaugeCenter left={health.blockers.length} />
         </Gauge>
         {scope === 'all' && (
           <div className="wk-ck-rings" role="group" aria-label="Por espaço">
@@ -135,25 +129,27 @@ export function Cockpit({ state, health, perCompany, today, scope, score, nudges
           {days > 0 && <span> · {days} {days === 1 ? 'dia' : 'dias'} em dia</span>}
         </span>
         <h2 className="wk-ck-head">{healthLabel(health)}</h2>
+        {neglect.some((n) => n.unseen) && (
+          <div className="wk-neglect" role="status">
+            {neglect
+              .filter((n) => n.unseen)
+              .map((n) => {
+                const co = companies.get(n.companyId)
+                return (
+                  <button key={n.companyId} className="wk-neglect-tag" style={coStyle(co)} onClick={() => setScope(n.companyId)} title={n.label}>
+                    <i aria-hidden="true" />
+                    <CompanyMark company={co} size={12} />
+                    <span>{scope === n.companyId ? 'sem olhar hoje' : `${co?.name} sem olhar hoje`}</span>
+                  </button>
+                )
+              })}
+          </div>
+        )}
         <NudgeLine list={nudges} />
       </div>
 
-      <div className="wk-ck-score" aria-label="Placar da semana">
-        <span className="wk-ck-meta">Esta semana</span>
-        <div className="wk-ck-odos">
-          <span className="wk-score-cell is-main">
-            <Odometer value={score.delivered} digits={2} label="Entregas na semana" />
-            <em>entregas</em>
-          </span>
-          <span className="wk-score-cell">
-            <Odometer value={score.validated} digits={2} label="Validações na semana" />
-            <em>validadas</em>
-          </span>
-          <span className="wk-score-cell">
-            <Odometer value={score.done} digits={2} label="Concluídos na semana" />
-            <em>concluídas</em>
-          </span>
-        </div>
+      <div className="wk-ck-score">
+        <WeekScore score={score} companies={state.companies} />
       </div>
 
       <div className="wk-ck-next">
@@ -183,6 +179,11 @@ export function Cockpit({ state, health, perCompany, today, scope, score, nudges
                       <b>{r.entry.todo.title}</b>
                       <span>não pode esquecer · {r.entry.when}</span>
                     </button>
+                    {/hora/i.test(r.entry.todo.title) && (
+                      <button className="wk-mini-btn" onClick={() => openDialog({ kind: 'hours', range: 'day' })} title="Gerar o relatório de horas de hoje">
+                        Gerar horas
+                      </button>
+                    )}
                   </li>
                 )
               }
