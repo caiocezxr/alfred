@@ -123,6 +123,8 @@ pub fn run() {
             oficina::oficina_local_models,
             oficina::oficina_local_chat,
             oficina::oficina_local_cancel,
+            oficina::oficina_claude_token,
+            oficina::oficina_claude_login,
             radar::radar_item_set,
             radar::radar_cleanup,
             radar::radar_keywords_list,

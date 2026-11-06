@@ -142,6 +142,9 @@ fn spawn(app: &AppHandle, state: &State<AppState>, mesa: &str, agent: &str, cwd:
         cmd.env("CODEX_HOME", h);
     }
     if agent == "claude" {
+        if let Some(t) = claude_token() {
+            cmd.env("CLAUDE_CODE_OAUTH_TOKEN", t);
+        }
         if let Ok(h) = home() {
             let own = h.join(".local/bin/claude");
             if own.exists() {
@@ -373,6 +376,50 @@ pub fn oficina_status(state: State<AppState>) -> Value {
     })
 }
 
+const VAULT: &str = "app.personalspace.oficina";
+const CLAUDE_TOKEN: &str = "claude-oauth-token";
+
+fn claude_token() -> Option<String> {
+    keyring::Entry::new(VAULT, CLAUDE_TOKEN).and_then(|e| e.get_password()).ok().filter(|t| !t.is_empty())
+}
+
+pub(crate) fn token_ok(t: &str) -> bool {
+    t.starts_with("sk-ant-oat") && (40..=400).contains(&t.len()) && t.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+#[tauri::command]
+pub fn oficina_claude_token(token: Option<String>) -> R<bool> {
+    let entry = keyring::Entry::new(VAULT, CLAUDE_TOKEN).map_err(|_| "Keychain indisponível".to_string())?;
+    match token.map(|t| t.trim().to_string()) {
+        Some(t) if t.is_empty() => {
+            let _ = entry.delete_credential();
+            Ok(false)
+        }
+        Some(t) => {
+            if !token_ok(&t) {
+                return Err("isso não parece um token do claude setup-token (começa com sk-ant-oat)".into());
+            }
+            entry.set_password(&t).map_err(|_| "não deu para gravar no Keychain".to_string())?;
+            Ok(true)
+        }
+        None => Ok(claude_token().is_some()),
+    }
+}
+
+#[tauri::command]
+pub async fn oficina_claude_login() -> R<()> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let h = home()?;
+        let bin = [h.join(".local/bin/claude"), PathBuf::from("/opt/homebrew/bin/claude"), PathBuf::from("/usr/local/bin/claude")].into_iter().find(|p| p.exists()).ok_or("não achei o Claude Code instalado")?;
+        let cmd = format!("'{}' setup-token", bin.to_string_lossy().replace('\'', "'\\''"));
+        let script = format!("tell application \"Terminal\"\nactivate\ndo script \"{}\"\nend tell", cmd.replace('\\', "\\\\").replace('"', "\\\""));
+        let out = Command::new("/usr/bin/osascript").arg("-e").arg(script).output().map_err(|e| e.to_string())?;
+        if out.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&out.stderr).trim().to_string()) }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 const OLLAMA: &str = "http://127.0.0.1:11434";
 
 static STOPS: Mutex<Option<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>> = Mutex::new(None);
@@ -528,6 +575,13 @@ mod tests {
     fn reads_context_length() {
         assert_eq!(context_of(&json!({"model_info": {"gemma3.context_length": 131072, "x": 1}})), Some(131072));
         assert_eq!(context_of(&json!({})), None);
+    }
+
+    #[test]
+    fn token_shape() {
+        assert!(token_ok(&format!("sk-ant-oat01-{}", "a".repeat(80))));
+        assert!(!token_ok("sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"));
+        assert!(!token_ok("sk-ant-oat01-\"; rm -rf ~"));
     }
 
     #[test]

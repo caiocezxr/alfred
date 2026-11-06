@@ -42,6 +42,7 @@ export type Item =
   | { id: string; agent: AgentId; role: 'tool'; title: string; kind: string; status: string; files: string[]; at: number }
   | { id: string; agent: AgentId; role: 'perm'; title: string; options: PermOption[]; rpc: unknown; answered: string | null; at: number }
   | { id: string; agent: AgentId; role: 'note'; text: string; tone: 'error' | 'info'; at: number }
+  | { id: string; agent: AgentId; role: 'auth'; at: number; done: boolean }
 
 export type Status = 'off' | 'opening' | 'idle' | 'thinking' | 'writing' | 'tool' | 'waiting' | 'error'
 
@@ -202,6 +203,21 @@ const textOf = (c: unknown) => {
   return b && b.type === 'text' ? (b.text ?? '') : ''
 }
 
+const AUTH_FAIL = /failed to authenticate|oauth session expired|authentication required|please run \/login|not logged in|invalid api key/i
+
+function authCard(mesa: string, agent: AgentId) {
+  const m = liveOf(mesa)
+  m.items = m.items.filter((x) => !(x.agent === agent && ((x.role === 'agent' && AUTH_FAIL.test(x.text)) || (x.role === 'note' && AUTH_FAIL.test(x.text)))))
+  if (!m.items.slice(-4).some((x) => x.role === 'auth' && !x.done)) push(mesa, { id: uid(), agent, role: 'auth', at: Date.now(), done: false })
+  setAgent(mesa, agent, { status: 'error', error: 'login do Claude expirado', action: '' })
+}
+
+export function markAuthDone(mesa: string) {
+  const m = liveOf(mesa)
+  m.items = m.items.map((x) => (x.role === 'auth' ? { ...x, done: true } : x))
+  emit()
+}
+
 function apply(ev: Out) {
   const { mesa, agent } = ev
   const m = liveOf(mesa)
@@ -224,6 +240,8 @@ function apply(ev: Out) {
         m.items = [...m.items.slice(0, -1), { ...last, text: last.text + text }]
       } else push(mesa, { id: uid(), agent, role, text, at: Date.now(), open: true } as Item)
       setAgent(mesa, agent, { status: role === 'agent' ? 'writing' : 'thinking', action: role === 'agent' ? 'escrevendo a resposta' : 'pensando' })
+      const cur = m.items[m.items.length - 1]
+      if (agent === 'claude' && cur.role === 'agent' && AUTH_FAIL.test(cur.text)) authCard(mesa, agent)
       return
     }
     if (kind === 'user_message_chunk') {
@@ -298,7 +316,18 @@ function apply(ev: Out) {
     if (agent === 'local') queueMicrotask(() => saveLocal(mesa))
     const err = ev.data.error as { message?: string } | undefined
     m.items = m.items.map((x) => (x.role === 'agent' || x.role === 'thought') && x.open && x.agent === agent ? { ...x, open: false } : x)
+    if (err && agent === 'claude' && AUTH_FAIL.test(err.message ?? '')) {
+      authCard(mesa, agent)
+      setAgent(mesa, agent, { since: null })
+      busy(mesa, agent, false)
+      return
+    }
     if (err) push(mesa, { id: uid(), agent, role: 'note', text: err.message ?? 'o agente falhou nesta mensagem', tone: 'error', at: Date.now() })
+    if (m.agents[agent].status === 'error' && m.items.some((x) => x.role === 'auth' && !x.done)) {
+      setAgent(mesa, agent, { since: null })
+      busy(mesa, agent, false)
+      return
+    }
     setAgent(mesa, agent, { status: 'idle', action: '', since: null, turns: m.agents[agent].turns + 1 })
     busy(mesa, agent, false)
     return
@@ -466,7 +495,9 @@ export async function send(mesa: Mesa, agent: AgentId, text: string, images: Sho
     if (model) await oficinaApi.config(mesa.id, agent, MODEL_KEY[agent], model).catch(() => {})
     if (!prefs[EFFORT_KEY[agent]] && has(EFFORT_KEY[agent], r.effort)) await oficinaApi.config(mesa.id, agent, EFFORT_KEY[agent], r.effort).catch(() => {})
     const name = cfg.find((c) => c.id === MODEL_KEY[agent])?.options.find((o) => o.value === model)?.name ?? r.model
-    push(mesa.id, { id: uid(), agent, role: 'note', text: `Auto: ${name} · esforço ${prefs[EFFORT_KEY[agent]] ?? r.effort}, porque é ${r.why}`, tone: 'info', at: Date.now() })
+    const PT: Record<string, string> = { low: 'baixo', medium: 'médio', high: 'alto', xhigh: 'muito alto', max: 'máximo', ultra: 'ultra' }
+    const eff = prefs[EFFORT_KEY[agent]] ?? r.effort
+    push(mesa.id, { id: uid(), agent, role: 'note', text: `Auto: ${name} · esforço ${PT[eff] ?? eff}, porque é ${r.why}`, tone: 'info', at: Date.now() })
   }
   setAgent(mesa.id, agent, { status: 'thinking', action: 'lendo o pedido', since: Date.now() })
   busy(mesa.id, agent, true)

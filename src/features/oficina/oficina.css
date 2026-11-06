@@ -1854,3 +1854,117 @@
 .ofc-stack em {
   white-space: nowrap;
 }
+
+.ofc-auth {
+  align-self: flex-start;
+  display: grid;
+  gap: 12px;
+  width: min(100%, 560px);
+  margin-left: 30px;
+  padding: 16px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--sx-claude) 9%, var(--surface-solid));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sx-claude) 40%, transparent);
+  animation: ofc-in 260ms var(--ease-out) backwards;
+}
+
+.ofc-auth.is-done {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font: 500 12.5px/1.4 var(--font-ui);
+  color: var(--text-2);
+  background: var(--ofc-soft);
+  box-shadow: none;
+}
+
+.ofc-auth header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ofc-auth header .sx-mark {
+  border-radius: 7px;
+}
+
+.ofc-auth header b {
+  font: 650 14px/1.2 var(--font-ui);
+}
+
+.ofc-auth ol {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0 0 0 20px;
+}
+
+.ofc-auth li {
+  display: grid;
+  gap: 8px;
+  font: 450 13px/1.5 var(--font-ui);
+  color: var(--text);
+}
+
+.ofc-auth li::marker {
+  font: 700 12px var(--ofc-mono);
+  color: var(--sx-claude);
+}
+
+.ofc-auth li > button,
+.ofc-auth-in button {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--surface-solid);
+  box-shadow: inset 0 0 0 1px var(--ofc-line);
+  color: var(--text);
+  font: 650 12.5px/1 var(--font-ui);
+  cursor: pointer;
+}
+
+.ofc-auth-in {
+  display: flex;
+  gap: 6px;
+}
+
+.ofc-auth-in input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  outline: 0;
+  background: var(--surface-solid);
+  box-shadow: inset 0 0 0 1px var(--ofc-line);
+  color: var(--text);
+  font: 500 12.5px/1 var(--ofc-mono);
+}
+
+.ofc-auth-in input:focus {
+  box-shadow: inset 0 0 0 1px var(--sx-claude);
+}
+
+.ofc-auth-in .is-go {
+  background: var(--sx-claude);
+  box-shadow: none;
+  color: #fff;
+}
+
+.ofc-auth-in .is-go:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ofc-auth-e {
+  margin: 0;
+  font: 500 12px/1.4 var(--font-ui);
+  color: #e0533f;
+}

@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { onIntent } from '../../app/router'
 import { isTauri } from '../../shared/db/api'
 import { Icon } from '../work/icons'
@@ -21,6 +22,7 @@ import {
   loadLocalModels,
   loadMesas,
   localConfig,
+  markAuthDone,
   patchMesa,
   removeMesa,
   seed,
@@ -642,7 +644,59 @@ function Row({ it, desk }: { it: Item; desk: string }) {
       </div>
     )
   if (it.role === 'note') return <div className={`ofc-note is-${it.tone}`}>{it.text}</div>
+  if (it.role === 'auth') return <AuthCard desk={desk} done={it.done} />
   return null
+}
+
+function AuthCard({ desk, done }: { desk: string; done: boolean }) {
+  const [token, setToken] = useState('')
+  const [msg, setMsg] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  if (done)
+    return (
+      <div className="ofc-auth is-done">
+        <ToolMark tool="claude" size={12} /> Token salvo. Manda a mensagem de novo.
+      </div>
+    )
+  const save = async () => {
+    setBusy(true)
+    setMsg(null)
+    try {
+      await invoke('oficina_claude_token', { token })
+      await closeAgent(desk, 'claude')
+      markAuthDone(desk)
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="ofc-auth">
+      <header>
+        <ToolMark tool="claude" size={16} />
+        <b>O login do Claude Code expirou</b>
+      </header>
+      <ol>
+        <li>
+          <span>Gere um token da sua assinatura. Abre o Terminal, você entra no navegador e ele mostra o token.</span>
+          <button onClick={() => void invoke('oficina_claude_login').catch((e) => setMsg(String(e)))}>
+            <Icon name="key" size={12} /> Gerar token no Terminal
+          </button>
+        </li>
+        <li>
+          <span>Cole o token aqui. Ele fica no Keychain do Mac e só o Claude da Oficina usa.</span>
+          <div className="ofc-auth-in">
+            <input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="sk-ant-oat…" autoComplete="off" spellCheck={false} />
+            <button className="is-go" onClick={() => void save()} disabled={!token.trim() || busy}>
+              {busy ? 'Salvando…' : 'Salvar'}
+            </button>
+          </div>
+        </li>
+      </ol>
+      {msg && <p className="ofc-auth-e">{msg}</p>}
+    </div>
+  )
 }
 
 function Menu({ label, value, title, children, wide }: { label: string; value: ReactNode; title?: string; children: (close: () => void) => ReactNode; wide?: boolean }) {
