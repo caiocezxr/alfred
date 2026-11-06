@@ -9,7 +9,7 @@ import {
 import { Odometer } from '../work/Odometer'
 import '../work/work.css'
 import { Celebrate, HabitSheet } from './HabitSheet'
-import { CATEGORIES, MILESTONES, guessKind, metaOf, numbersOf, setMeta, useHabitMeta, type HabitKind } from './meta'
+import { CATEGORIES, MILESTONES, clearMissed, guessKind, markMissed, metaOf, numbersOf, pendingDays, setMeta, useHabitMeta, type HabitKind } from './meta'
 import './habits.css'
 
 const TRAIL = 14
@@ -153,6 +153,8 @@ export default function Habits() {
       )}
       {cel && <Celebrate days={cel.days} name={cel.name} quit={cel.quit} onDone={() => setCel(null)} />}
 
+      <CatchUp habits={habits} checkins={checkins} today={today} />
+
       <section className="hb-panel reveal" style={{ ['--i' as string]: 1 }} aria-label="Hoje">
         <div className="hb-panel-h">
           <span className="hb-plate">Hoje</span>
@@ -198,7 +200,7 @@ export default function Habits() {
             <TrailRow key={h.id} habit={h} checkins={checkins} today={today} index={i} onEdit={() => setEditing(h)} onOpen={() => setSheet(h.id)} />
           ))}
           <p className="hb-legend">
-            <i className="is-done" /> feito <i className="is-minimum" /> mínimo <i className="is-miss" /> não marcado · clique num dia para corrigir
+            <i className="is-done" /> feito <i className="is-minimum" /> mínimo <i className="is-fail" /> não fez <i className="is-miss" /> ficou sem marcar · clique num dia para alternar
           </p>
         </section>
       )}
@@ -261,6 +263,7 @@ function TrailRow({ habit, checkins, today, index, onEdit, onOpen }: { habit: Ha
   const box = useRef<HTMLDivElement>(null)
   const paused = isPausedNow(habit)
   const map = useMemo(() => statusMap(checkins, habit.id), [checkins, habit.id])
+  const missed = new Set(metaOf(habit).missed ?? [])
   const s30 = habitStats(habit, checkins, addDays(today, -29), today)
   const streak = streakOf(habit, map, today)
 
@@ -290,8 +293,9 @@ function TrailRow({ habit, checkins, today, index, onEdit, onOpen }: { habit: Ha
           const d = addDays(today, i - TRAIL + 1)
           const st = map.get(d) ?? null
           const sch = isScheduled(habit, d)
-          const cls = st ? `is-${st}` : sch ? (d === today ? 'is-open' : 'is-miss') : 'is-rest'
-          const label = `${fmtShort.format(parseCivil(d)).replace('.', '')}: ${st === 'done' ? 'feito' : st === 'minimum' ? 'mínimo' : sch ? 'não marcado' : 'folga'}`
+          const fail = !st && missed.has(d)
+          const cls = st ? `is-${st}` : fail ? 'is-fail' : sch ? (d === today ? 'is-open' : 'is-miss') : 'is-rest'
+          const label = `${fmtShort.format(parseCivil(d)).replace('.', '')}: ${st === 'done' ? 'feito' : st === 'minimum' ? 'mínimo' : fail ? 'não fez' : sch ? (d === today ? 'hoje, em aberto' : 'ficou sem marcar') : 'folga'}`
           return (
             <button
               key={d}
@@ -299,7 +303,14 @@ function TrailRow({ habit, checkins, today, index, onEdit, onOpen }: { habit: Ha
               title={label}
               aria-label={`${habit.name}, ${label}`}
               disabled={d < habit.startDate}
-              onClick={() => void setCheckin(habit.id, d, cycle(st))}
+              onClick={() => {
+                if (fail) return clearMissed(habit, d)
+                if (st === 'minimum' && d !== today) {
+                  markMissed(habit, d)
+                  return void setCheckin(habit.id, d, null)
+                }
+                void setCheckin(habit.id, d, cycle(st))
+              }}
             />
           )
         })}
@@ -461,5 +472,50 @@ function HabitForm({ habit, onClose }: { habit: Habit | null; onClose: () => voi
         <button type="submit" className="btn primary" disabled={!name.trim() || !days}>{habit ? 'Salvar' : 'Criar hábito'}</button>
       </div>
     </form>
+  )
+}
+
+const dayWord = (d: string, today: string) => {
+  const diff = Math.round((parseCivil(today).getTime() - parseCivil(d).getTime()) / 864e5)
+  if (diff === 1) return 'Ontem'
+  if (diff === 2) return 'Anteontem'
+  return fmtShort.format(parseCivil(d)).replace('.', '')
+}
+
+function CatchUp({ habits, checkins, today }: { habits: Habit[]; checkins: Checkin[]; today: string }) {
+  useHabitMeta()
+  const list = pendingDays(habits, checkins, today, 3)
+  if (!list.length) return null
+  return (
+    <section className="hb-catch reveal" style={{ ['--i' as string]: 1 }} aria-label="Ficou sem marcar">
+      <header>
+        <span className="hb-catch-k">
+          <i aria-hidden="true" />
+          Ficou sem marcar
+        </span>
+        <span className="hb-catch-sub">Responda rápido para o rastro ficar certo.</span>
+      </header>
+      <ul>
+        {list.slice(0, 6).map(({ habit, date }) => {
+          const quit = metaOf(habit).kind === 'largar'
+          return (
+            <li key={`${habit.id}-${date}`}>
+              <span className="hb-catch-when">{dayWord(date, today)}</span>
+              <span className="hb-catch-name">{habit.name}</span>
+              <span className="hb-catch-act">
+                <button className="is-yes" onClick={() => void setCheckin(habit.id, date, 'done')}>
+                  {quit ? 'Fiquei limpo' : 'Fiz'}
+                </button>
+                {!quit && <button onClick={() => void setCheckin(habit.id, date, 'minimum')}>Só o mínimo</button>}
+                <button className="is-no" onClick={() => markMissed(habit, date)}>
+                  {quit ? 'Recaí' : 'Não fiz'}
+                </button>
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+      {list.length > 6 && <p className="hb-catch-more">e mais {list.length - 6} no rastro abaixo</p>}
+    </section>
   )
 }

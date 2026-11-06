@@ -5,7 +5,7 @@ import { api, isTauri, type Checkin, type Habit } from '../../shared/db/api'
 import { isScheduled } from '../../shared/db/stores'
 
 export type HabitKind = 'construir' | 'largar'
-export type HabitMeta = { kind: HabitKind; category: string | null; tips: string[]; tipsAt: string | null; seen: number[] }
+export type HabitMeta = { kind: HabitKind; category: string | null; tips: string[]; tipsAt: string | null; seen: number[]; missed?: string[] }
 
 export const CATEGORIES = ['Corpo', 'Mente', 'Trabalho', 'Dinheiro', 'Família', 'Fé', 'Casa']
 export const MILESTONES = [3, 7, 14, 21, 30, 66, 100]
@@ -49,7 +49,7 @@ export function guessKind(name: string): HabitKind {
 }
 
 export function metaOf(h: Habit): HabitMeta {
-  return all[h.id] ?? { kind: guessKind(h.name), category: null, tips: [], tipsAt: null, seen: [] }
+  return all[h.id] ?? { kind: guessKind(h.name), category: null, tips: [], tipsAt: null, seen: [], missed: [] }
 }
 
 export function setMeta(id: string, patch: Partial<HabitMeta>, base: HabitMeta) {
@@ -82,7 +82,7 @@ export async function generateTips(h: Habit, m: HabitMeta): Promise<string[]> {
   }
 }
 
-export type HabitNumbers = { streak: number; best: number; total: number; minimum: number; rate7: number | null; rate30: number | null }
+export type HabitNumbers = { streak: number; best: number; total: number; minimum: number; rate7: number | null; rate30: number | null; failed30: number; unmarked30: number }
 
 export function numbersOf(h: Habit, checkins: Checkin[], today: string): HabitNumbers {
   const map = new Map(checkins.filter((c) => c.habitId === h.id).map((c) => [c.date, c.status]))
@@ -118,5 +118,41 @@ export function numbersOf(h: Habit, checkins: Checkin[], today: string): HabitNu
     }
     return sch ? ok / sch : null
   }
-  return { streak, best: Math.max(best, streak), total, minimum, rate7: rate(7), rate30: rate(30) }
+  const missed = new Set(all[h.id]?.missed ?? [])
+  let failed30 = 0
+  let unmarked30 = 0
+  for (let k = 1; k <= 30; k++) {
+    const x = addDays(today, -k)
+    if (x < h.startDate || !isScheduled(h, x) || map.get(x)) continue
+    if (missed.has(x)) failed30++
+    else unmarked30++
+  }
+  return { streak, best: Math.max(best, streak), total, minimum, rate7: rate(7), rate30: rate(30), failed30, unmarked30 }
+}
+
+export function markMissed(h: Habit, date: string) {
+  const m = metaOf(h)
+  setMeta(h.id, { missed: [...new Set([...(m.missed ?? []), date])].slice(-400) }, m)
+}
+
+export function clearMissed(h: Habit, date: string) {
+  const m = metaOf(h)
+  if (!m.missed?.includes(date)) return
+  setMeta(h.id, { missed: m.missed.filter((d) => d !== date) }, m)
+}
+
+export type Pending = { habit: Habit; date: string }
+
+export function pendingDays(habits: Habit[], checkins: Checkin[], today: string, back = 3): Pending[] {
+  const out: Pending[] = []
+  for (let k = 1; k <= back; k++) {
+    const d = addDays(today, -k)
+    for (const h of habits) {
+      if (d < h.startDate || !isScheduled(h, d)) continue
+      if (checkins.some((c) => c.habitId === h.id && c.date === d)) continue
+      if (metaOf(h).missed?.includes(d)) continue
+      out.push({ habit: h, date: d })
+    }
+  }
+  return out
 }

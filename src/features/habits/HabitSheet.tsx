@@ -93,6 +93,14 @@ export function HabitSheet({ habit, checkins, today, onClose, onEdit }: { habit:
               <dt>30 dias</dt>
               <dd>{pct(n.rate30)}</dd>
             </div>
+            <div>
+              <dt>{quit ? 'Recaídas' : 'Falhas'} · 30 d</dt>
+              <dd>{n.failed30}</dd>
+            </div>
+            <div>
+              <dt>Sem marcar · 30 d</dt>
+              <dd className={n.unmarked30 ? 'is-warn' : ''}>{n.unmarked30}</dd>
+            </div>
           </dl>
         </section>
 
@@ -120,7 +128,7 @@ export function HabitSheet({ habit, checkins, today, onClose, onEdit }: { habit:
               <div key={ci}>
                 {col.map((d) => {
                   const st = map.get(d)
-                  const cls = d > today ? 'is-future' : st === 'done' ? 'is-done' : st === 'minimum' ? 'is-min' : isScheduled(habit, d) ? 'is-miss' : 'is-off'
+                  const cls = d > today ? 'is-future' : st === 'done' ? 'is-done' : st === 'minimum' ? 'is-min' : m.missed?.includes(d) ? 'is-fail' : isScheduled(habit, d) && d < today && d >= habit.startDate ? 'is-miss' : 'is-off'
                   return <i key={d} className={`${cls} ${d === today ? 'is-today' : ''}`} title={fmtShort.format(parseCivil(d))} />
                 })}
               </div>
