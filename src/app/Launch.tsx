@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { HYBRID, getProfile, setProfile, type Profile } from '../shared/profile'
 import { companyCreate, getWork, loadWork, useWork } from '../features/work/store'
@@ -7,8 +7,9 @@ import { isUnlocked, markUnlocked, setPassword, verifyPassword, warmLocks } from
 import './launch.css'
 
 const NEW_COLORS = ['#1F8A5B', '#E07A2E', '#7A4FE0', '#D4373F', '#1A9BB0', '#C9A227']
-
 const KEY = 'ps.launch.played'
+const NEW = '__novo'
+const TICKS = 120
 
 export function shouldLaunch() {
   if (!isUnlocked(getProfile())) return true
@@ -19,160 +20,112 @@ export function shouldLaunch() {
   }
 }
 
-const calm = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
+type Phase = 'pick' | 'lock' | 'new' | 'open' | 'done'
+type Opt = { id: string; label: string; hint: string; color: string }
 
-type Phase = 'ignite' | 'rise' | 'pick' | 'open' | 'done'
+const fmtNow = (d: Date) =>
+  `${new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(d)} · ${new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(d)}`
 
 export function Launch({ onDone, intoRitual }: { onDone: () => void; intoRitual: boolean }) {
-  const [phase, setPhase] = useState<Phase>(() => (calm() ? 'pick' : 'ignite'))
-  const [lock, setLock] = useState<Profile | null>(null)
+  const companies = useWork().state?.companies ?? []
+  const options: Opt[] = [
+    ...companies.map((c) => ({ id: c.id, label: c.name, hint: c.id === 'pessoal' ? 'Sua vida fora do trabalho' : `Só o trabalho da ${c.name}`, color: c.color })),
+    { id: HYBRID, label: 'Híbrido', hint: 'Tudo junto, num lugar só', color: '#c9a46a' },
+    { id: NEW, label: 'Novo perfil', hint: 'Outra empresa ou projeto', color: '#8a8f99' },
+  ]
+  const n = options.length
+  const step = 360 / n
+
+  const [phase, setPhase] = useState<Phase>('pick')
+  const [turn, setTurn] = useState(() => Math.max(0, options.findIndex((o) => o.id === getProfile())))
+  const idx = ((turn % n) + n) % n
+  const cur = options[idx] ?? options[0]
   const [pw, setPw] = useState('')
   const [bad, setBad] = useState(0)
   const [checking, setChecking] = useState(false)
-  const lockRef = useRef<Profile | null>(null)
-  lockRef.current = lock
-  const emblem = useRef<HTMLDivElement>(null)
-  const root = useRef<HTMLDivElement>(null)
-  const timers = useRef<number[]>([])
-  const fast = useRef(false)
-  const [sel, setSel] = useState<Profile>(getProfile)
-  const phaseRef = useRef<Phase>('ignite')
-  phaseRef.current = phase
-  const selRef = useRef(sel)
-  selRef.current = sel
-  const companies = useWork().state?.companies ?? []
-  const options: { id: Profile; label: string; hint: string; color: string }[] = [
-    ...companies.map((c) => ({ id: c.id, label: c.name, hint: c.id === 'pessoal' ? 'Sua vida fora do trabalho' : `Só o trabalho da ${c.name}`, color: c.color })),
-    { id: HYBRID, label: 'Híbrido', hint: 'Tudo junto, como hoje', color: '#c9b28a' },
-  ]
-  const optsRef = useRef(options)
-  optsRef.current = options
-  const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
   const [newColor, setNewColor] = useState(NEW_COLORS[0])
   const [newPw, setNewPw] = useState('')
-  const creatingRef = useRef(false)
-  creatingRef.current = creating
-  const ritualRef = useRef(intoRitual)
-  ritualRef.current = intoRitual
-  const chooseRef = useRef<(p: Profile) => void>(() => {})
+  const [now, setNow] = useState(() => new Date())
+  const input = useRef<HTMLInputElement>(null)
+  const synced = useRef(false)
+
+  const live = useRef({ phase, idx, turn, n, options })
+  live.current = { phase, idx, turn, n, options }
 
   useEffect(() => {
     void loadWork()
     warmLocks()
-  }, [])
-
-  useEffect(() => {
     try {
       sessionStorage.setItem(KEY, '1')
     } catch {}
     const html = document.documentElement
     html.dataset.intro = '1'
     html.dataset.launch = '1'
-    const at = (ms: number, fn: () => void) => timers.current.push(window.setTimeout(fn, ms))
-    if (!calm()) {
-      at(380, () => setPhase('rise'))
-      at(900, () => setPhase('pick'))
-    }
-    const skip = () => {
-      if (fast.current) return
-      fast.current = true
-      timers.current.forEach(clearTimeout)
-      timers.current = []
-      setPhase('pick')
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (phaseRef.current !== 'pick') {
-        skip()
-        return
-      }
-      if (lockRef.current) {
-        if (e.key === 'Escape') {
-          e.preventDefault()
-          setLock(null)
-          setPw('')
-        }
-        return
-      }
-      if (creatingRef.current) return
-      const order = optsRef.current.map((p) => p.id)
-      const n = Number(e.key)
-      if (n >= 1 && n <= order.length) {
-        e.preventDefault()
-        chooseRef.current(order[n - 1])
-      } else if (e.key.toLowerCase() === 'n') {
-        e.preventDefault()
-        setCreating(true)
-      } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-        e.preventDefault()
-        const i = order.indexOf(selRef.current)
-        setSel(order[(i + (e.key === 'ArrowRight' ? 1 : order.length - 1)) % order.length])
-      } else if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault()
-        chooseRef.current(selRef.current)
-      }
-    }
-    const onDown = () => phaseRef.current !== 'pick' && skip()
-    window.addEventListener('keydown', onKey)
-    window.addEventListener('pointerdown', onDown)
-
-    let raf = 0
-    let mx = 0
-    let my = 0
-    const onMove = (e: PointerEvent) => {
-      mx = e.clientX / window.innerWidth - 0.5
-      my = e.clientY / window.innerHeight - 0.5
-      if (raf) return
-      raf = requestAnimationFrame(() => {
-        raf = 0
-        const el = emblem.current
-        if (!el) return
-        el.style.setProperty('--tx', mx.toFixed(3))
-        el.style.setProperty('--ty', my.toFixed(3))
-      })
-    }
-    window.addEventListener('pointermove', onMove, { passive: true })
-
+    const t = window.setInterval(() => setNow(new Date()), 15000)
     return () => {
-      timers.current.forEach(clearTimeout)
-      window.removeEventListener('keydown', onKey)
-      window.removeEventListener('pointerdown', onDown)
-      window.removeEventListener('pointermove', onMove)
-      cancelAnimationFrame(raf)
+      window.clearInterval(t)
       delete html.dataset.launch
     }
   }, [])
 
-  const enter = (p: Profile) => {
-    if (phaseRef.current !== 'pick') return
-    setSel(p)
-    setProfile(p, getWork().state?.companies.find((c) => c.id === p)?.color ?? null)
-    phaseRef.current = 'open'
-    window.setTimeout(open, 160)
+  useEffect(() => {
+    if (synced.current || !companies.length) return
+    synced.current = true
+    const i = options.findIndex((o) => o.id === getProfile())
+    if (i >= 0) setTurn(i)
+  }, [companies.length])
+
+  const rotateTo = (target: number) => {
+    const { idx: from, n: total, turn: t } = live.current
+    let d = (target - from) % total
+    if (d > total / 2) d -= total
+    if (d < -total / 2) d += total
+    setTurn(t + d)
   }
 
-  const choose = (p: Profile) => {
-    if (phaseRef.current !== 'pick') return
-    setSel(p)
-    if (isUnlocked(p)) return enter(p)
+  const nudge = (dir: number) => setTurn((t) => t + dir)
+
+  const enter = (i = live.current.idx) => {
+    const o = live.current.options[i]
+    if (!o || live.current.phase !== 'pick') return
+    if (i !== live.current.idx) rotateTo(i)
+    if (o.id === NEW) {
+      setPhase('new')
+      return
+    }
+    if (isUnlocked(o.id)) return finish(o.id)
     setPw('')
     setBad(0)
-    setLock(p)
+    setPhase('lock')
+    requestAnimationFrame(() => input.current?.focus({ preventScroll: true }))
   }
-  chooseRef.current = choose
+
+  const finish = (id: Profile) => {
+    setProfile(id, getWork().state?.companies.find((c) => c.id === id)?.color ?? null)
+    setPhase('open')
+    setTurn((t) => t + live.current.n)
+    const html = document.documentElement
+    window.setTimeout(() => {
+      delete html.dataset.launch
+      if (!intoRitual) delete html.dataset.intro
+    }, 380)
+    window.setTimeout(() => {
+      setPhase('done')
+      onDone()
+    }, 760)
+  }
 
   const unlock = async () => {
-    const p = lockRef.current
-    if (!p || !pw || checking) return
+    if (!pw || checking || cur.id === NEW) return
     setChecking(true)
-    const ok = await verifyPassword(p, pw)
+    const ok = await verifyPassword(cur.id, pw)
     setChecking(false)
-    if (ok) {
-      setLock(null)
-      enter(p)
-    } else {
+    if (ok) finish(cur.id)
+    else {
       setPw('')
-      setBad((n) => n + 1)
+      setBad((b) => b + 1)
+      input.current?.focus({ preventScroll: true })
     }
   }
 
@@ -182,199 +135,215 @@ export function Launch({ onDone, intoRitual }: { onDone: () => void; intoRitual:
     const before = new Set((getWork().state?.companies ?? []).map((c) => c.id))
     await companyCreate(name, newColor)
     const made = (getWork().state?.companies ?? []).find((c) => !before.has(c.id))
-    setCreating(false)
+    if (!made) return
+    await setPassword(made.id, newPw)
+    markUnlocked(made.id)
     setNewName('')
-    if (made) {
-      await setPassword(made.id, newPw)
-      markUnlocked(made.id)
-      enter(made.id)
-    }
     setNewPw('')
+    finish(made.id)
   }
 
-  const open = () => {
-    setPhase('open')
-    const html = document.documentElement
-    const ritual = ritualRef.current
-    window.setTimeout(() => {
-      if (!ritualRef.current) delete html.dataset.intro
-    }, ritual ? 0 : 260)
-    window.setTimeout(() => {
-      setPhase('done')
-      onDone()
-    }, ritual ? 600 : 820)
-  }
+  useEffect(() => {
+    const back = () => {
+      setPhase('pick')
+      setPw('')
+      setBad(0)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      const p = live.current.phase
+      if (p === 'open' || p === 'done') return
+      if (p === 'lock' || p === 'new') {
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          back()
+        }
+        return
+      }
+      const k = e.key
+      if (k === 'ArrowRight' || k === 'ArrowDown') {
+        e.preventDefault()
+        nudge(1)
+      } else if (k === 'ArrowLeft' || k === 'ArrowUp') {
+        e.preventDefault()
+        nudge(-1)
+      } else if (k === 'Enter' || k === ' ') {
+        e.preventDefault()
+        enter()
+      } else if (k.toLowerCase() === 'n') {
+        e.preventDefault()
+        rotateTo(live.current.n - 1)
+        setPhase('new')
+      } else if (/^[1-9]$/.test(k) && Number(k) <= live.current.n - 1) {
+        e.preventDefault()
+        enter(Number(k) - 1)
+      }
+    }
+    let acc = 0
+    let last = 0
+    const onWheel = (e: WheelEvent) => {
+      if (live.current.phase !== 'pick') return
+      e.preventDefault()
+      const t = performance.now()
+      if (t - last > 220) acc = 0
+      last = t
+      acc += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY
+      if (Math.abs(acc) >= 36) {
+        nudge(acc > 0 ? 1 : -1)
+        acc = 0
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('wheel', onWheel, { passive: false })
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('wheel', onWheel)
+    }
+  }, [])
 
   if (phase === 'done') return null
 
-  const ticks = Array.from({ length: 60 }, (_, i) => i)
-  const lockOpt = lock ? options.find((o) => o.id === lock) ?? null : null
-  const lockCompany = lock ? companies.find((c) => c.id === lock) ?? null : null
+  const ring = -turn * step
+  const company = companies.find((c) => c.id === cur.id)
+  const pc = cur.id === NEW ? newColor : cur.color
+
+  const mark = (o: Opt, size: number) => {
+    const c = companies.find((x) => x.id === o.id)
+    if (c) return <CompanyMark company={c} size={size} />
+    if (o.id === HYBRID)
+      return (
+        <span className="lx-hybrid">
+          {companies.slice(0, 4).map((x) => (
+            <i key={x.id} style={{ background: x.color }} />
+          ))}
+        </span>
+      )
+    return <span className="lx-plus">+</span>
+  }
 
   return createPortal(
-    <div ref={root} className={`ln is-${phase} ${intoRitual ? 'to-ritual' : ''} ${lock ? 'is-locking' : ''}`}>
-      <div className="ln-door is-top" />
-      <div className="ln-door is-bottom" />
-      <div className="ln-stage">
-        <div className="ln-emblem" ref={emblem} aria-hidden="true">
-          <svg className="ln-bezel" viewBox="0 0 200 200">
-            {ticks.map((i) => {
-              const a = (i / 60) * Math.PI * 2 - Math.PI / 2
-              const long = i % 5 === 0
-              const r1 = long ? 82 : 86
+    <div className={`lx is-${phase} ${intoRitual ? 'to-ritual' : ''}`} style={{ ['--pc' as string]: pc } as CSSProperties}>
+      <div className="lx-bg" aria-hidden="true">
+        <span className="lx-glow" />
+      </div>
+
+      <header className="lx-top">
+        <span className="lx-word">Personal Space</span>
+        <span className="lx-now">{fmtNow(now)}</span>
+      </header>
+
+      <div className="lx-stage">
+        <div className="lx-dial">
+          <span className="lx-notch" aria-hidden="true" />
+          <div className="lx-ring" style={{ transform: `rotate(${ring}deg)` }}>
+            <svg className="lx-ticks" viewBox="0 0 400 400" aria-hidden="true">
+              {Array.from({ length: TICKS }, (_, i) => {
+                const a = (i / TICKS) * Math.PI * 2
+                const major = i % 10 === 0
+                const r1 = major ? 181 : 186
+                return <line key={i} className={major ? 'is-major' : ''} x1={200 + Math.sin(a) * r1} y1={200 - Math.cos(a) * r1} x2={200 + Math.sin(a) * 193} y2={200 - Math.cos(a) * 193} />
+              })}
+            </svg>
+            {options.map((o, i) => {
+              const a = i * step
               return (
-                <line
-                  key={i}
-                  x1={100 + Math.cos(a) * r1}
-                  y1={100 + Math.sin(a) * r1}
-                  x2={100 + Math.cos(a) * 92}
-                  y2={100 + Math.sin(a) * 92}
-                  style={{ ['--k' as string]: i }}
-                  className={long ? 'is-long' : ''}
-                />
+                <div key={o.id} className="lx-station" style={{ transform: `rotate(${a}deg) translateY(-148px)` }}>
+                  <button
+                    type="button"
+                    className={`lx-st ${i === idx ? 'is-on' : ''} ${o.id === NEW ? 'is-new' : ''}`}
+                    style={{ transform: `rotate(${-(a + ring)}deg)`, ['--sc' as string]: o.color } as CSSProperties}
+                    onClick={() => (i === idx ? enter(i) : rotateTo(i))}
+                    tabIndex={phase === 'pick' ? 0 : -1}
+                    aria-label={o.label}
+                    aria-pressed={i === idx}
+                  >
+                    <span className="lx-st-mark">{mark(o, 22)}</span>
+                    <span className="lx-st-name">{o.label}</span>
+                  </button>
+                </div>
               )
             })}
-          </svg>
-          <div className="ln-window">
-            <div className="ln-sun" />
-            <div className="ln-water" />
           </div>
-          <div className="ln-glint" />
-        </div>
-        <div className="ln-pick" role="radiogroup" aria-label="Com qual perfil você quer começar?">
-          <p className="ln-ask">{lock ? 'Digite a senha do perfil' : 'Com qual perfil você começa hoje?'}</p>
-          <div className="ln-cards">
-            {options.map((p, i) => {
-              const company = companies.find((c) => c.id === p.id)
-              return (
-                <button
-                  key={p.id}
-                  role="radio"
-                  aria-checked={sel === p.id}
-                  className={`ln-card ${sel === p.id ? 'is-on' : ''}`}
-                  style={{ ['--pc' as string]: p.color, ['--k' as string]: i }}
-                  onMouseEnter={() => setSel(p.id)}
-                  onFocus={() => setSel(p.id)}
-                  onClick={() => choose(p.id)}
-                >
-                  <span className="ln-card-mark">
-                    {company ? (
-                      <CompanyMark company={company} size={34} />
-                    ) : (
-                      <span className="ln-hybrid">
-                        {companies.slice(0, 4).map((c) => (
-                          <i key={c.id} style={{ background: c.color }} />
-                        ))}
-                      </span>
-                    )}
-                  </span>
-                  <span className="ln-card-name">{p.label}</span>
-                  <span className="ln-card-hint">{p.hint}</span>
-                  <kbd>{i + 1}</kbd>
-                </button>
-              )
-            })}
-            {creating ? (
+
+          <div className={`lx-core ${bad ? 'is-bad' : ''}`} key={phase === 'lock' ? `b${bad}` : 'core'}>
+            <span className="lx-core-face" aria-hidden="true" />
+            {phase === 'lock' ? (
               <form
-                className="ln-card is-new is-form"
-                style={{ ['--pc' as string]: newColor, ['--k' as string]: options.length }}
+                className="lx-lock"
                 onSubmit={(e) => {
                   e.preventDefault()
-                  void create()
+                  void unlock()
                 }}
               >
-                <input autoFocus value={newName} maxLength={40} placeholder="Nome da empresa" onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setCreating(false)} aria-label="Nome do novo perfil" />
-                <input type="password" value={newPw} placeholder="Senha (mín. 4)" onChange={(e) => setNewPw(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setCreating(false)} aria-label="Senha do novo perfil" autoComplete="new-password" />
-                <span className="ln-swatches">
-                  {NEW_COLORS.map((c) => (
-                    <button type="button" key={c} className={c === newColor ? 'is-on' : ''} style={{ background: c }} onClick={() => setNewColor(c)} aria-label={`Cor ${c}`} />
-                  ))}
+                <span className="lx-k">{bad ? 'Senha incorreta' : checking ? 'Conferindo' : cur.label}</span>
+                <input
+                  ref={input}
+                  autoFocus
+                  type="password"
+                  value={pw}
+                  onChange={(e) => setPw(e.target.value)}
+                  placeholder="senha"
+                  aria-label={`Senha do perfil ${cur.label}`}
+                  autoComplete="current-password"
+                />
+                <span className="lx-hint">
+                  <kbd>Enter</kbd> abre · <kbd>Esc</kbd> volta
                 </span>
-                <button type="submit" className="ln-create" disabled={!newName.trim() || newPw.length < 4}>
-                  Criar e entrar
-                </button>
               </form>
+            ) : phase === 'open' ? (
+              <div className="lx-open">
+                <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true">
+                  <path d="M5 12.5l4.5 4.5L19 7.5" />
+                </svg>
+                <span className="lx-k">{cur.label}</span>
+              </div>
             ) : (
-              <button className="ln-card is-new" style={{ ['--k' as string]: options.length }} onClick={() => setCreating(true)}>
-                <span className="ln-card-mark is-plus">+</span>
-                <span className="ln-card-name">Novo perfil</span>
-                <span className="ln-card-hint">Outra empresa ou projeto</span>
-                <kbd>N</kbd>
+              <button type="button" className="lx-pick" onClick={() => enter()} tabIndex={-1} aria-hidden="true">
+                <span className="lx-pick-mark" key={cur.id}>
+                  {company ? <CompanyMark company={company} size={34} /> : mark(cur, 34)}
+                </span>
+                <span className="lx-name" key={`n${cur.id}`}>
+                  {cur.label}
+                </span>
+                <span className="lx-sub" key={`h${cur.id}`}>
+                  {cur.hint}
+                </span>
               </button>
             )}
           </div>
-          {lockOpt && (
-            <form
-              key={lockOpt.id}
-              className={`ln-lock ${bad ? 'is-bad' : ''}`}
-              style={{ ['--pc' as string]: lockOpt.color }}
-              onSubmit={(e) => {
-                e.preventDefault()
-                void unlock()
-              }}
-            >
-              <span className="ln-lock-mark">
-                {lockCompany ? (
-                  <CompanyMark company={lockCompany} size={30} />
-                ) : (
-                  <span className="ln-hybrid">
-                    {companies.slice(0, 4).map((c) => (
-                      <i key={c.id} style={{ background: c.color }} />
-                    ))}
-                  </span>
-                )}
-              </span>
-              <span className="ln-lock-body">
-                <span className="ln-lock-name">{lockOpt.label}</span>
-                <span key={bad} className="ln-lock-field">
-                  <svg className="ln-lock-icon" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-                    <rect x="3" y="7" width="10" height="7" rx="1.6" />
-                    <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
-                  </svg>
-                  <input
-                    autoFocus
-                    type="password"
-                    value={pw}
-                    onChange={(e) => setPw(e.target.value)}
-                    placeholder="Senha do perfil"
-                    aria-label={`Senha do perfil ${lockOpt.label}`}
-                    autoComplete="current-password"
-                  />
-                  <button type="submit" className="ln-lock-go" disabled={!pw || checking} aria-label="Entrar">
-                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                      <path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" />
-                    </svg>
-                  </button>
-                </span>
-                <span className="ln-lock-msg" role={bad ? 'alert' : undefined}>
-                  {bad ? 'Senha incorreta. Tente de novo.' : checking ? 'Conferindo…' : ' '}
-                </span>
-              </span>
-              <button
-                type="button"
-                className="ln-lock-back"
-                onClick={() => {
-                  setLock(null)
-                  setPw('')
-                }}
-              >
-                Trocar perfil <kbd>Esc</kbd>
-              </button>
-            </form>
-          )}
-          <p className="ln-help">
-            <kbd>←</kbd> <kbd>→</kbd> escolhe · <kbd>Enter</kbd> entra · troque a qualquer momento no app
-          </p>
         </div>
-        <div className="ln-word">
-          {'PERSONAL SPACE'.split('').map((c, i) => (
-            <span key={i} style={{ ['--k' as string]: i }}>
-              {c === ' ' ? ' ' : c}
+
+        {phase === 'new' ? (
+          <form
+            className="lx-new"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void create()
+            }}
+          >
+            <input autoFocus value={newName} maxLength={40} placeholder="Nome da empresa" onChange={(e) => setNewName(e.target.value)} aria-label="Nome do novo perfil" />
+            <span className="lx-swatches">
+              {NEW_COLORS.map((c) => (
+                <button type="button" key={c} className={c === newColor ? 'is-on' : ''} style={{ background: c }} onClick={() => setNewColor(c)} aria-label={`Cor ${c}`} />
+              ))}
             </span>
-          ))}
-        </div>
+            <input type="password" value={newPw} placeholder="Senha (mín. 4)" onChange={(e) => setNewPw(e.target.value)} aria-label="Senha do novo perfil" autoComplete="new-password" />
+            <button type="submit" className="lx-create" disabled={!newName.trim() || newPw.length < 4}>
+              Criar e entrar
+            </button>
+          </form>
+        ) : (
+          <p className="lx-help">
+            {phase === 'pick' ? (
+              <>
+                <kbd>←</kbd>
+                <kbd>→</kbd> ou role para girar · <kbd>Enter</kbd> abre · <kbd>1</kbd>–<kbd>{n - 1}</kbd> direto
+              </>
+            ) : (
+              ' '
+            )}
+          </p>
+        )}
       </div>
-      <div className="ln-line" />
     </div>,
     document.body,
   )
