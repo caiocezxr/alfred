@@ -1,3 +1,4 @@
+import { ResourceMeter } from './Meter'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { errorStore } from '../shared/db/stores'
 import { Wallpaper } from '../shared/themes/Wallpaper'
@@ -163,6 +164,7 @@ export function App() {
           ))}
         </nav>
         <div className="side-bottom">
+          <ResourceMeter compact={collapsed} />
           <button className={`side-item ${themePicker ? 'is-active' : ''}`} onClick={() => setThemePicker((v) => !v)} title="Tema (⌘,)">
             <PaletteIcon />
             <span className="side-label">{theme.name}</span>

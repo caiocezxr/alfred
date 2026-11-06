@@ -3,6 +3,7 @@ mod commands;
 mod db;
 mod github;
 mod ideas;
+mod meter;
 mod mood;
 mod notes;
 mod radar;
@@ -110,6 +111,7 @@ pub fn run() {
             sessions::sessions_list,
             sessions::sessions_read,
             sessions::sessions_resume,
+            meter::meter_sample,
             radar::radar_item_set,
             radar::radar_cleanup,
             radar::radar_keywords_list,
