@@ -1,5 +1,6 @@
 import { applyTranslations, assemble, looksEnglish, sanitizeEdition, withTranslations, autoSegue, cleanExcerpt, estimateSeconds, firstSentences, interleave, narrationOf, screensOf, withWeather, MAX_ITEMS, MAX_PER_AREA } from './assemble.ts'
 import { buildProgram, firstLineOf } from './program.ts'
+import { annexOf, cadernoLeads, frontOf, regionOf, storiesOf, timelineOf } from './dossie.ts'
 import { applyAdjustments, historyLine, planAdjustments, shouldAsk } from './rating.ts'
 import { applyTaste, explainByTaste } from './assemble.ts'
 import { localModelLabel } from './profile.ts'
@@ -511,6 +512,46 @@ test('gosto pessoal: reordena candidatos e explica pelo item curtido mais pareci
   explainByTaste(e.items, [{ id: 'c3', score: 0.5, z: 1.4, near: 'Tesouro Selic rende mais em novembro', nearSim: 0.81 }, { id: 'c2', score: 0, z: 0, near: 'Algo distante', nearSim: 0.4 }])
   assert.equal(e.items.find((i) => i.id === 'c3')!.why, 'Parecido com “Tesouro Selic rende mais em novembro”, que você curtiu.')
   assert.ok(!e.items.find((i) => i.id === 'c2')!.why.startsWith('Parecido'))
+})
+
+test('dossiê: ordem por importância, anexos só com dado real', () => {
+  const cands = [
+    cand(1, 'ia', 'pt', 9), cand(2, 'dinheiro', 'pt', 8.8), cand(3, 'politica', 'pt', 8.6), cand(4, 'seguranca', 'pt', 8.4),
+    cand(5, 'potencializa', 'pt', 8.2), cand(6, 'dinheiro', 'pt', 8), cand(7, 'mundo', 'pt', 7.8), cand(8, 'codigo', 'pt', 7.6),
+    cand(9, 'politica', 'pt', 7.4), cand(10, 'ia', 'pt', 7.2), cand(11, 'dinheiro', 'pt', 7), cand(12, 'politica', 'pt', 6.8),
+  ]
+  cands[0].title = 'OpenAI lança GPT-6 Cyber para achar falhas'
+  cands[0].excerpt = 'O modelo tem contexto de 1 milhão de tokens e já está disponível para empresas. Segunda frase.'
+  cands[3].title = 'Falha crítica CVE-2026-1234 no OpenSSH já tem correção'
+  cands[4].title = 'Vite 8.3.6 traz build mais rápido'
+  cands[4].excerpt = 'A nova versão reduz o tempo de build pela metade. Também corrige bugs.'
+  cands[1].title = 'Copom mantém a Selic e o dólar recua'
+  cands[2].title = 'Congresso aprova projeto e Lula sanciona hoje'
+  const e = assemble({ date: '2026-11-06', now: NOW, windowFrom: NOW - 24 * H, candidates: cands, judge: null, judgeNote: null, market: quotes, marketAt: null, stats })
+  const f = frontOf(e)
+  assert.equal(f.ordered.length, e.items.length)
+  assert.equal(new Set(f.ordered.map((i) => i.key)).size, e.items.length)
+  assert.equal(f.ordered[0].key, e.focusKey)
+  assert.ok(storiesOf(e, 'politica').every((i) => i.caderno === 'politica'))
+  assert.equal(cadernoLeads(e)[0].item.key, f.ordered[0].key)
+  const by = (id: string) => e.items.find((i) => i.id === id)!
+  const model = annexOf(by('c1'), e)
+  assert.ok(model?.kind === 'model' && model.vendor === 'OpenAI' && /GPT-6/.test(model.model), JSON.stringify(model))
+  assert.ok(model?.kind === 'model' && model.specs.some(([k]) => k === 'Contexto'))
+  const adv = annexOf(by('c4'), e)
+  assert.ok(adv?.kind === 'advisory' && adv.ids[0] === 'CVE-2026-1234' && adv.severity === 4 && adv.fixed === true)
+  const tool = annexOf(by('c5'), e)
+  assert.ok(tool?.kind === 'changelog' && tool.version === '8.3.6' && tool.product === 'Vite')
+  const plain = { ...by('c8'), title: 'Como pensar arquitetura de software', summary: 'Um texto sobre decisões.' }
+  assert.equal(annexOf(plain, e), null, 'sem dado, sem anexo')
+  const money = annexOf(by('c2'), e)
+  assert.ok(money && (money.kind === 'price' || money.kind === 'rate'))
+  assert.equal(annexOf({ ...by('c2'), title: 'Startup capta rodada', summary: 'Sem números de mercado.' }, e), null)
+  assert.equal(regionOf({ title: 'Congresso aprova projeto e Lula sanciona hoje', summary: '' }), 'BR')
+  assert.equal(regionOf({ title: 'Pequim responde a Washington', summary: '' }), 'CN')
+  assert.equal(regionOf({ title: 'Terremoto atinge o Japão', summary: '' }), null)
+  const tl = timelineOf(e, e.items)
+  assert.ok(tl.every((p) => p.pos >= 0 && p.pos <= 100 && p.lane >= 0 && p.lane <= 2))
 })
 
 console.log(`✓ ${passed} testes do briefing passaram`)
