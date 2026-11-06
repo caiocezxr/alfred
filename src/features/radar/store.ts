@@ -111,9 +111,40 @@ export function lastUpdated(sources: FeedSource[]): number | null {
   return best
 }
 
+const SKILL_SOURCES: { name: string; url: string }[] = [
+  { name: 'Anthropic Skills', url: 'https://github.com/anthropics/skills/commits/main.atom' },
+  { name: 'Cursor', url: 'https://cursor.com/changelog/rss.xml' },
+  { name: 'Latent Space', url: 'https://www.latent.space/feed' },
+  { name: 'GitHub Blog · IA', url: 'https://github.blog/ai-and-ml/feed/' },
+  { name: 'Addy Osmani', url: 'https://addyo.substack.com/feed' },
+  { name: 'UX Collective', url: 'https://uxdesign.cc/feed' },
+  { name: 'Figma Blog', url: 'https://www.figma.com/blog/feed/atom.xml' },
+]
+const SKILLS_FLAG = 'ps.radar.skills.v1'
+
+async function ensureSkillSources() {
+  try {
+    if (localStorage.getItem(SKILLS_FLAG)) return
+  } catch {
+    return
+  }
+  const have = new Set(state.sources.map((s) => s.url.replace(/\/+$/, '')))
+  for (const s of SKILL_SOURCES) {
+    if (have.has(s.url.replace(/\/+$/, ''))) continue
+    try {
+      await radarApi.sourceAdd({ name: s.name, url: s.url, category: 'ai_dev' })
+    } catch {}
+  }
+  try {
+    localStorage.setItem(SKILLS_FLAG, '1')
+  } catch {}
+  set({ sources: await radarApi.sourcesList() })
+}
+
 export async function openRadar() {
   if (!state.loaded) await loadRadar()
   if (state.loadError) return
+  await ensureSkillSources()
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     set({ offline: true })
     return

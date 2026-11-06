@@ -1779,3 +1779,39 @@
     transform: none;
   }
 }
+
+.radar-skills-today {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.radar-skills-today header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.radar-skills-k {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 700 10.5px/1 'SF Mono', ui-monospace, Menlo, monospace;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.radar-skills-k::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ffb547;
+  box-shadow: 0 0 8px rgba(255, 181, 71, 0.8);
+}
+
+.radar-skills-sub {
+  font-size: 12.5px;
+  color: var(--text-2);
+}

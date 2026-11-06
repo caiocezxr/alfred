@@ -13,10 +13,10 @@ import {
 import { CATEGORY_LABEL, CATEGORY_SHORT, type FeedItem, type FeedSource, type ItemCategory } from './types.ts'
 import './radar.css'
 
-type View = 'all' | 'ai_dev' | 'ai_content' | 'stack' | 'saved'
+type View = 'all' | 'skills' | 'ai_dev' | 'ai_content' | 'stack' | 'saved'
 type Cat = Exclude<ItemCategory, 'other'>
 const CATS: Cat[] = ['ai_dev', 'ai_content', 'stack']
-const VIEWS: View[] = ['all', 'ai_dev', 'ai_content', 'stack', 'saved']
+const VIEWS: View[] = ['all', 'skills', 'ai_dev', 'ai_content', 'stack', 'saved']
 
 const UI_KEY = 'ps.radar.ui.v1'
 type UiPrefs = { view?: View; lastVisit?: string }
@@ -173,6 +173,7 @@ export default function Radar() {
           onChange={setView}
           options={[
             { id: 'all', label: 'Tudo' },
+            { id: 'skills', label: 'Skills', count: skillsOf(st.items, sourcesById).fresh },
             { id: 'ai_dev', label: 'IA dev', count: model.fresh.ai_dev },
             { id: 'ai_content', label: 'IA conteúdo', count: model.fresh.ai_content },
             { id: 'stack', label: 'Stacks', count: model.fresh.stack },
@@ -433,6 +434,8 @@ function Body({ view, st, model, ctx, enabledCount, setView, openSources }: {
       <Empty title="Nada por aqui ainda." text="As fontes responderam, mas não trouxeram nada dos últimos 60 dias. Tente atualizar mais tarde." />
     )
   }
+
+  if (view === 'skills') return <Skills items={st.items} ctx={ctx} />
 
   if (view === 'all') {
     const sections = CATS.filter((c) => model.byCat[c].length)
@@ -800,5 +803,65 @@ function ToastView({ st }: { st: RadarState }) {
         </div>
       )}
     </div>
+  )
+}
+
+const SKILL_RE = /\b(skills?|agents?|agentic|harness|mcp|claude code|codex|cursor|copilot|subagents?|hooks?|evals?|prompt(s|ing)?|workflows?|vibe coding|context engineering|spec[- ]driven|plugins?|cli|design system|figma|prototyp\w*|ui|ux)\b/i
+const TOOL_SOURCES = /claude code|codex|cursor/i
+const SKILL_SOURCES = /anthropic skills/i
+const PRACTICE_SOURCES = /simon willison|latent space|github blog|addy osmani/i
+const DESIGN_SOURCES = /ux collective|figma/i
+
+type SkillGroups = { tools: FeedItem[]; skills: FeedItem[]; practice: FeedItem[]; design: FeedItem[]; all: FeedItem[]; fresh: number }
+
+function skillsOf(items: FeedItem[], sources: Map<string, FeedSource>): SkillGroups {
+  const g: SkillGroups = { tools: [], skills: [], practice: [], design: [], all: [], fresh: 0 }
+  const week = Date.now() - 7 * 864e5
+  for (const i of items) {
+    const src = (i.sourceId && sources.get(i.sourceId)?.name) || i.sourceName
+    const text = `${i.titlePt ?? i.title} ${i.excerptPt ?? i.excerpt}`
+    let bucket: keyof Omit<SkillGroups, 'all' | 'fresh'> | null = null
+    if (TOOL_SOURCES.test(src)) bucket = 'tools'
+    else if (SKILL_SOURCES.test(src)) bucket = 'skills'
+    else if (DESIGN_SOURCES.test(src)) bucket = SKILL_RE.test(text) || /design/i.test(text) ? 'design' : null
+    else if (PRACTICE_SOURCES.test(src)) bucket = SKILL_RE.test(text) ? 'practice' : null
+    else if (/\b(skills?|harness|subagents?|claude code|mcp)\b/i.test(text)) bucket = 'skills'
+    if (!bucket) continue
+    g[bucket].push(i)
+    g.all.push(i)
+    if (!i.readAt && itemTime(i) > week) g.fresh++
+  }
+  return g
+}
+
+function Skills({ items, ctx }: { items: FeedItem[]; ctx: RowCtx }) {
+  const g = useMemo(() => skillsOf(items, ctx.sources), [items, ctx.sources])
+  const score = (i: FeedItem) => (ctx.scored.get(i.id)?.score ?? 0) + Math.max(0, 6 - (Date.now() - itemTime(i)) / 864e5)
+  const recent = g.all.filter((i) => Date.now() - itemTime(i) < 10 * 864e5).sort((a, b) => score(b) - score(a))
+  const day = Math.floor(Date.now() / 864e5)
+  const pool = recent.slice(0, 9)
+  const off = pool.length > 3 ? day % 3 : 0
+  const picks = [pool[off], pool[off + 3], pool[off + 6]].filter(Boolean) as FeedItem[]
+  const picked = new Set(picks.map((p) => p.id))
+  const byScore = (list: FeedItem[]) => list.filter((i) => !picked.has(i.id)).sort((a, b) => score(b) - score(a))
+  if (!g.all.length) {
+    return <Empty title="As indicações chegam já já." text="Estou buscando as fontes de skills, ferramentas de IA e design. Atualize o Radar em instantes." />
+  }
+  return (
+    <>
+      {picks.length > 0 && (
+        <section className="radar-skills-today" aria-label="Indicações de hoje">
+          <header>
+            <span className="radar-skills-k">Indicação de hoje</span>
+            <span className="radar-skills-sub">3 coisas para testar no seu jeito de desenvolver com IA</span>
+          </header>
+          <Highlights items={picks} ctx={ctx} />
+        </section>
+      )}
+      {g.tools.length > 0 && <Section cat="ai_dev" title="Ferramentas: Claude Code, Codex, Cursor" items={byScore(g.tools)} ctx={ctx} pageSize={5} index={3} />}
+      {g.skills.length > 0 && <Section cat="ai_dev" title="Skills, MCP e harness" items={byScore(g.skills)} ctx={ctx} pageSize={5} index={4} />}
+      {g.practice.length > 0 && <Section cat="ai_dev" title="Novas formas de desenvolver com IA" items={byScore(g.practice)} ctx={ctx} pageSize={5} index={5} />}
+      {g.design.length > 0 && <Section cat="ai_content" title="Design" items={byScore(g.design)} ctx={ctx} pageSize={5} index={6} />}
+    </>
   )
 }
