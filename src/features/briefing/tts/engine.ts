@@ -1,3 +1,4 @@
+import { setDetail, track } from '../../../shared/activity'
 import type { FromWorker, ToWorker, VoicePhase } from './protocol.ts'
 
 export type Clip = { pcm: Float32Array; sr: number }
@@ -85,6 +86,18 @@ class VoiceEngine {
   }
 
   private eager = false
+  private stopAct: (() => void) | null = null
+
+  private mark() {
+    const busy = this.queue.length + this.slots.filter((x) => x.job).length
+    if (busy) {
+      if (!this.stopAct) this.stopAct = track('voz', 'Voz do briefing', 'worker', '', () => this.state.synthMs)
+      setDetail('voz', `gerando a narração · ${busy} ${busy === 1 ? 'frase' : 'frases'} na fila · ${this.slots.length} ${this.slots.length === 1 ? 'processo' : 'processos'}`)
+    } else if (this.stopAct) {
+      this.stopAct()
+      this.stopAct = null
+    }
+  }
 
   private grow() {
     const want = this.eager ? poolSize(navigator.hardwareConcurrency, this.state.device) : 1
@@ -186,6 +199,7 @@ class VoiceEngine {
       }
     }
     if (firstReady) this.grow()
+    this.mark()
     if (!this.queue.length && this.slots.every((s) => !s.job)) this.eager = false
     if (!this.queue.length && this.slots.every((s) => !s.job)) this.idleTimer = window.setTimeout(() => this.shrink(), IDLE_MS)
   }

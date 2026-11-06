@@ -1,3 +1,4 @@
+import { setDetail, track } from '../../shared/activity'
 import { isTauri } from '../../shared/db/api'
 import { useEffect, useSyncExternalStore } from 'react'
 import { openExternal } from '../../shared/openExternal'
@@ -443,6 +444,7 @@ export function translateItems(ids: string[]) {
   }
   if (!queue.length || pump) return
   set({ translating: queue.length, translateError: null })
+  const stopAct = track('radar-pt', 'Radar', 'local', `traduzindo ${queue.length} itens com o modelo local`)
   pump = (async () => {
     while (queue.length) {
       const batch = queue.slice(0, BATCH)
@@ -461,8 +463,10 @@ export function translateItems(ids: string[]) {
         break
       }
       set({ translating: queue.length })
+      setDetail('radar-pt', `traduzindo ${queue.length} itens com o modelo local`)
     }
     set({ translating: 0 })
+    stopAct()
     pump = null
   })()
 }

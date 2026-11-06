@@ -1449,37 +1449,76 @@ textarea.field {
   font-variant-numeric: tabular-nums;
 }
 
-.mt-parts {
+.mt-who-k {
+  font: 700 9.5px/1 var(--wk-mono, 'SF Mono', ui-monospace, monospace);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(233, 230, 223, 0.55);
+}
+
+.mt-who {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.mt-parts li {
+.mt-who li {
   display: grid;
-  grid-template-columns: 64px 1fr 44px 54px;
-  align-items: center;
+  gap: 4px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  animation: mt-row 320ms ease backwards;
+  animation-delay: calc(var(--k, 0) * 40ms);
+}
+
+.mt-who li.is-top {
+  background: color-mix(in srgb, var(--mt) 14%, rgba(255, 255, 255, 0.03));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mt) 35%, transparent);
+}
+
+@keyframes mt-row {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+.mt-who-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline;
   gap: 8px;
-  font: 500 11px/1 var(--wk-mono, 'SF Mono', ui-monospace, monospace);
+}
+
+.mt-who-l {
+  overflow: hidden;
+  font: 600 12px/1.2 var(--font-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mt-who-row b {
+  font: 700 11.5px/1 var(--wk-mono, 'SF Mono', ui-monospace, monospace);
   font-variant-numeric: tabular-nums;
 }
 
-.mt-parts li span {
-  font-family: var(--font-ui);
-  color: rgba(233, 230, 223, 0.8);
+.mt-who-row em {
+  font: 500 10px/1 var(--wk-mono, 'SF Mono', ui-monospace, monospace);
+  font-style: normal;
+  color: rgba(233, 230, 223, 0.55);
 }
 
-.mt-parts li i {
+.mt-who li > i {
   position: relative;
-  height: 4px;
+  height: 3px;
   border-radius: 99px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.07);
   overflow: hidden;
 }
 
-.mt-parts li i::after {
+.mt-who li > i::after {
   content: '';
   position: absolute;
   inset: 0 auto 0 0;
@@ -1489,14 +1528,19 @@ textarea.field {
   transition: width 600ms ease;
 }
 
-.mt-parts li b {
-  text-align: right;
+.mt-who-d {
+  font: 500 10.5px/1.35 var(--font-ui);
+  color: rgba(233, 230, 223, 0.55);
 }
 
-.mt-parts li em {
-  font-style: normal;
-  text-align: right;
-  color: rgba(233, 230, 223, 0.6);
+.mt-heavy {
+  flex-basis: 100%;
+  overflow: hidden;
+  font-family: var(--font-ui);
+  font-weight: 600;
+  color: var(--mt);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mt-help {

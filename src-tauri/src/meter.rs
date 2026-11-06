@@ -10,6 +10,7 @@ use tauri::AppHandle;
 pub struct Part {
     role: &'static str,
     cpu: f64,
+    gpu: f64,
     mem: u64,
 }
 
@@ -26,6 +27,7 @@ pub struct Meter {
 struct Prev {
     at: Instant,
     ticks: HashMap<i32, u64>,
+    gpu: HashMap<i32, u64>,
 }
 
 static PREV: Mutex<Option<Prev>> = Mutex::new(None);
@@ -97,6 +99,33 @@ fn gpu_busy() -> Option<f64> {
     s[i..].chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().ok()
 }
 
+fn gpu_times() -> HashMap<i32, u64> {
+    let mut m = HashMap::new();
+    let Ok(out) = std::process::Command::new("/usr/sbin/ioreg").args(["-r", "-c", "AGXDeviceUserClient", "-l", "-w0"]).output() else { return m };
+    let s = String::from_utf8_lossy(&out.stdout);
+    for block in s.split("+-o ") {
+        let tag = "\"IOUserClientCreator\" = \"pid ";
+        let Some(i) = block.find(tag) else { continue };
+        let rest = &block[i + tag.len()..];
+        let Ok(pid) = rest.chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse::<i32>() else { continue };
+        let mut total = 0u64;
+        let key = "\"accumulatedGPUTime\"=";
+        let mut from = 0;
+        while let Some(j) = block[from..].find(key) {
+            let at = from + j + key.len();
+            total += block[at..].chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse::<u64>().unwrap_or(0);
+            from = at;
+        }
+        *m.entry(pid).or_insert(0) += total;
+    }
+    m
+}
+
+fn ollama_pids() -> Vec<i32> {
+    let Ok(out) = std::process::Command::new("/usr/bin/pgrep").arg("-x").arg("ollama").output() else { return vec![] };
+    String::from_utf8_lossy(&out.stdout).lines().filter_map(|l| l.trim().parse().ok()).collect()
+}
+
 #[cfg(target_os = "macos")]
 fn sample(app: &AppHandle) -> Meter {
     let me = std::process::id() as i32;
@@ -113,31 +142,52 @@ fn sample(app: &AppHandle) -> Meter {
             }
         }
     };
-    let roles: Vec<(&'static str, i32)> = [("app", Some(me)), ("pagina", kids.0), ("graficos", kids.1)].into_iter().filter_map(|(r, p)| p.map(|p| (r, p))).collect();
+    let mut roles: Vec<(&'static str, i32)> = [("app", Some(me)), ("pagina", kids.0), ("graficos", kids.1)].into_iter().filter_map(|(r, p)| p.map(|p| (r, p))).collect();
+    roles.extend(ollama_pids().into_iter().map(|p| ("local", p)));
     let now = Instant::now();
     let ns = tick_ns();
+    let gpu_now = gpu_times();
     let mut prev = PREV.lock().unwrap_or_else(|e| e.into_inner());
     let mut ticks = HashMap::new();
-    let mut parts = vec![];
+    let mut gpu_seen = HashMap::new();
+    let mut parts: Vec<Part> = vec![];
     for (role, pid) in roles {
         let Some((t, mem)) = usage(pid) else { continue };
-        let cpu = match prev.as_ref() {
+        let g = gpu_now.get(&pid).copied().unwrap_or(0);
+        let (cpu, gpu) = match prev.as_ref() {
             Some(p) => {
                 let dt = now.duration_since(p.at).as_nanos() as f64;
-                match p.ticks.get(&pid) {
+                let cpu = match p.ticks.get(&pid) {
                     Some(&before) if dt > 0.0 && t >= before => (t - before) as f64 * ns / dt * 100.0,
                     _ => 0.0,
-                }
+                };
+                let gpu = match p.gpu.get(&pid) {
+                    Some(&before) if dt > 0.0 && g >= before => ((g - before) as f64 / dt * 100.0).min(100.0),
+                    _ => 0.0,
+                };
+                (cpu, gpu)
             }
-            None => 0.0,
+            None => (0.0, 0.0),
         };
         ticks.insert(pid, t);
-        parts.push(Part { role, cpu: (cpu * 10.0).round() / 10.0, mem });
+        gpu_seen.insert(pid, g);
+        if let Some(same) = parts.iter_mut().find(|x| x.role == role) {
+            same.cpu += cpu;
+            same.gpu += gpu;
+            same.mem += mem;
+        } else {
+            parts.push(Part { role, cpu, gpu, mem });
+        }
     }
-    *prev = Some(Prev { at: now, ticks });
+    for p in parts.iter_mut() {
+        p.cpu = (p.cpu * 10.0).round() / 10.0;
+        p.gpu = (p.gpu.min(100.0) * 10.0).round() / 10.0;
+    }
+    *prev = Some(Prev { at: now, ticks, gpu: gpu_seen });
+    let own = parts.iter().filter(|p| p.role != "local");
     Meter {
-        cpu: (parts.iter().map(|p| p.cpu).sum::<f64>() * 10.0).round() / 10.0,
-        mem: parts.iter().map(|p| p.mem).sum(),
+        cpu: (own.clone().map(|p| p.cpu).sum::<f64>() * 10.0).round() / 10.0,
+        mem: own.map(|p| p.mem).sum(),
         parts,
         gpu: gpu_busy(),
         cores: std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1),
@@ -170,6 +220,13 @@ mod tests {
         let (t1, _) = usage(std::process::id() as i32).unwrap();
         let ms = (t1 - t0) as f64 * tick_ns() / 1e6;
         assert!(ms > 1.0 && ms < 10_000.0, "{ms}");
+    }
+
+    #[test]
+    fn gpu_times_parse() {
+        let m = gpu_times();
+        assert!(!m.is_empty());
+        assert!(m.values().any(|v| *v > 0));
     }
 
     #[test]

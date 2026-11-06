@@ -1,3 +1,4 @@
+import { during } from '../../shared/activity'
 import { useSyncExternalStore } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { addDays } from '../../shared/dates'
@@ -72,7 +73,7 @@ export function useHabitMeta() {
 export async function generateTips(h: Habit, m: HabitMeta): Promise<string[]> {
   if (!isTauri) throw new Error('As dicas com IA rodam no app, com o modelo local ligado.')
   try {
-    const tips = await invoke<string[]>('habit_tips', { name: h.name, kind: m.kind, category: m.category ?? '', cue: h.cue ?? '', minimum: h.minimum ?? '' })
+    const tips = await during('habitos-ia', 'Dicas de hábito', 'local', `gerando dicas para ${h.name}`, invoke<string[]>('habit_tips', { name: h.name, kind: m.kind, category: m.category ?? '', cue: h.cue ?? '', minimum: h.minimum ?? '' }))
     setMeta(h.id, { tips, tipsAt: new Date().toISOString() }, m)
     return tips
   } catch (e) {

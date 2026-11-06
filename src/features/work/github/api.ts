@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { useEffect, useSyncExternalStore } from 'react'
+import { during } from '../../../shared/activity'
 import { api, isTauri } from '../../../shared/db/api'
 
 export type GhAccount = { login: string; active: boolean; ok: boolean; scopes: string }
@@ -186,8 +187,7 @@ export async function loadBoard(login: string, force = false): Promise<Dashboard
   if (hit && !force && Date.now() - hit.at < 180_000) return hit.data
   const running = loadingBoards.get(login)
   if (running) return running
-  const p = gh
-    .dashboard(login)
+  const p = during(`github-${login}`, 'GitHub', 'core', `atualizando @${login}`, gh.dashboard(login))
     .then((d) => {
       boards.set(login, { at: Date.now(), data: d })
       boardEmit()

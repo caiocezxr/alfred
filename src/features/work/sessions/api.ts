@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { useEffect, useSyncExternalStore } from 'react'
+import { during } from '../../../shared/activity'
 import { isTauri } from '../../../shared/db/api'
 import type { GhSettings, LivePr } from '../github/api'
 import { PERSONAL_ID, type Company } from '../types'
@@ -53,8 +54,7 @@ const bump = () => {
 
 export function refreshSessions() {
   if (loading) return loading
-  loading = sx
-    .list()
+  loading = during('sessoes', 'Sessões de código', 'core', 'lendo o histórico do Claude e do Codex', sx.list())
     .then((d) => {
       data = d
       error = null
