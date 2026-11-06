@@ -2,8 +2,8 @@ import { lazy, Suspense, useCallback, useEffect, useState, useSyncExternalStore 
 import { errorStore } from '../shared/db/stores'
 import { Wallpaper } from '../shared/themes/Wallpaper'
 import {
-  ACCENTS, DISPLAY_FONTS, TEXT_FONTS, THEMES, THEME_ORDER, initTheme, resetLook, setLook, setTheme, themeVars, useTheme, useThemeState,
-  type DisplayFontId, type TextFontId, type ThemeId, type Tone,
+  ACCENTS, DISPLAY_FONTS, TEXTURES, TEXT_FONTS, THEMES, THEME_ORDER, initTheme, resetLook, setLook, setTheme, themeVars, useTheme, useThemeState,
+  type DisplayFontId, type Texture, type TextFontId, type ThemeId, type Tone,
 } from '../shared/themes/themes'
 import { Segmented } from '../shared/ui/Segmented'
 import { isTauri } from '../shared/db/api'
@@ -295,6 +295,23 @@ function ThemePicker({ onClose }: { onClose: () => void }) {
               />
             </section>
 
+            <section className="ap-section ap-row">
+              <h4>Textura do fundo</h4>
+              <Segmented<Texture>
+                label="Textura do fundo"
+                value={look.texture}
+                options={TEXTURES.map((t) => ({ id: t.id, label: t.label }))}
+                onChange={(v) => set({ texture: v, grain: look.grain < 0.05 && v !== 'liso' ? 0.35 : look.grain })}
+              />
+            </section>
+
+            {look.texture !== 'liso' && (
+              <section className="ap-section ap-sliders">
+                <Slider label="Granulado" value={look.grain} min={0} max={1} step={0.01} fmt={(v) => (v < 0.01 ? 'nenhum' : `${Math.round(v * 100)}%`)} onChange={(v) => set({ grain: v })} />
+                <Slider label="Tamanho do grão" value={look.grainSize} min={0} max={1} step={0.01} fmt={(v) => (v < 0.25 ? 'fino' : v > 0.75 ? 'grosso' : 'médio')} onChange={(v) => set({ grainSize: v })} />
+              </section>
+            )}
+
             <section className="ap-section ap-sliders">
               <Slider label="Intensidade do fundo" value={look.depth} min={0} max={1} step={0.01} fmt={depthLabel} onChange={(v) => set({ depth: v })} />
               <Slider label="Contraste do texto" value={look.contrast} min={0} max={1} step={0.01} fmt={(v) => (v < 0.2 ? 'suave' : v > 0.8 ? 'forte' : `${Math.round(v * 100)}%`)} onChange={(v) => set({ contrast: v })} />
@@ -304,7 +321,7 @@ function ThemePicker({ onClose }: { onClose: () => void }) {
                 label="Transparência da janela"
                 value={look.window}
                 min={0}
-                max={0.7}
+                max={0.85}
                 step={0.01}
                 fmt={(v) => (v < 0.01 ? 'sólida' : `${Math.round(v * 100)}%`)}
                 onChange={(v) => set({ window: v })}

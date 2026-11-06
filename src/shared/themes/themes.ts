@@ -15,6 +15,7 @@ export const THEME_ORDER: ThemeId[] = ['claro', 'escuro']
 export type DisplayFontId = 'cormorant' | 'garamond' | 'fraunces' | 'bodoni' | 'josefin' | 'sistema' | 'instrument' | 'unbounded' | 'syne'
 export type TextFontId = 'sistema' | 'arredondada' | 'serifada'
 export type Tone = 'neutro' | 'quente' | 'frio'
+export type Texture = 'liso' | 'grao' | 'papel' | 'linho' | 'pontos'
 
 export const DISPLAY_FONTS: Record<DisplayFontId, { label: string; note: string; family: string; weight: string; tracking: string; adjust?: string }> = {
   cormorant: { label: 'Cormorant', note: 'clássica, acento alto', family: "'Cormorant Garamond', 'EB Garamond', Georgia, serif", weight: '500', tracking: '0.005em' },
@@ -65,11 +66,56 @@ export type Appearance = {
   contrast: number
   radius: number
   window: number
+  texture: Texture
+  grain: number
+  grainSize: number
+}
+
+export const TEXTURES: { id: Texture; label: string }[] = [
+  { id: 'liso', label: 'Liso' },
+  { id: 'grao', label: 'Grão' },
+  { id: 'papel', label: 'Papel' },
+  { id: 'linho', label: 'Linho' },
+  { id: 'pontos', label: 'Pontilhado' },
+]
+
+const svgUrl = (svg: string) => `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
+
+export function textureVars(t: Texture, amount: number, size: number, scheme: 'light' | 'dark'): Record<string, string> {
+  const k = Math.min(1, Math.max(0, size))
+  const a = Math.min(1, Math.max(0, amount))
+  const ink = scheme === 'dark' ? '255,255,255' : '40,30,20'
+  if (t === 'liso' || a < 0.01) return { '--tex-image': 'none', '--tex-opacity': '0', '--tex-size': 'auto', '--tex-blend': 'normal' }
+  if (t === 'pontos') {
+    const step = Math.round(6 + k * 14)
+    const r = (0.6 + k * 1.1).toFixed(2)
+    return {
+      '--tex-image': svgUrl(`<svg xmlns='http://www.w3.org/2000/svg' width='${step}' height='${step}'><circle cx='${step / 2}' cy='${step / 2}' r='${r}' fill='rgb(${ink})'/></svg>`),
+      '--tex-opacity': (a * 0.32).toFixed(3),
+      '--tex-size': `${step}px ${step}px`,
+      '--tex-blend': 'normal',
+    }
+  }
+  const tile = 220
+  const spec =
+    t === 'grao'
+      ? { f: (1.25 - k * 0.95).toFixed(3), o: 2, extra: '' }
+      : t === 'papel'
+        ? { f: `${(0.09 - k * 0.06).toFixed(3)} ${(0.11 - k * 0.07).toFixed(3)}`, o: 5, extra: '' }
+        : { f: `${(0.012 - k * 0.006).toFixed(4)} ${(1.1 - k * 0.6).toFixed(3)}`, o: 3, extra: `<feTurbulence type='fractalNoise' baseFrequency='${(1.1 - k * 0.6).toFixed(3)} ${(0.012 - k * 0.006).toFixed(4)}' numOctaves='3' stitchTiles='stitch' result='b'/><feBlend in='SourceGraphic' in2='b' mode='multiply'/>` }
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${tile}' height='${tile}'><filter id='n' x='0' y='0' width='100%' height='100%' filterUnits='userSpaceOnUse' primitiveUnits='userSpaceOnUse'><feTurbulence type='fractalNoise' baseFrequency='${spec.f}' numOctaves='${spec.o}' stitchTiles='stitch'/>${spec.extra}<feColorMatrix type='saturate' values='0'/></filter><rect width='100%' height='100%' filter='url(#n)'/></svg>`
+  const strength = t === 'grao' ? 0.22 : t === 'papel' ? 0.3 : 0.26
+  return {
+    '--tex-image': svgUrl(svg),
+    '--tex-opacity': (a * strength * (scheme === 'dark' ? 0.55 : 1)).toFixed(3),
+    '--tex-size': `${tile}px ${tile}px`,
+    '--tex-blend': scheme === 'dark' ? 'screen' : 'multiply',
+  }
 }
 
 export const DEFAULT_LOOK: Record<ThemeId, Appearance> = {
-  claro: { accent: '#8c6a3a', display: 'instrument', text: 'sistema', glass: 0.8, depth: 0.35, tone: 'quente', contrast: 0.5, radius: 20, window: 0 },
-  escuro: { accent: '#d6c19c', display: 'instrument', text: 'sistema', glass: 0.72, depth: 1, tone: 'neutro', contrast: 0.5, radius: 20, window: 0 },
+  claro: { accent: '#8c6a3a', display: 'instrument', text: 'sistema', glass: 0.8, depth: 0.35, tone: 'quente', contrast: 0.5, radius: 20, window: 0, texture: 'grao', grain: 0.35, grainSize: 0.3 },
+  escuro: { accent: '#d6c19c', display: 'instrument', text: 'sistema', glass: 0.72, depth: 1, tone: 'neutro', contrast: 0.5, radius: 20, window: 0, texture: 'grao', grain: 0.35, grainSize: 0.3 },
 }
 
 type RGB = [number, number, number]
@@ -129,6 +175,7 @@ export function themeVars(id: ThemeId, a: Appearance): Record<string, string> {
     const text = DARK.text[a.tone]
     return {
       ...common,
+      ...textureVars(a.texture, a.grain, a.grainSize, 'dark'),
       '--scheme': 'dark',
       '--bg': bg,
       '--surface-solid': mix(bg, text, 0.05),
@@ -149,6 +196,7 @@ export function themeVars(id: ThemeId, a: Appearance): Record<string, string> {
   const text = LIGHT.text[a.tone]
   return {
     ...common,
+    ...textureVars(a.texture, a.grain, a.grainSize, 'light'),
     '--scheme': 'light',
     '--bg': bg,
     '--surface-solid': mix(bg, '#ffffff', 0.85),
@@ -183,7 +231,10 @@ const clean = (id: ThemeId, a: Partial<Appearance> | undefined): Appearance => {
     tone: v.tone === 'neutro' || v.tone === 'quente' || v.tone === 'frio' ? v.tone : d.tone,
     contrast: Number.isFinite(v.contrast) ? Math.min(1, Math.max(0, v.contrast)) : d.contrast,
     radius: Number.isFinite(v.radius) ? Math.min(30, Math.max(6, v.radius)) : d.radius,
-    window: Number.isFinite(v.window) ? Math.min(0.7, Math.max(0, v.window)) : d.window,
+    window: Number.isFinite(v.window) ? Math.min(0.85, Math.max(0, v.window)) : d.window,
+    texture: TEXTURES.some((t) => t.id === v.texture) ? v.texture : d.texture,
+    grain: Number.isFinite(v.grain) ? Math.min(1, Math.max(0, v.grain)) : d.grain,
+    grainSize: Number.isFinite(v.grainSize) ? Math.min(1, Math.max(0, v.grainSize)) : d.grainSize,
   }
 }
 
@@ -240,6 +291,14 @@ export function applyTheme() {
   const glass = state.look[id].glass
   root.style.setProperty('--glass', String(glass))
   root.style.setProperty('--surface', `color-mix(in srgb, ${vars['--surface-solid']} ${Math.round(glass * 100)}%, transparent)`)
+  syncNativeTheme(vars['--scheme'] === 'light' ? 'light' : 'dark')
+}
+
+let nativeTheme: string | null = null
+function syncNativeTheme(t: 'light' | 'dark') {
+  if (!isTauri || nativeTheme === t) return
+  nativeTheme = t
+  void import('@tauri-apps/api/window').then(({ getCurrentWindow }) => getCurrentWindow().setTheme(t)).catch(() => {})
 }
 
 export function setTheme(id: ThemeId) {

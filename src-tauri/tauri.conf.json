@@ -29,7 +29,7 @@
           "effects": [
             "underWindowBackground"
           ],
-          "state": "followsWindowActiveState"
+          "state": "active"
         },
         "dragDropEnabled": false
       }
