@@ -1,0 +1,67 @@
+import type { SourceCategory } from './types.ts'
+
+export const SEED_SOURCES: [string, string, string, SourceCategory, number][] = [
+  ['seed-openai', 'OpenAI News', 'https://openai.com/news/rss.xml', 'auto', 1],
+  ['seed-deepmind', 'Google DeepMind', 'https://deepmind.google/blog/rss.xml', 'auto', 1],
+  ['seed-hn', 'Hacker News', 'https://hnrss.org/frontpage', 'auto', 0.8],
+  ['seed-simonw', 'Simon Willison', 'https://simonwillison.net/atom/everything/', 'ai_dev', 1.1],
+  ['seed-hf', 'Hugging Face', 'https://huggingface.co/blog/feed.xml', 'ai_dev', 0.9],
+  ['seed-gh-changelog', 'GitHub Changelog', 'https://github.blog/changelog/feed/', 'stack', 0.9],
+  ['seed-claude-code', 'Claude Code', 'https://github.com/anthropics/claude-code/releases.atom', 'ai_dev', 1.2],
+  ['seed-codex', 'Codex CLI', 'https://github.com/openai/codex/releases.atom', 'ai_dev', 1],
+  ['seed-google-ai', 'Google AI', 'https://blog.google/technology/ai/rss/', 'auto', 1],
+  ['seed-elevenlabs', 'ElevenLabs', 'https://elevenlabs.io/blog/rss.xml', 'ai_content', 1],
+  ['seed-youtube', 'YouTube Blog', 'https://blog.youtube/rss/', 'ai_content', 0.8],
+  ['seed-decoder', 'The Decoder', 'https://the-decoder.com/feed/', 'auto', 0.9],
+  ['seed-tauri', 'Tauri', 'https://github.com/tauri-apps/tauri/releases.atom', 'stack', 1],
+  ['seed-vite', 'Vite', 'https://github.com/vitejs/vite/releases.atom', 'stack', 1],
+  ['seed-react', 'React', 'https://github.com/facebook/react/releases.atom', 'stack', 1],
+  ['seed-typescript', 'TypeScript', 'https://github.com/microsoft/TypeScript/releases.atom', 'stack', 1],
+  ['seed-threejs', 'three.js', 'https://github.com/mrdoob/three.js/tags.atom', 'stack', 0.9],
+  ['seed-rust', 'Rust Blog', 'https://blog.rust-lang.org/feed.xml', 'stack', 0.9],
+]
+
+export const SEED_KEYWORDS: Record<'ai_dev' | 'ai_content' | 'stack' | 'signal' | 'mute', [string, number][]> = {
+  ai_dev: [
+    ['claude code', 3], ['coding agent*', 3], ['context engineering', 2.5], ['codex', 2.5], ['mcp', 2.5],
+    ['model context protocol', 2.5], ['agent*', 2], ['coding', 2], ['code review', 2], ['sdk', 2], ['cli', 2],
+    ['copilot', 2], ['eval*', 2], ['api', 1.5], ['ide', 1.5], ['cursor', 1.5], ['vs code', 1.5], ['vscode', 1.5],
+    ['llm*', 1.5], ['prompt engineering', 1.5], ['prompting', 1.5], ['system prompt*', 1.5], ['context window', 1.5], ['rag', 1.5], ['embedding*', 1.5], ['benchmark*', 1.5],
+    ['fine-tun*', 1.5], ['tool use', 1.5], ['function calling', 1.5], ['structured output*', 1.5], ['open weight*', 1.5],
+    ['developer*', 1.5], ['claude', 1.5], ['gpt', 1.5], ['gemini', 1.5], ['reasoning', 1], ['inference', 1],
+    ['llama', 1], ['qwen', 1], ['deepseek', 1], ['mistral', 1], ['ollama', 1], ['pull request*', 1], ['terminal', 1],
+    ['automation', 1],
+  ],
+  ai_content: [
+    ['sora', 2.5], ['veo', 2.5], ['video*', 2], ['voice*', 2], ['text to speech', 2], ['tts', 2], ['dubbing', 2],
+    ['creator*', 2], ['imagen', 2], ['nano banana', 2], ['midjourney', 2], ['runway', 2], ['kling', 2],
+    ['elevenlabs', 2], ['lyria', 2], ['suno', 2], ['generative media', 2], ['image*', 1.5], ['audio', 1.5],
+    ['speech', 1.5], ['music', 1.5], ['editing', 1.5], ['youtube', 1.5], ['tiktok', 1.5], ['instagram', 1.5],
+    ['shorts', 1.5], ['reels', 1.5], ['thumbnail*', 1.5], ['roteiro*', 1.5], ['monetiz*', 1.5], ['heygen', 1.5],
+    ['descript', 1.5], ['capcut', 1.5], ['clip', 1], ['podcast*', 1], ['avatar*', 1], ['animation', 1],
+    ['storytelling', 1],
+  ],
+  stack: [
+    ['tauri', 2.5], ['react', 2], ['vite', 2], ['typescript', 2], ['rust', 2], ['sqlite', 2], ['three.js', 2],
+    ['webgpu', 1.5], ['webkit', 1.5], ['macos', 1.5], ['node.js', 1.5], ['tiptap', 1.5], ['rolldown', 1.5],
+    ['javascript', 1], ['webgl', 1], ['wasm', 1], ['webassembly', 1], ['css', 1], ['swift', 1], ['safari', 1],
+    ['deno', 1], ['bun', 1], ['postgres*', 1], ['vitest', 1], ['npm', 1],
+  ],
+  signal: [
+    ['breaking', 2.5], ['vulnerabilit*', 2], ['cve', 2], ['deprecat*', 1.5], ['security', 1.5], ['introducing', 1.5],
+    ['now available', 1.5], ['general availability', 1.5], ['pricing', 1.5], ['rate limit*', 1.5], ['migration', 1],
+    ['launch*', 1], ['open source*', 1], ['lancamento', 1],
+  ],
+  mute: [
+    ['hiring', 3], ['careers', 3], ['job opening*', 3], ['vaga*', 3], ['sponsored', 3], ['giveaway', 3],
+    ['coupon*', 3], ['black friday', 3], ['board of directors', 3], ['webinar*', 2.5], ['meetup*', 2],
+    ['register now', 2], ['join us', 2], ['inscric*', 2], ['partnership*', 2], ['partners with', 2], ['appoint*', 2],
+    ['funding', 2], ['valuation', 2], ['economic*', 2], ['economy', 2], ['election*', 2], ['public sector', 2],
+    ['customer stor*', 2], ['case stud*', 2], ['discount*', 2], ['crypto*', 2], ['bitcoin', 2], ['nft*', 2],
+    ['web3', 2], ['conference', 1.5], ['summit', 1.5], ['livestream*', 1.5], ['evento*', 1.5], ['raises', 1.5],
+    ['acquisition', 1.5], ['acquires', 1.5], ['lawsuit', 1.5], ['policy', 1.5], ['policies', 1.5], ['blueprint', 1.5],
+    ['government', 1.5], ['nonprofit*', 1.5], ['teachers', 1.5], ['healthcare', 1.5], ['builds with', 1.5],
+    ['year in review', 1.5], ['blockchain', 1.5], ['newsletter', 1.5], ['keynote', 1], ['recap', 1],
+    ['education', 1], ['students', 1],
+  ],
+}
