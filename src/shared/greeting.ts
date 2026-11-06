@@ -2,7 +2,9 @@ import { civil } from './dates'
 
 export type Period = 'manha' | 'tarde' | 'entardecer' | 'noite'
 
-export const DEFAULT_NICKS = ['meu sheik', 'chefinho', 'Caio', 'patrão', 'meu rei', 'chefe', 'campeão']
+export const DEFAULT_NICKS = ['meu sheik', 'chefinho', 'Caio']
+
+const INVENTED = new Set(['patrão', 'meu rei', 'chefe', 'campeão'])
 
 const KEY = 'ps.nicks.v1'
 
@@ -20,7 +22,8 @@ export function loadNicks(): string[] {
   try {
     const v = JSON.parse(localStorage.getItem(KEY) ?? 'null')
     if (Array.isArray(v)) {
-      const list = v.map((x) => String(x).trim()).filter(Boolean)
+      const list = v.map((x) => String(x).trim()).filter((x) => x && !INVENTED.has(x))
+      if (list.length !== v.length) localStorage.setItem(KEY, JSON.stringify(list.length ? list : DEFAULT_NICKS))
       if (list.length) return list
     }
   } catch {
