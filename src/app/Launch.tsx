@@ -50,7 +50,6 @@ export function Launch({ onDone, intoRitual }: { onDone: () => void; intoRitual:
   const idx = ((turn % n) + n) % n
   const cur = options[idx] ?? options[0]
   const [pw, setPw] = useState('')
-  const [bad, setBad] = useState(0)
   const [caps, setCaps] = useState(false)
   const [newName, setNewName] = useState('')
   const [newColor, setNewColor] = useState(NEW_COLORS[0])
@@ -103,7 +102,6 @@ export function Launch({ onDone, intoRitual }: { onDone: () => void; intoRitual:
     setPhase('pick')
     setStatus('idle')
     setPw('')
-    setBad(0)
   }
 
   const enter = (i = live.current.idx) => {
@@ -116,7 +114,6 @@ export function Launch({ onDone, intoRitual }: { onDone: () => void; intoRitual:
     }
     if (isUnlocked(o.id)) return finish(o.id)
     setPw('')
-    setBad(0)
     setStatus('idle')
     setPhase('lock')
     requestAnimationFrame(() => input.current?.focus({ preventScroll: true }))
@@ -146,7 +143,6 @@ export function Launch({ onDone, intoRitual }: { onDone: () => void; intoRitual:
     if (ok) finish(cur.id)
     else {
       setStatus('bad')
-      setBad((b) => b + 1)
       window.setTimeout(() => {
         setPw('')
         setStatus('idle')
