@@ -9,7 +9,7 @@ use tauri::State;
 const TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_REDIRECTS: usize = 3;
 const MAX_BYTES: u64 = 3 * 1024 * 1024;
-const USER_AGENT: &str = "PersonalSpace-Radar/1.0";
+const USER_AGENT: &str = "Alfred-Radar/1.0";
 const ACCEPT: &str = "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5";
 const KEEP_DAYS: i64 = 60;
 const MAX_ITEMS_PER_BATCH: usize = 400;

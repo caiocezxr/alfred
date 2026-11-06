@@ -4,6 +4,7 @@ import { HYBRID, getProfile, setProfile, type Profile } from '../shared/profile'
 import { companyCreate, getWork, loadWork, useWork } from '../features/work/store'
 import { CompanyMark } from '../features/work/brand'
 import { isUnlocked, markUnlocked, setPassword, verifyPassword, warmLocks } from '../shared/lock'
+import '@fontsource/bodoni-moda/700.css'
 import './launch.css'
 
 const NEW_COLORS = ['#1F8A5B', '#E07A2E', '#7A4FE0', '#D4373F', '#1A9BB0', '#C9A227']
@@ -322,7 +323,7 @@ export function Launch({ onDone, intoRitual }: { onDone: () => void; intoRitual:
       </div>
 
       <header className="lx-top">
-        <span className="lx-word">Personal Space</span>
+        <span className="lx-word">Alfred</span>
         <span className="lx-now">{fmtNow(now)}</span>
       </header>
 

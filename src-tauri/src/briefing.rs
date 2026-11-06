@@ -17,7 +17,7 @@ const JSON_TIMEOUT: Duration = Duration::from_secs(8);
 const MAX_REDIRECTS: usize = 3;
 const MAX_FEED_BYTES: u64 = 3 * 1024 * 1024;
 const MAX_JSON_BYTES: u64 = 512 * 1024;
-const USER_AGENT: &str = "PersonalSpace-Briefing/1.0";
+const USER_AGENT: &str = "Alfred-Briefing/1.0";
 const ACCEPT_FEED: &str = "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5";
 const STALE_MINUTES: i64 = 10;
 const MAX_PAYLOAD_BYTES: usize = 3 * 1024 * 1024;

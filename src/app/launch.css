@@ -888,3 +888,10 @@
 .lx-st-name {
   transition: opacity 240ms ease;
 }
+
+.lx-word {
+  font: 700 26px/1 'Bodoni Moda', 'Didot', Georgia, serif;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: #f3e2c2;
+}
