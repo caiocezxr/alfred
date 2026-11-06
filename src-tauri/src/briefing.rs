@@ -2213,6 +2213,23 @@ pub(crate) fn translate_blocking(base: &str, model: &str, items: &[TranslateItem
     Ok(out)
 }
 
+pub(crate) fn local_translate_model(c: &Connection) -> R<Option<String>> {
+    let p = get_profile(c)?;
+    Ok(if p.local_ai { Some(p.translate_model) } else { None })
+}
+
+pub(crate) fn translate_triples(model: &str, items: Vec<(String, String, Option<String>)>) -> R<Vec<(String, String, Option<String>)>> {
+    let list: Vec<TranslateItem> = items
+        .into_iter()
+        .map(|(id, title, excerpt)| TranslateItem { id, title: clean_line(&title, 240), excerpt: clean_opt(excerpt.as_deref(), 320) })
+        .filter(|t| !t.title.is_empty())
+        .collect();
+    if list.is_empty() {
+        return Ok(vec![]);
+    }
+    Ok(translate_blocking(LOCAL_BASE, model, &list)?.into_iter().map(|t| (t.id, t.title, t.summary)).collect())
+}
+
 #[tauri::command]
 pub async fn briefing_translate(state: State<'_, AppState>, items: Vec<TranslateItem>) -> R<Vec<Translated>> {
     let items = clean_translate(&items)?;

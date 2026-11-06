@@ -36,6 +36,8 @@ export type FeedItem = {
   readAt: string | null
   savedAt: string | null
   dismissedAt: string | null
+  titlePt?: string | null
+  excerptPt?: string | null
 }
 
 export type NewFeedItem = {

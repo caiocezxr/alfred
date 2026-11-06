@@ -62,6 +62,7 @@ export const radarApi = {
   itemsUpsert: (sourceId: string, items: NewFeedItem[]) => call<UpsertResult>('radar_items_upsert', { sourceId, items }),
   itemSet: (id: string, patch: ItemPatch) => call<FeedItem>('radar_item_set', { id, patch }),
   cleanup: (days?: number) => call<number>('radar_cleanup', { days }),
+  translate: (ids: string[]) => (isTauri ? invoke<FeedItem[]>('radar_translate', { ids }) : Promise.resolve([] as FeedItem[])),
 
   keywordsList: () => call<Keyword[]>('radar_keywords_list'),
   keywordSave: (input: KeywordInput) => call<Keyword>('radar_keyword_save', { input }),

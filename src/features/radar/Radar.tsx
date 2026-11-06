@@ -8,7 +8,7 @@ import { HIGHLIGHT_MIN, LOW_RELEVANCE, fmtNum, isLow, itemTime, pickHighlights, 
 import { RadarSettings, type SettingsTab } from './Settings.tsx'
 import {
   dismissItem, hideToast, lastUpdated, loadRadar, openItem, refreshAll, retrySource, toggleRead, toggleSaved, updateSource,
-  useRadar, type RadarState,
+  useRadar, type RadarState, needsPt, ptExcerpt, ptTitle, translateItems,
 } from './store.ts'
 import { CATEGORY_LABEL, CATEGORY_SHORT, type FeedItem, type FeedSource, type ItemCategory } from './types.ts'
 import './radar.css'
@@ -115,6 +115,15 @@ export default function Radar() {
   const sourcesById = useMemo(() => new Map(st.sources.map((s) => [s.id, s])), [st.sources])
   const scored = useMemo(() => scoreAll(st.items, sourcesById, st.keywords, st.stamp), [st.items, sourcesById, st.keywords, st.stamp])
   const model = useMemo(() => buildModel(st.items, scored, session), [st.items, scored, session])
+  useEffect(() => {
+    if (!st.loaded) return
+    const want = [...st.items]
+      .filter(needsPt)
+      .sort((a, b) => (scored.get(b.id)?.score ?? 0) - (scored.get(a.id)?.score ?? 0))
+      .slice(0, 120)
+      .map((i) => i.id)
+    if (want.length) translateItems(want)
+  }, [st.loaded, st.items, scored])
   useFlip(body, view)
 
   const enabled = st.sources.filter((s) => s.enabled)
@@ -275,6 +284,18 @@ function StatusLine({ st, last, now, newCount, enabledCount }: { st: RadarState;
           <span>
             {newCount} {newCount === 1 ? 'novidade' : 'novidades'} desde a última visita
           </span>
+        </>
+      )}
+      {st.translating > 0 && (
+        <>
+          <span className="radar-sub-sep" aria-hidden="true" />
+          <span className="radar-sub-muted">traduzindo {st.translating} para o português…</span>
+        </>
+      )}
+      {st.translateError && (
+        <>
+          <span className="radar-sub-sep" aria-hidden="true" />
+          <span className="radar-sub-muted">{st.translateError}</span>
         </>
       )}
     </>
@@ -517,7 +538,7 @@ function Card({ item, ctx, lead, index }: { item: FeedItem; ctx: RowCtx; lead?: 
       <h3 className="radar-card-title">
         <TitleLink item={item} />
       </h3>
-      {item.excerpt && <p className="radar-card-excerpt">{item.excerpt}</p>}
+      {ptExcerpt(item) && <p className="radar-card-excerpt">{ptExcerpt(item)}</p>}
       <footer className="radar-card-foot">
         <button className="radar-open" onClick={() => openItem(item)}>
           Abrir <ArrowUpRight />
@@ -620,7 +641,7 @@ function Row({ item, ctx, index }: { item: FeedItem; ctx: RowCtx; index: number 
       <div className="radar-row-body">
         <Meta item={item} cat={s.category} ctx={ctx} />
         <TitleLink item={item} className="radar-title" />
-        {item.excerpt && <p className="radar-excerpt">{item.excerpt}</p>}
+        {ptExcerpt(item) && <p className="radar-excerpt">{ptExcerpt(item)}</p>}
       </div>
       <Actions item={item} ctx={ctx} why={why} withOpen />
       {why && <Why item={item} scored={s} ctx={ctx} />}
@@ -639,7 +660,7 @@ function TitleLink({ item, className }: { item: FeedItem; className?: string }) 
       }}
       onAuxClick={(e) => e.preventDefault()}
     >
-      {item.title}
+      {ptTitle(item)}
       <ArrowUpRight className="radar-title-arrow" />
     </a>
   )

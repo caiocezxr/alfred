@@ -92,6 +92,7 @@ pub fn run() {
             radar::radar_source_report,
             radar::radar_items_list,
             radar::radar_items_upsert,
+            radar::radar_translate,
             radar::radar_item_set,
             radar::radar_cleanup,
             radar::radar_keywords_list,

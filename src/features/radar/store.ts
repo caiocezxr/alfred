@@ -1,3 +1,4 @@
+import { isTauri } from '../../shared/db/api'
 import { useEffect, useSyncExternalStore } from 'react'
 import { openExternal } from '../../shared/openExternal'
 import { radarApi } from './api.ts'
@@ -29,6 +30,8 @@ export type RadarState = {
   leaving: Record<string, true>
   toast: Toast | null
   stamp: number
+  translating: number
+  translateError: string | null
 }
 
 let state: RadarState = {
@@ -44,6 +47,8 @@ let state: RadarState = {
   leaving: {},
   toast: null,
   stamp: Date.now(),
+  translating: 0,
+  translateError: null,
 }
 const listeners = new Set<() => void>()
 const set = (patch: Partial<RadarState> | ((s: RadarState) => Partial<RadarState>)) => {
@@ -378,4 +383,55 @@ export function useRadar(): RadarState {
     }
   }, [])
   return s
+}
+
+const PT_MARK = /[ãõçáéíóúâêô]|\b(de|do|da|dos|das|para|com|não|uma|um|que|em|no|na|os|as|por|mais|sobre|como|o|e|ao|é|se|seu|sua|até|já|novo|nova)\b/gi
+
+export function isPortuguese(text: string) {
+  const words = text.split(/\s+/).filter(Boolean).length
+  if (!words) return true
+  const hits = text.match(PT_MARK)?.length ?? 0
+  return hits >= Math.max(1, Math.round(words * 0.12))
+}
+
+export const ptTitle = (i: FeedItem) => i.titlePt || i.title
+export const ptExcerpt = (i: FeedItem) => (i.titlePt ? i.excerptPt ?? '' : i.excerpt)
+export const needsPt = (i: FeedItem) => !i.titlePt && !isPortuguese(i.title)
+
+const asked = new Set<string>()
+let pump: Promise<void> | null = null
+let queue: string[] = []
+const BATCH = 8
+
+export function translateItems(ids: string[]) {
+  if (!isTauri) return
+  for (const id of ids) {
+    if (asked.has(id)) continue
+    asked.add(id)
+    queue.push(id)
+  }
+  if (!queue.length || pump) return
+  set({ translating: queue.length, translateError: null })
+  pump = (async () => {
+    while (queue.length) {
+      const batch = queue.slice(0, BATCH)
+      queue = queue.slice(BATCH)
+      try {
+        const done = await radarApi.translate(batch)
+        if (done.length) {
+          const byId = new Map(done.map((d) => [d.id, d]))
+          set((s) => ({ items: s.items.map((i) => byId.get(i.id) ?? i) }))
+        }
+      } catch (e) {
+        const msg = String(e instanceof Error ? e.message : e)
+        for (const id of [...batch, ...queue]) asked.delete(id)
+        queue = []
+        set({ translateError: msg.includes('local-ausente') || msg.includes('local-modelo') ? 'A tradução local está desligada ou sem o modelo; ligue o Ollama.' : 'Não deu para traduzir agora.' })
+        break
+      }
+      set({ translating: queue.length })
+    }
+    set({ translating: 0 })
+    pump = null
+  })()
 }

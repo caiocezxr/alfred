@@ -460,10 +460,12 @@ pub struct FeedItem {
     read_at: Option<String>,
     saved_at: Option<String>,
     dismissed_at: Option<String>,
+    title_pt: Option<String>,
+    excerpt_pt: Option<String>,
 }
 
 const ITEM_COLS: &str = "id, source_id, source_name, guid, url, canonical_url, title, title_key, excerpt, category,
-  relevance, published_at, fetched_at, read_at, saved_at, dismissed_at";
+  relevance, published_at, fetched_at, read_at, saved_at, dismissed_at, title_pt, excerpt_pt";
 
 fn item_from(r: &Row) -> rusqlite::Result<FeedItem> {
     Ok(FeedItem {
@@ -483,6 +485,8 @@ fn item_from(r: &Row) -> rusqlite::Result<FeedItem> {
         read_at: r.get(13)?,
         saved_at: r.get(14)?,
         dismissed_at: r.get(15)?,
+        title_pt: r.get(16)?,
+        excerpt_pt: r.get(17)?,
     })
 }
 
@@ -615,7 +619,9 @@ fn upsert_items(c: &mut Connection, source_id: &str, items: &[NewItem]) -> R<Ups
             let n = tx
                 .execute(
                     &format!(
-                        "UPDATE feed_items SET title = ?2, title_key = ?3, excerpt = ?4, category = ?5, relevance = ?6,
+                        "UPDATE feed_items SET title_pt = CASE WHEN title IS ?2 THEN title_pt END,
+                           excerpt_pt = CASE WHEN title IS ?2 AND excerpt IS ?4 THEN excerpt_pt END,
+                           title = ?2, title_key = ?3, excerpt = ?4, category = ?5, relevance = ?6,
                            guid = COALESCE(guid, ?7), source_name = ?8, updated_at = {NOW}
                          WHERE id = ?1 AND (title IS NOT ?2 OR excerpt IS NOT ?4 OR category IS NOT ?5
                            OR relevance IS NOT ?6 OR source_name IS NOT ?8)"
@@ -725,6 +731,73 @@ fn cleanup(c: &mut Connection, days: i64) -> R<i64> {
 #[tauri::command(async)]
 pub fn radar_items_list(state: State<AppState>) -> R<Vec<FeedItem>> {
     with_conn(&state, |c| Ok(list_items(c)))?
+}
+
+const MAX_TRANSLATE_IDS: usize = 30;
+
+type PendingPt = (String, String, String);
+
+fn pending_pt(c: &Connection, ids: &[String]) -> R<(Option<String>, Vec<PendingPt>)> {
+    let model = crate::briefing::local_translate_model(c)?;
+    let mut rows = vec![];
+    for id in ids {
+        let row: Option<PendingPt> = c
+            .query_row("SELECT id, title, excerpt FROM feed_items WHERE id = ?1 AND title_pt IS NULL", params![id], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .optional()
+            .map_err(sql_err)?;
+        if let Some(r) = row {
+            rows.push(r);
+        }
+    }
+    Ok((model, rows))
+}
+
+fn save_pt(c: &Connection, rows: &[PendingPt], done: Vec<(String, String, Option<String>)>) -> R<Vec<FeedItem>> {
+    let mut out = vec![];
+    for (key, title, summary) in done {
+        let Some(idx) = key.strip_prefix('r').and_then(|n| n.parse::<usize>().ok()) else { continue };
+        let Some((id, _, _)) = rows.get(idx) else { continue };
+        let title: String = title.trim().chars().take(300).collect();
+        if title.is_empty() {
+            continue;
+        }
+        let excerpt = summary.map(|s| s.trim().chars().take(600).collect::<String>()).filter(|s| !s.is_empty());
+        c.execute(
+            &format!("UPDATE feed_items SET title_pt = ?2, excerpt_pt = ?3, updated_at = {NOW} WHERE id = ?1"),
+            params![id, title, excerpt],
+        )
+        .map_err(sql_err)?;
+        out.push(get_item(c, id)?);
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+pub async fn radar_translate(state: State<'_, AppState>, ids: Vec<String>) -> R<Vec<FeedItem>> {
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+    if ids.len() > MAX_TRANSLATE_IDS {
+        return Err(format!("envie até {MAX_TRANSLATE_IDS} itens por vez"));
+    }
+    let (model, rows) = with_conn(&state, |c| Ok(pending_pt(c, &ids)))??;
+    let Some(model) = model else {
+        return Err("[local-ausente] os modelos locais estão desligados".into());
+    };
+    if rows.is_empty() {
+        return Ok(vec![]);
+    }
+    let triples: Vec<(String, String, Option<String>)> = rows
+        .iter()
+        .enumerate()
+        .map(|(i, (_, title, excerpt))| (format!("r{i}"), title.clone(), if excerpt.trim().is_empty() { None } else { Some(excerpt.clone()) }))
+        .collect();
+    let done = tauri::async_runtime::spawn_blocking(move || crate::briefing::translate_triples(&model, triples))
+        .await
+        .map_err(|e| format!("[local-falhou] {e}"))??;
+    with_conn(&state, |c| Ok(save_pt(c, &rows, done)))?
 }
 
 #[tauri::command(async)]
