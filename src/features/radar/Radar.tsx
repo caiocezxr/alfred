@@ -1,3 +1,4 @@
+import { isTauri } from '../../shared/db/api'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
 import { onIntent } from '../../app/router'
 import { fmtLong } from '../../shared/dates'
@@ -113,17 +114,21 @@ export default function Radar() {
   }, [])
 
   const sourcesById = useMemo(() => new Map(st.sources.map((s) => [s.id, s])), [st.sources])
-  const scored = useMemo(() => scoreAll(st.items, sourcesById, st.keywords, st.stamp), [st.items, sourcesById, st.keywords, st.stamp])
-  const model = useMemo(() => buildModel(st.items, scored, session), [st.items, scored, session])
+  const hidePending = isTauri && !st.translateError
+  const items = useMemo(() => (hidePending ? st.items.filter((i) => !needsPt(i)) : st.items), [st.items, hidePending])
+  const pending = st.items.length - items.length
+  const scored = useMemo(() => scoreAll(items, sourcesById, st.keywords, st.stamp), [items, sourcesById, st.keywords, st.stamp])
+  const model = useMemo(() => buildModel(items, scored, session), [items, scored, session])
   useEffect(() => {
     if (!st.loaded) return
+    const all = scoreAll(st.items, sourcesById, st.keywords, st.stamp)
     const want = [...st.items]
       .filter(needsPt)
-      .sort((a, b) => (scored.get(b.id)?.score ?? 0) - (scored.get(a.id)?.score ?? 0))
-      .slice(0, 120)
+      .sort((a, b) => (all.get(b.id)?.score ?? 0) - (all.get(a.id)?.score ?? 0))
+      .slice(0, 400)
       .map((i) => i.id)
     if (want.length) translateItems(want)
-  }, [st.loaded, st.items, scored])
+  }, [st.loaded, st.items, sourcesById, st.keywords, st.stamp])
   useFlip(body, view)
 
   const enabled = st.sources.filter((s) => s.enabled)
@@ -173,7 +178,7 @@ export default function Radar() {
           onChange={setView}
           options={[
             { id: 'all', label: 'Tudo' },
-            { id: 'skills', label: 'Skills', count: skillsOf(st.items, sourcesById).fresh },
+            { id: 'skills', label: 'Skills', count: skillsOf(items, sourcesById).fresh },
             { id: 'ai_dev', label: 'IA dev', count: model.fresh.ai_dev },
             { id: 'ai_content', label: 'IA conteúdo', count: model.fresh.ai_content },
             { id: 'stack', label: 'Stacks', count: model.fresh.stack },
@@ -186,7 +191,13 @@ export default function Radar() {
       <Issues st={st} enabled={enabled} />
 
       <div className="radar-body" ref={body} key={view}>
-        <Body view={view} st={st} model={model} ctx={ctx} enabledCount={enabled.length} setView={setView} openSources={() => setSheet('sources')} />
+        {pending > 0 && (
+          <div className="radar-pending" role="status">
+            <i aria-hidden="true" />
+            {pending} {pending === 1 ? 'notícia está' : 'notícias estão'} sendo traduzidas para o português e aparecem aqui assim que ficarem prontas.
+          </div>
+        )}
+        <Body view={view} st={st} items={items} model={model} ctx={ctx} enabledCount={enabled.length} setView={setView} openSources={() => setSheet('sources')} />
       </div>
 
       {sheet && (
@@ -392,9 +403,10 @@ type RowCtx = {
   onKeywords: () => void
 }
 
-function Body({ view, st, model, ctx, enabledCount, setView, openSources }: {
+function Body({ view, st, items, model, ctx, enabledCount, setView, openSources }: {
   view: View
   st: RadarState
+  items: FeedItem[]
   model: Model
   ctx: RowCtx
   enabledCount: number
@@ -435,7 +447,7 @@ function Body({ view, st, model, ctx, enabledCount, setView, openSources }: {
     )
   }
 
-  if (view === 'skills') return <Skills items={st.items} ctx={ctx} />
+  if (view === 'skills') return <Skills items={items} ctx={ctx} />
 
   if (view === 'all') {
     const sections = CATS.filter((c) => model.byCat[c].length)
