@@ -1,177 +1,320 @@
-import { forwardRef, useEffect, useMemo, useState } from 'react'
+import { forwardRef, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { addDays, weekday } from '../../shared/dates'
 import { CompanyMark, coStyle } from './brand'
 import { Icon } from './icons'
 import { dueLabel, findDuplicate, parseCapture, type Scope } from './logic'
-import { createItem, createTodo, openDialog, openItem, readUi, writeUi } from './store'
-import { KIND_LABEL, MODE_LABEL, PERSONAL_ID, PRIORITY_LABEL, type WorkState } from './types'
+import { createItem, createTodo, openItem, readUi, writeUi } from './store'
+import { PERSONAL_ID, PRIORITY_LABEL, type Priority, type WorkState } from './types'
 
-const TOKENS: { label: string; insert: string; hint?: string }[] = [
-  { label: '#chamado', insert: '#', hint: 'código' },
-  { label: '@empresa', insert: '@', hint: 'espaço' },
-  { label: '!', insert: '!', hint: 'prioridade' },
-  { label: 'sexta', insert: 'sexta', hint: 'prazo' },
-  { label: 'às 15h', insert: 'às 15h', hint: 'lembrete' },
-  { label: 'todo dia', insert: 'todo dia', hint: 'recorrente' },
-]
+type Repeat = 'none' | 'daily' | 'weekdays'
+type Over = { dueDate?: string | null; remindTime?: string | null; priority?: Priority; repeat?: Repeat; forget?: boolean; ticket?: string | null }
+type Menu = 'space' | 'due' | 'remind' | 'repeat' | 'ticket' | null
+
+const PRIOS: Priority[] = ['normal', 'alta', 'urgente']
+const pad = (n: number) => String(n).padStart(2, '0')
+
+function nextWeekday(today: string, wd: number) {
+  const d = (wd - weekday(today) + 7) % 7 || 7
+  return addDays(today, d)
+}
+
+function inAnHour() {
+  const d = new Date(Date.now() + 60 * 60000)
+  const m = Math.ceil(d.getMinutes() / 15) * 15
+  d.setMinutes(m, 0, 0)
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
 
 export const Capture = forwardRef<HTMLInputElement, { state: WorkState; today: string; scope: Scope }>(function Capture({ state, today, scope }, ref) {
   const [draft, setDraft] = useState('')
   const [pref, setPref] = useState<'todo' | 'work'>(() => readUi().captureTarget ?? 'work')
   const [space, setSpace] = useState<string | null>(null)
+  const [ov, setOv] = useState<Over>({})
+  const [menu, setMenu] = useState<Menu>(null)
+  const [forced, setForced] = useState<'todo' | 'work' | null>(null)
+  const [focused, setFocused] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  const input = () => (typeof ref === 'object' && ref ? ref.current : null)
+
   useEffect(() => {
     const on = (e: Event) => {
       const add = (e as CustomEvent<string>).detail
       setDraft((d) => `${d.replace(/\s+(?:às\s+)?\d{1,2}(?:h\d{0,2}|:\d{2})\s*$/i, '').trimEnd()}${d.trim() ? ' ' : ''}${add}`)
-      const el = typeof ref === 'object' && ref ? ref.current : null
       requestAnimationFrame(() => {
-        el?.focus()
-        el?.setSelectionRange(0, 0)
+        input()?.focus()
+        input()?.setSelectionRange(0, 0)
       })
     }
     window.addEventListener('wk:prefill', on)
     return () => window.removeEventListener('wk:prefill', on)
   }, [ref])
+
+  useEffect(() => {
+    if (!menu) return
+    const down = (e: PointerEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) setMenu(null)
+    }
+    window.addEventListener('pointerdown', down)
+    return () => window.removeEventListener('pointerdown', down)
+  }, [menu])
+
   const ids = state.companies.map((c) => c.id)
   const fallback = space ?? (scope !== 'all' ? scope : (readUi().lastCompany && ids.includes(readUi().lastCompany!) ? readUi().lastCompany! : ids[0]))
   const systems = useMemo(() => [...new Set(state.items.map((i) => i.system).filter((s): s is string => !!s))], [state.items])
   const q = parseCapture(draft, today, state.companies, fallback, systems)
-  const target = q.target ?? (q.companyId === PERSONAL_ID ? 'todo' : pref)
+  const target = forced ?? q.target ?? (q.companyId === PERSONAL_ID ? 'todo' : pref)
   const company = state.companies.find((c) => c.id === q.companyId)
-  const dup = target === 'work' ? findDuplicate(state.items, q.companyId, q.ticket) : null
 
-  const insert = (token: string) => {
-    const el = typeof ref === 'object' && ref ? ref.current : null
-    const start = el?.selectionStart ?? draft.length
-    const end = el?.selectionEnd ?? draft.length
-    const before = draft.slice(0, start)
-    const after = draft.slice(end)
-    const glue = (token === '#' || token === '@') ? '' : ' '
-    const pre = before && !/\s$/.test(before) ? ' ' : ''
-    const piece = `${pre}${token}${glue}`
-    const next = `${before}${piece}${after.replace(/^\s+/, glue ? '' : '')}`
-    setDraft(next)
-    requestAnimationFrame(() => {
-      el?.focus()
-      const pos = before.length + piece.length
-      el?.setSelectionRange(pos, pos)
-    })
+  const dueDate = ov.dueDate !== undefined ? ov.dueDate : q.dueDate
+  const remindTime = ov.remindTime !== undefined ? ov.remindTime : q.remindTime
+  const priority = ov.priority ?? q.priority
+  const repeat: Repeat = ov.repeat ?? (q.mode === 'daily' ? (q.weekdaysOnly ? 'weekdays' : 'daily') : 'none')
+  const forget = ov.forget ?? q.mustNotForget
+  const ticket = ov.ticket !== undefined ? ov.ticket : q.ticket
+  const dup = target === 'work' ? findDuplicate(state.items, q.companyId, ticket) : null
+  const open = focused || !!draft || !!menu
+  const title = q.title || ticket || ''
+
+  const keep = (e: { preventDefault: () => void }) => e.preventDefault()
+  const set = (patch: Over) => {
+    setOv((o) => ({ ...o, ...patch }))
+    setMenu(null)
+    requestAnimationFrame(() => input()?.focus())
   }
-  const cycleSpace = () => {
-    const i = ids.indexOf(q.companyId)
-    setSpace(ids[(i + 1) % ids.length])
-  }
-  const flip = () => {
-    const next = target === 'todo' ? 'work' : 'todo'
+
+  const flip = (next: 'todo' | 'work') => {
     setPref(next)
+    setForced(next)
     writeUi({ captureTarget: next })
+    requestAnimationFrame(() => input()?.focus())
   }
+
+  const reset = () => {
+    setDraft('')
+    setSpace(null)
+    setOv({})
+    setMenu(null)
+    setForced(null)
+  }
+
   const submit = async (force: boolean) => {
-    if (!q.title && !q.ticket) return
+    if (!title) return
     if (dup && !force) {
-      setDraft('')
+      reset()
       openItem(dup.id)
       return
     }
-    setDraft('')
-    setSpace(null)
+    reset()
     if (target === 'todo') {
+      const mode = repeat !== 'none' ? 'daily' : dueDate ? 'dated' : (q.mode ?? 'fixed')
       await createTodo({
         companyId: q.companyId,
-        title: q.title,
-        priority: q.priority,
-        mode: q.mode ?? (q.dueDate ? 'dated' : 'fixed'),
-        weekdaysOnly: q.weekdaysOnly,
-        dueDate: q.dueDate,
-        remindTime: q.remindTime,
-        mustNotForget: q.mustNotForget,
+        title: q.title || title,
+        priority,
+        mode,
+        weekdaysOnly: repeat === 'weekdays',
+        dueDate: repeat !== 'none' ? null : dueDate,
+        remindTime,
+        mustNotForget: forget,
       })
     } else {
-      await createItem({ companyId: q.companyId, title: q.title || q.ticket || 'Chamado', ticket: q.ticket, priority: q.priority, dueDate: q.dueDate, kind: q.kind ?? undefined, system: q.system, url: q.url })
+      await createItem({ companyId: q.companyId, title: q.title || ticket || 'Chamado', ticket, priority, dueDate, kind: q.kind ?? undefined, system: q.system, url: q.url })
     }
   }
 
-  return (
-    <div className="wk-capture" style={coStyle(company)}>
-      <span className="wk-cap-plus" aria-hidden="true">
-        <Icon name="plus" size={14} />
-      </span>
-      <button className="wk-cap-space" onClick={cycleSpace} title="Trocar espaço (ou escreva @statix, @livelo, @pessoal)" aria-label={`Espaço: ${company?.name}. Trocar`}>
-        <CompanyMark company={company} size={20} />
+  const dueText = repeat !== 'none' ? null : dueDate ? dueLabel(dueDate, today) : null
+  const preview = [
+    target === 'todo' ? 'To-do' : 'Trabalho',
+    company?.name,
+    ticket,
+    dueText && `prazo ${dueText.toLowerCase()}`,
+    repeat === 'daily' ? 'todo dia' : repeat === 'weekdays' ? 'dias úteis' : null,
+    remindTime && `lembrete ${remindTime}`,
+    priority !== 'normal' && `prioridade ${PRIORITY_LABEL[priority].toLowerCase()}`,
+    forget && 'não pode esquecer',
+  ].filter(Boolean)
+
+  const chip = (id: Exclude<Menu, null>, icon: Parameters<typeof Icon>[0]['name'], label: string, value: string | null, extra?: ReactNode) => (
+    <div className={`wk-qc-wrap ${menu === id ? 'is-open' : ''}`}>
+      <button type="button" className={`wk-qc ${value ? 'is-set' : ''}`} onMouseDown={keep} onClick={() => setMenu(menu === id ? null : id)} aria-expanded={menu === id}>
+        <Icon name={icon} size={12} />
+        <span>{value ?? label}</span>
       </button>
-      <input
-        ref={ref}
-        className="wk-cap-input"
-        value={draft}
-        placeholder={target === 'todo' ? 'Novo to-do…' : 'Capturar chamado, entrega ou ideia…'}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault()
-            void submit(e.shiftKey)
-          }
-          if (e.key === 'Escape') {
-            setDraft('')
-            ;(e.target as HTMLInputElement).blur()
-          }
-        }}
-        aria-describedby="wk-cap-hint"
-        aria-label="Captura rápida"
-      />
-      <div className="wk-cap-chips">
-        <button className={`wk-cap-kind is-${target}`} onClick={flip} title="Alternar entre to-do e item de trabalho" aria-label={`Tipo: ${target === 'todo' ? 'to-do' : 'item de trabalho'}. Alternar`}>
-          <Icon name={target === 'todo' ? 'check' : 'board'} size={12} />
-          {target === 'todo' ? 'To-do' : 'Trabalho'}
-        </button>
-        {draft && (
-          <>
-            {q.ticket && <span className="wk-chip">{q.ticket}</span>}
-            {q.priority !== 'normal' && <span className={`wk-chip is-prio-${q.priority}`}>{PRIORITY_LABEL[q.priority]}</span>}
-            {q.dueDate && <span className="wk-chip">{dueLabel(q.dueDate, today)}</span>}
-            {target === 'todo' && q.mode && q.mode !== 'dated' && <span className="wk-chip">{q.weekdaysOnly ? 'Dias úteis' : MODE_LABEL[q.mode]}</span>}
-            {q.remindTime && (
-              <span className="wk-chip">
-                <Icon name="bell" size={10} />
-                {q.remindTime}
-              </span>
-            )}
-            {q.mustNotForget && <span className="wk-chip is-forget">não pode esquecer</span>}
-            {q.kind && <span className="wk-chip">{KIND_LABEL[q.kind]}</span>}
-            {q.system && <span className="wk-chip">{q.system}</span>}
-            {q.url && (
-              <span className="wk-chip">
-                <Icon name="link" size={10} />
-                link
-              </span>
-            )}
-          </>
-        )}
-        {!draft && <kbd className="wk-cap-kbd" title="Focar a captura">⌘/</kbd>}
-        <button className="wk-icon-btn wk-cap-forget" onClick={() => openDialog({ kind: 'todo', draft: { title: q.title, companyId: q.companyId, mustNotForget: true, remindTime: q.remindTime, dueDate: q.dueDate, mode: q.mode ?? undefined } })} title="Não pode esquecer" aria-label="Criar um não pode esquecer">
-          <Icon name="alarm" size={15} />
-        </button>
-      </div>
-      <span id="wk-cap-hint" className="wk-cap-hint">
-        {dup ? (
-          <span className="wk-cap-dup">
-            <Icon name="flag" size={11} /> {dup.ticket} já existe: “{dup.title}”. <kbd>Enter</kbd> abre · <kbd>⇧ Enter</kbd> cria outro
-          </span>
+      {menu === id && <div className="wk-qmenu" role="menu">{extra}</div>}
+    </div>
+  )
+
+  const opt = (label: string, on: boolean, act: () => void, hint?: string) => (
+    <button type="button" role="menuitemradio" aria-checked={on} className={`wk-qopt ${on ? 'is-on' : ''}`} onMouseDown={keep} onClick={act}>
+      <span>{label}</span>
+      {hint && <small>{hint}</small>}
+    </button>
+  )
+
+  return (
+    <div ref={box} className={`wk-capture is-v2 ${open ? 'is-open' : ''}`} style={coStyle(company)}>
+      <div className="wk-cap-row">
+        <div className="wk-cap-seg" role="radiogroup" aria-label="Tipo">
+          <button type="button" role="radio" aria-checked={target === 'todo'} className={target === 'todo' ? 'is-on' : ''} onMouseDown={keep} onClick={() => flip('todo')}>
+            <Icon name="check" size={12} /> To-do
+          </button>
+          <button type="button" role="radio" aria-checked={target === 'work'} className={target === 'work' ? 'is-on' : ''} onMouseDown={keep} onClick={() => flip('work')}>
+            <Icon name="board" size={12} /> Trabalho
+          </button>
+          <i className={`wk-cap-seg-pill is-${target}`} aria-hidden="true" />
+        </div>
+        <div className={`wk-qc-wrap ${menu === 'space' ? 'is-open' : ''}`}>
+          <button type="button" className="wk-cap-space" onMouseDown={keep} onClick={() => setMenu(menu === 'space' ? null : 'space')} aria-label={`Espaço: ${company?.name}. Trocar`} title="Espaço">
+            <CompanyMark company={company} size={20} />
+            <span className="wk-cap-space-n">{company?.name}</span>
+            <Icon name="chevron" size={10} />
+          </button>
+          {menu === 'space' && (
+            <div className="wk-qmenu" role="menu">
+              {state.companies.map((c) =>
+                opt(c.name, c.id === q.companyId, () => {
+                  setSpace(c.id)
+                  setMenu(null)
+                  requestAnimationFrame(() => input()?.focus())
+                }),
+              )}
+            </div>
+          )}
+        </div>
+        <input
+          ref={ref}
+          className="wk-cap-input"
+          value={draft}
+          placeholder={target === 'todo' ? 'O que você precisa fazer?' : 'Qual chamado, entrega ou ideia?'}
+          onChange={(e) => setDraft(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              void submit(e.shiftKey)
+            }
+            if (e.key === 'Escape') {
+              if (menu) return setMenu(null)
+              reset()
+              ;(e.target as HTMLInputElement).blur()
+            }
+          }}
+          aria-label="Captura rápida"
+        />
+        {title ? (
+          <button type="button" className="wk-cap-go" onMouseDown={keep} onClick={() => void submit(false)}>
+            Criar <kbd>↵</kbd>
+          </button>
         ) : (
-          <>
-            {TOKENS.map((t) => (
-              <button key={t.label} type="button" className="wk-cap-token" onMouseDown={(e) => e.preventDefault()} onClick={() => insert(t.insert)} title={t.hint}>
-                <kbd>{t.label}</kbd>
-                {t.hint && <span>{t.hint}</span>}
-              </button>
-            ))}
-            <span className="wk-cap-paste">ou cole o link do chamado</span>
-            <span className="wk-grow" />
-            <kbd>Enter</kbd>
-            <span>salva</span>
-            <kbd>Esc</kbd>
-            <span>limpa</span>
-          </>
+          <kbd className="wk-cap-kbd" title="Focar a captura">
+            ⌘/
+          </kbd>
         )}
-      </span>
+      </div>
+
+      <div className="wk-cap-tray" aria-hidden={!open}>
+        <div className="wk-cap-chips2">
+          {chip(
+            'due',
+            'cal',
+            'Prazo',
+            dueText,
+            <>
+              {opt('Hoje', dueDate === today, () => set({ dueDate: today, repeat: 'none' }))}
+              {opt('Amanhã', dueDate === addDays(today, 1), () => set({ dueDate: addDays(today, 1), repeat: 'none' }))}
+              {opt('Sexta', dueDate === nextWeekday(today, 5), () => set({ dueDate: nextWeekday(today, 5), repeat: 'none' }))}
+              {opt('Próxima segunda', dueDate === nextWeekday(today, 1), () => set({ dueDate: nextWeekday(today, 1), repeat: 'none' }))}
+              <label className="wk-qopt is-field" onMouseDown={(e) => e.stopPropagation()}>
+                <span>Escolher</span>
+                <input type="date" value={dueDate ?? ''} onChange={(e) => e.target.value && set({ dueDate: e.target.value, repeat: 'none' })} />
+              </label>
+              {dueDate && opt('Sem prazo', false, () => set({ dueDate: null }))}
+            </>,
+          )}
+          {chip(
+            'remind',
+            'bell',
+            'Lembrete',
+            remindTime,
+            <>
+              {opt('Daqui a 1 hora', false, () => set({ remindTime: inAnHour() }), inAnHour())}
+              {['09:00', '14:00', '18:00'].map((t) => opt(t, remindTime === t, () => set({ remindTime: t })))}
+              <label className="wk-qopt is-field" onMouseDown={(e) => e.stopPropagation()}>
+                <span>Outro horário</span>
+                <input type="time" value={remindTime ?? ''} onChange={(e) => e.target.value && setOv((o) => ({ ...o, remindTime: e.target.value }))} />
+              </label>
+              {remindTime && opt('Sem lembrete', false, () => set({ remindTime: null }))}
+            </>,
+          )}
+          <button
+            type="button"
+            className={`wk-qc is-prio-${priority} ${priority !== 'normal' ? 'is-set' : ''}`}
+            onMouseDown={keep}
+            onClick={() => setOv((o) => ({ ...o, priority: PRIOS[(PRIOS.indexOf(priority) + 1) % PRIOS.length] }))}
+            title="Clique para mudar a prioridade"
+          >
+            <Icon name="flag" size={12} />
+            <span>{priority === 'normal' ? 'Prioridade' : PRIORITY_LABEL[priority]}</span>
+          </button>
+          {target === 'todo' ? (
+            <>
+              {chip(
+                'repeat',
+                'repeat',
+                'Repetir',
+                repeat === 'daily' ? 'Todo dia' : repeat === 'weekdays' ? 'Dias úteis' : null,
+                <>
+                  {opt('Não repete', repeat === 'none', () => set({ repeat: 'none' }))}
+                  {opt('Todo dia', repeat === 'daily', () => set({ repeat: 'daily', dueDate: null }))}
+                  {opt('Dias úteis', repeat === 'weekdays', () => set({ repeat: 'weekdays', dueDate: null }))}
+                </>,
+              )}
+              <button type="button" className={`wk-qc is-forget ${forget ? 'is-set' : ''}`} onMouseDown={keep} onClick={() => setOv((o) => ({ ...o, forget: !forget }))} title="Fica em destaque até você resolver">
+                <Icon name="alarm" size={12} />
+                <span>Não esquecer</span>
+              </button>
+            </>
+          ) : (
+            chip(
+              'ticket',
+              'hash',
+              'Nº do chamado',
+              ticket,
+              <label className="wk-qopt is-field" onMouseDown={(e) => e.stopPropagation()}>
+                <span>Chamado</span>
+                <input
+                  autoFocus
+                  placeholder="#1234"
+                  defaultValue={ticket ?? ''}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      const v = (e.target as HTMLInputElement).value.trim()
+                      set({ ticket: v ? (v.startsWith('#') || /^[A-Z]+-\d+$/.test(v) ? v : `#${v}`) : null })
+                    }
+                  }}
+                />
+              </label>,
+            )
+          )}
+        </div>
+        <div className="wk-cap-say">
+          {dup ? (
+            <span className="wk-cap-dup">
+              <Icon name="flag" size={11} /> {dup.ticket} já existe: “{dup.title}”. <kbd>Enter</kbd> abre · <kbd>⇧ Enter</kbd> cria outro
+            </span>
+          ) : title ? (
+            <span>
+              Vai criar: <b>{preview.join(' · ')}</b>
+            </span>
+          ) : (
+            <span>
+              Dica: escreva do seu jeito, tipo <em>“ligar pro João amanhã às 10h !”</em>, que eu entendo o prazo, a hora e a prioridade. <em>@statix</em> troca a empresa e <em>#1234</em> marca o chamado.
+            </span>
+          )}
+        </div>
+      </div>
     </div>
   )
 })
