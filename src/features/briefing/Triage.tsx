@@ -169,7 +169,7 @@ function CardBody({ c }: { c: Card }) {
         <span className={`brf-tcard-tag ${c.kept ? 'is-kept' : ''}`}>{c.kept ? 'no briefing' : 'ficou de fora'}</span>
       </div>
       <h3 className="display">{it.title}</h3>
-      {it.summary ? <p>{it.summary}</p> : it.originalTitle !== it.title ? <p className="brf-muted">{it.originalTitle}</p> : null}
+      {it.summary ? <p>{it.summary}</p> : null}
       {!c.kept && it.reason && <p className="brf-tcard-reason">O juiz deixou de fora: {it.reason}</p>}
       <div className="brf-tcard-foot">
         <span className="brf-muted">{it.source}</span>

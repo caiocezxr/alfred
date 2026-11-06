@@ -4,11 +4,16 @@ import { defaultProfile, normalizeProfile } from './profile.ts'
 import { BRIEFING_SOURCES } from './sources.ts'
 import type {
   BeginResult, BriefSource, CodexStatus, Edition, EditionRow, Feedback, FeedbackInput, JudgeInput, JudgeOutput, Market,
-  Profile, TodayInfo, Voice,
+  Profile, Rating, RatingInput, RatingOut, TasteResult, TodayInfo, TranslateItem, Translated, Voice,
 } from './types.ts'
+import { applyAdjustments, planAdjustments } from './rating.ts'
 
 const KEY = 'ps.briefing.v1'
 const STALE_MS = 10 * 60 * 1000
+const BEAT_MS = 25 * 1000
+const TAB_ID = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)
+const aliveAt = (e: EditionRow) => Math.max(Date.parse(e.startedAt), e.beatAt ? Date.parse(e.beatAt) : 0)
+const orphan = (e: EditionRow) => Date.now() - aliveAt(e) > BEAT_MS || Date.now() - Date.parse(e.startedAt) > STALE_MS
 
 type LocalDb = {
   v: 1
@@ -16,6 +21,7 @@ type LocalDb = {
   feedback: Feedback[]
   profile: Profile | null
   sources: Record<string, { enabled: boolean; weight: number }>
+  ratings?: Rating[]
 }
 
 function readLocal(): LocalDb {
@@ -59,21 +65,28 @@ const local = {
       edition: e,
       previousDate: p?.date ?? null,
       windowFrom: p?.startedAt ?? null,
-      stale: !!e && e.status === 'running' && Date.now() - Date.parse(e.startedAt) > STALE_MS,
+      stale: !!e && e.status === 'running' && orphan(e),
     }
   },
   begin(date: string, force: boolean): BeginResult {
     const db = readLocal()
     const e = db.editions[date]
-    const busy = !!e && e.status === 'running' && Date.now() - Date.parse(e.startedAt) < STALE_MS
+    const busy = !!e && e.status === 'running' && !orphan(e)
     const go = !e || (force ? !busy : e.status === 'error' || (e.status === 'running' && !busy))
     if (go) {
       db.editions[date] = e
-        ? { ...e, status: 'running', startedAt: now(), error: null, attempts: e.attempts + 1 }
-        : { id: uid(), date, status: 'running', judge: null, startedAt: now(), finishedAt: null, error: null, payload: null, attempts: 1 }
+        ? { ...e, status: 'running', startedAt: now(), beatAt: now(), owner: TAB_ID, error: null, attempts: e.attempts + 1 }
+        : { id: uid(), date, status: 'running', judge: null, startedAt: now(), beatAt: now(), owner: TAB_ID, finishedAt: null, error: null, payload: null, attempts: 1 }
       writeLocal(db)
     }
     return { started: go, edition: db.editions[date], windowFrom: prevReady(db, date)?.startedAt ?? null }
+  },
+  beat(date: string) {
+    const db = readLocal()
+    const e = db.editions[date]
+    if (!e || e.status !== 'running' || e.owner !== TAB_ID) return
+    e.beatAt = now()
+    writeLocal(db)
   },
   finish(date: string, payload: Edition, judge: string): EditionRow {
     const db = readLocal()
@@ -138,6 +151,42 @@ const local = {
     db.feedback = db.feedback.filter((x) => !(x.editionDate === date && x.itemKey === key))
     writeLocal(db)
   },
+  ratingSet(input: RatingInput): RatingOut {
+    const db = readLocal()
+    const list = db.ratings ?? []
+    let profile = normalizeProfile(db.profile ?? defaultProfile())
+    const prev = list.find((r) => r.editionDate === input.editionDate)
+    if (prev && !prev.undone) profile = applyAdjustments(profile, prev.adjustments, -1).profile
+    const otimo = input.rating === 'otimo'
+    const clean: RatingInput = {
+      ...input,
+      reasons: otimo ? [] : [...new Set(input.reasons)],
+      moreAreas: otimo ? [] : [...new Set(input.moreAreas)],
+      note: input.note?.replace(/\s+/g, ' ').trim().slice(0, 280) || null,
+    }
+    const { profile: next, applied } = applyAdjustments(profile, planAdjustments(clean), 1)
+    const rating: Rating = { ...clean, adjustments: applied, undone: false, updatedAt: now() }
+    db.ratings = [rating, ...list.filter((r) => r.editionDate !== input.editionDate)].slice(0, 60)
+    db.profile = next
+    writeLocal(db)
+    return { rating, profile: next }
+  },
+  ratingUndo(date: string): RatingOut {
+    const db = readLocal()
+    const r = (db.ratings ?? []).find((x) => x.editionDate === date)
+    if (!r) throw new Error('não há avaliação desse dia')
+    let profile = normalizeProfile(db.profile ?? defaultProfile())
+    if (!r.undone) profile = applyAdjustments(profile, r.adjustments, -1).profile
+    r.undone = true
+    r.updatedAt = now()
+    db.profile = profile
+    writeLocal(db)
+    return { rating: r, profile }
+  },
+  ratingList(days: number): Rating[] {
+    const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10)
+    return (readLocal().ratings ?? []).filter((r) => r.editionDate >= since)
+  },
   profileGet: (): Profile => normalizeProfile(readLocal().profile ?? defaultProfile()),
   profileSave(p: Profile): Profile {
     const db = readLocal()
@@ -166,6 +215,9 @@ export const briefingApi = {
   begin: (date: string, force = false) => (isTauri ? invoke<BeginResult>('briefing_begin', { date, force }) : Promise.resolve(local.begin(date, force))),
   finish: (date: string, payload: Edition, judge: Edition['judge']) =>
     isTauri ? invoke<EditionRow>('briefing_finish', { date, payload, judge }) : Promise.resolve(local.finish(date, payload, judge)),
+  beat: (date: string) => {
+    if (!isTauri) local.beat(date)
+  },
   fail: (date: string, error: string) => (isTauri ? invoke<EditionRow>('briefing_fail', { date, error }) : Promise.resolve(local.fail(date, error))),
 
   sources: () => (isTauri ? invoke<BriefSource[]>('briefing_sources_list') : Promise.resolve(local.sources())),
@@ -179,10 +231,18 @@ export const briefingApi = {
     isTauri
       ? invoke<JudgeOutput>('briefing_judge', { input })
       : Promise.reject(new Error('[codex-ausente] o juiz só roda no app; no navegador o briefing sai sem ele')),
+  translate: (items: TranslateItem[]): Promise<Translated[]> =>
+    isTauri ? invoke<Translated[]>('briefing_translate', { items }) : Promise.reject(new Error('[local-ausente] a tradução local só roda no app')),
+  tasteRank: (items: TranslateItem[]): Promise<TasteResult> =>
+    isTauri ? invoke<TasteResult>('briefing_taste_rank', { items }) : Promise.reject(new Error('[local-ausente] o gosto pessoal só roda no app')),
   codexStatus: (): Promise<CodexStatus> =>
     isTauri
       ? invoke<CodexStatus>('briefing_codex_status')
-      : Promise.resolve({ found: false, path: null, configured: false, error: 'o juiz só roda no app' }),
+      : Promise.resolve({
+          found: false, path: null, configured: false, error: 'o juiz só roda no app',
+          localEnabled: false, translateModel: 'gemma4:e2b', embedModel: 'embeddinggemma', translateReady: false, embedReady: false,
+          localError: 'os modelos locais só rodam no app',
+        }),
 
   voices: (): Promise<Voice[]> => (isTauri ? invoke<Voice[]>('briefing_voices') : Promise.resolve([])),
   tts: (text: string, voice: string, rate: number) => invoke<ArrayBuffer>('briefing_tts', { text, voice, rate }),
@@ -192,6 +252,12 @@ export const briefingApi = {
   feedbackSet: (input: FeedbackInput) => (isTauri ? invoke<Feedback>('briefing_feedback_set', { input }) : Promise.resolve(local.feedbackSet(input))),
   feedbackRemove: (editionDate: string, itemKey: string) =>
     isTauri ? invoke<void>('briefing_feedback_remove', { editionDate, itemKey }) : Promise.resolve(local.feedbackRemove(editionDate, itemKey)),
+
+  ratingSet: async (input: RatingInput): Promise<RatingOut> =>
+    isTauri ? invoke<RatingOut>('briefing_rating_set', { input }) : local.ratingSet(input),
+  ratingUndo: async (editionDate: string): Promise<RatingOut> =>
+    isTauri ? invoke<RatingOut>('briefing_rating_undo', { editionDate }) : local.ratingUndo(editionDate),
+  ratingList: async (days = 7): Promise<Rating[]> => (isTauri ? invoke<Rating[]>('briefing_rating_list', { days }) : local.ratingList(days)),
 
   profileGet: async () => normalizeProfile(isTauri ? await invoke<Profile>('briefing_profile_get') : local.profileGet()),
   profileSave: async (profile: Profile) =>

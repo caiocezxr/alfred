@@ -8,7 +8,7 @@ import { AREAS, type Area, type Lang, type Profile } from './types.ts'
 export const DEFAULT_WINDOW_H = 30
 export const MAX_WINDOW_H = 96
 export const MIN_WINDOW_H = 18
-export const TARGET = 34
+export const TARGET = 44
 export const PER_SOURCE = 4
 
 export type Entry = {
@@ -42,6 +42,7 @@ const AREA_TERMS: Record<Area, [string, number][]> = {
   dinheiro: [
     ['bitcoin', 3], ['btc', 2.5], ['ethereum', 3], ['ether', 2], ['cripto*', 2.5], ['crypto*', 2.5], ['stablecoin*', 2.5],
     ['etf*', 2], ['ibovespa', 3], ['bolsa', 1.5], ['acoes', 1.5], ['dolar', 2], ['selic', 3], ['copom', 3], ['juros', 2],
+    ['vaga*', 1.5], ['freela*', 2.5], ['edital', 2.5], ['editais', 2.5], ['hackathon', 2], ['tesouro', 1.5], ['cdb', 2], ['cdi', 2],
     ['inflacao', 2], ['ipca', 2.5], ['investiment*', 2], ['investidor*', 1.5], ['tesouro direto', 2.5], ['renda fixa', 2.5],
     ['dividend*', 2], ['fundos imobiliarios', 2.5], ['imposto de renda', 2.5], ['receita federal', 1.5], ['pix', 2], ['drex', 2.5],
     ['open finance', 2], ['banco central', 2], ['fed', 1.5], ['nasdaq', 2], ['wall street', 1.5], ['earnings', 1.5],
@@ -91,7 +92,17 @@ const AREA_TERMS: Record<Area, [string, number][]> = {
     ['apagao', 3], ['incendio florestal', 3], ['incendios', 2], ['ataque terrorista', 4], ['atentado*', 3.5], ['refens', 3],
     ['earthquake', 4], ['war', 2.5], ['missile*', 3], ['plane crash', 4], ['wildfire*', 3], ['hurricane', 3.5],
     ['otan', 2], ['nato', 2], ['onu', 1.5], ['ucrania', 2], ['russia', 1.5], ['israel', 1.5], ['gaza', 2], ['ira', 1],
-    ['china', 1], ['eua', 1], ['trump', 1], ['estado de emergencia', 3], ['calamidade', 3], ['nuclear', 2.5],
+    ['estado de emergencia', 3], ['calamidade', 3], ['nuclear', 2.5],
+  ],
+  politica: [
+    ['congresso', 2.5], ['camara dos deputados', 3], ['senado', 2.5], ['stf', 3], ['supremo', 2], ['planalto', 2.5],
+    ['lula', 2], ['governo federal', 2.5], ['ministro*', 1.5], ['ministerio', 1.5], ['eleic*', 2.5], ['eleitor*', 1.5],
+    ['pesquisa eleitoral', 3], ['reforma tributaria', 3], ['arcabouco fiscal', 3], ['orcamento', 2], ['pec', 2.5],
+    ['medida provisoria', 3], ['projeto de lei', 2], ['haddad', 2.5], ['tarifa*', 2], ['tarifaco', 3], ['sancao', 2], ['sancoes', 2],
+    ['casa branca', 2.5], ['white house', 2.5], ['trump', 2], ['biden', 1.5], ['congress', 2], ['senate', 2], ['tariff*', 2.5],
+    ['election*', 2], ['xi jinping', 3], ['pequim', 2], ['beijing', 2], ['china', 1.5], ['eua', 1.5], ['estados unidos', 1.5],
+    ['uniao europeia', 2.5], ['european union', 2.5], ['bruxelas', 2], ['brussels', 2], ['parlamento europeu', 2.5],
+    ['comissao europeia', 2.5], ['european commission', 2.5], ['geopolitic*', 2.5], ['diplomac*', 1.5], ['politica', 1],
   ],
 }
 
@@ -112,8 +123,8 @@ const COMPILED: Record<Area, Compiled[]> = Object.fromEntries(AREAS.map((a) => [
 const COMPILED_SIGNAL = compileKeywords(SIGNAL)
 const COMPILED_GOSSIP = compileKeywords(kw(GOSSIP, 'g'))
 
-const AREA_BASE: Record<Area, number> = { dinheiro: 1.5, codigo: 2, ia: 2, potencializa: 1.5, seguranca: 2, mundo: 1 }
-const AREA_SHARE: Record<Area, number> = { dinheiro: 0.16, codigo: 0.16, ia: 0.18, potencializa: 0.18, seguranca: 0.16, mundo: 0.16 }
+const AREA_BASE: Record<Area, number> = { dinheiro: 2.2, codigo: 2.2, ia: 2.2, potencializa: 2, seguranca: 1.2, politica: 1.6, mundo: 0.6 }
+const AREA_SHARE: Record<Area, number> = { dinheiro: 0.2, codigo: 0.16, ia: 0.18, potencializa: 0.16, seguranca: 0.08, politica: 0.14, mundo: 0.08 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10
 const DAY_MS = 864e5
@@ -258,6 +269,9 @@ export function sieve(entries: Entry[], opts: SieveOptions): { candidates: Candi
     }
     const age = now - Date.parse(rep.publishedAt ?? '')
     parts.push({ label: 'recência', value: recencyPoints(age) })
+    const tune = profile.tuning ?? { depth: 0, fresh: 0 }
+    if (tune.fresh > 0 && age > 12 * 36e5) parts.push({ label: 'você pediu notícia mais fresca', value: -tune.fresh * Math.min(3, (age / 36e5 - 12) / 12) })
+    if (tune.depth > 0 && (rep.excerpt?.length ?? 0) < 120) parts.push({ label: 'você pediu menos notícia rasa', value: -0.8 * tune.depth })
     if (allOutlets > 1) {
       const v = area === 'mundo' ? Math.min(6, 1.5 * (allOutlets - 1)) : Math.min(2, 0.6 * (allOutlets - 1))
       parts.push({ label: `${allOutlets} veículos`, value: v })

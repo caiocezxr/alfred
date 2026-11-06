@@ -241,6 +241,65 @@ export function Votes({ item, origin, kept = true, compact = false }: { item: Br
   )
 }
 
+export const IconYes = ({ size = 14 }: { size?: number }) => <I size={size} d="M3.2 8.4l3 3 6.6-6.8" stroke={1.9} />
+export const IconNo = ({ size = 14 }: { size?: number }) => <I size={size} d="M4.4 4.4l7.2 7.2M11.6 4.4l-7.2 7.2" stroke={1.8} />
+
+type Pick = 'yes' | 'no' | null
+
+export function Interest({ item, origin, kept = true, variant = 'card' }: { item: BriefItem; origin: 'slide' | 'left_out'; kept?: boolean; variant?: 'card' | 'slide' | 'row' }) {
+  const v = useBriefing().votes.get(item.key)
+  const yesSignal = origin === 'left_out' ? 'interest' : 'up'
+  const pick: Pick = v?.signal === yesSignal || v?.signal === 'interest' ? 'yes' : v?.signal === 'down' ? 'no' : null
+  const [fresh, setFresh] = useState<{ pick: Pick; n: number } | null>(null)
+  useEffect(() => {
+    if (!fresh) return
+    const t = window.setTimeout(() => setFresh(null), 4500)
+    return () => window.clearTimeout(t)
+  }, [fresh])
+  const stop = (e: React.SyntheticEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+  }
+  const act = (e: React.SyntheticEvent, p: 'yes' | 'no') => {
+    stop(e)
+    const signal = p === 'yes' ? yesSignal : 'down'
+    void vote(item, signal, origin, null, kept)
+    setFresh(pick === p ? null : { pick: p, n: (fresh?.n ?? 0) + 1 })
+  }
+  const undo = (e: React.SyntheticEvent) => {
+    stop(e)
+    if (pick) void vote(item, pick === 'yes' ? (v?.signal as 'up' | 'interest') : 'down', origin, null, kept)
+    setFresh(null)
+  }
+  const reasons = variant === 'slide' && pick === 'no' ? DOWN_REASONS : []
+  return (
+    <div className={`brf-int is-${variant} ${pick ? `has-${pick}` : ''}`} onClick={stop} onKeyDown={(e) => e.stopPropagation()}>
+      <button className={`brf-int-b is-yes ${pick === 'yes' ? 'is-on' : ''}`} onClick={(e) => act(e, 'yes')} aria-pressed={pick === 'yes'} title={pick === 'yes' ? 'Te interessa (clique para desfazer)' : 'Interessa: quero mais disso'}>
+        <IconYes size={variant === 'slide' ? 15 : 13} />
+        <span>Interessa</span>
+      </button>
+      <button className={`brf-int-b is-no ${pick === 'no' ? 'is-on' : ''}`} onClick={(e) => act(e, 'no')} aria-pressed={pick === 'no'} title={pick === 'no' ? 'Não te interessa (clique para desfazer)' : 'Não interessa: menos disso'}>
+        <IconNo size={variant === 'slide' ? 15 : 13} />
+        <span>Não interessa</span>
+      </button>
+      {reasons.length > 0 && (
+        <div className="brf-reasons" key="r">
+          {reasons.map((r) => (
+            <button key={r} className={`brf-reason ${v?.reason === r ? 'is-on' : ''}`} onClick={(e) => (stop(e), void vote(item, 'down', origin, v?.reason === r ? null : r, kept))}>
+              {REASON_LABEL[r]}
+            </button>
+          ))}
+        </div>
+      )}
+      {fresh && pick === fresh.pick && (
+        <button className="brf-int-undo" key={fresh.n} onClick={undo}>
+          {fresh.pick === 'yes' ? 'anotado' : 'menos disso'} · desfazer
+        </button>
+      )}
+    </div>
+  )
+}
+
 export function useOutside(open: boolean, onClose: () => void, ...refs: React.RefObject<HTMLElement | null>[]) {
   useEffect(() => {
     if (!open) return

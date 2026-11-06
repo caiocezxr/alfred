@@ -1,12 +1,26 @@
 import { AREAS, type Area, type Profile } from './types.ts'
 
 export const AREA_NOTE: Record<Area, string> = {
-  dinheiro: 'Coisas que podem pôr dinheiro no bolso: oportunidades no meio tec, finanças, investimentos e cripto.',
-  codigo: 'O que melhora meu código, engenharia e arquitetura de software.',
-  ia: 'Modelos e ferramentas de IA novos, inclusive para criação de conteúdo.',
-  potencializa: 'Stacks, frameworks, libs, ferramentas e serviços novos que me potencializam.',
-  seguranca: 'Cibersegurança: ataques, vulnerabilidades e vazamentos que podem me afetar.',
-  mundo: 'Notícias do mundo de fato relevantes (queda de avião, tsunami, terremoto, guerra). Nada de fofoca.',
+  dinheiro: 'Finanças, oportunidades e investimentos: Selic, IPCA, dólar, renda fixa, Tesouro, bolsa, cripto, vagas, freelas, editais e jeitos de ganhar dinheiro como dev.',
+  codigo: 'O que melhora meu código, engenharia e arquitetura de software, com coisa prática para aplicar.',
+  ia: 'Modelos, APIs e ferramentas de IA que eu posso usar já: lançamentos, preços, limites e técnicas.',
+  potencializa: 'Stacks, frameworks, libs, ferramentas e serviços novos que me potencializam no dia a dia.',
+  seguranca: 'Só a cibersegurança que afeta a minha stack ou as minhas contas (vulnerabilidade, vazamento, golpe).',
+  politica: 'Política no Brasil, nos EUA, na China e na Europa: governo, eleições, Congresso, STF, política econômica, tarifas e geopolítica, principalmente o que mexe com mercado e com o meu bolso.',
+  mundo: 'Só fatos do mundo realmente grandes (desastre, guerra, acidente grave). Nada de fofoca.',
+}
+
+export const DEFAULT_VOICE = 'pf_dora'
+export const NEURAL_VOICES = [{ id: 'pf_dora', name: 'Dora', locale: 'pt-BR' }] as const
+export const DEFAULT_TRANSLATE_MODEL = 'gemma4:e2b'
+export const DEFAULT_EMBED_MODEL = 'embeddinggemma'
+const isNeural = (v: unknown) => NEURAL_VOICES.some((x) => x.id === v)
+
+export function localModelLabel(model: string | null | undefined): string {
+  const m = (model ?? DEFAULT_TRANSLATE_MODEL).match(/^(?:.*\/)?([a-z]+)(\d+(?:\.\d+)?)?[^:]*(?::([a-z]?\d+(?:\.\d+)?)b)?/i)
+  if (!m) return model ?? ''
+  const name = m[1].charAt(0).toUpperCase() + m[1].slice(1)
+  return [name, m[2], m[3] ? `${m[3].toUpperCase()}B` : ''].filter(Boolean).join(' ')
 }
 
 export function defaultProfile(): Profile {
@@ -19,9 +33,13 @@ export function defaultProfile(): Profile {
       'Desenvolvedor brasileiro; trabalho com TypeScript, React, Rust e IA. Ligo o computador por volta das 10h no escritório e quero, em poucos minutos, só o que agrega.',
     useRadarSources: true,
     learning: true,
-    voice: { voice: 'Luciana', rate: 185, jarvis: true },
+    voice: { voice: DEFAULT_VOICE, rate: 185, jarvis: false },
+    tuning: { depth: 0, fresh: 0 },
     codexPath: null,
     judgeEffort: 'low',
+    localAi: true,
+    translateModel: DEFAULT_TRANSLATE_MODEL,
+    embedModel: DEFAULT_EMBED_MODEL,
   }
 }
 
@@ -44,7 +62,14 @@ export function normalizeProfile(p: Partial<Profile> | null | undefined): Profil
     areas,
     likes: Array.isArray(p.likes) ? p.likes.filter((x) => typeof x === 'string') : [],
     ignores: Array.isArray(p.ignores) ? p.ignores.filter((x) => typeof x === 'string') : [],
-    voice: { ...d.voice, ...(p.voice ?? {}) },
+    voice: isNeural(p.voice?.voice) ? { ...d.voice, ...p.voice } : { ...d.voice, rate: typeof p.voice?.rate === 'number' ? p.voice.rate : d.voice.rate },
+    tuning: {
+      depth: Math.max(0, Math.min(3, Math.round(Number(p.tuning?.depth) || 0))),
+      fresh: Math.max(0, Math.min(3, Math.round(Number(p.tuning?.fresh) || 0))),
+    },
+    localAi: typeof p.localAi === 'boolean' ? p.localAi : true,
+    translateModel: typeof p.translateModel === 'string' && p.translateModel.trim() ? p.translateModel.trim() : DEFAULT_TRANSLATE_MODEL,
+    embedModel: typeof p.embedModel === 'string' && p.embedModel.trim() ? p.embedModel.trim() : DEFAULT_EMBED_MODEL,
   }
 }
 

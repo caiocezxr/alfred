@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { briefingApi } from './api.ts'
 import { learn, type Learned } from './learn.ts'
-import { ensureProfile, updateProfile, useBriefing } from './store.ts'
+import { ensureProfile, loadRatings, undoRating, updateProfile, useBriefing } from './store.ts'
+import { historyLine } from './rating.ts'
 import { AREA_LABEL, AREA_LONG, AREAS, REASON_LABEL, type BriefSource, type CodexStatus, type Feedback, type Profile } from './types.ts'
 import { AreaDot, IconClose, IconPlay, VoiceOrb } from './ui.tsx'
 import { listVoices, narrator } from './voice.ts'
+import { rateOfSpeed, SPEEDS, speedOfRate, useBriefingPlayer, voiceProgressLabel } from './player.ts'
+import { localModelLabel } from './profile.ts'
 
 type Props = { onClose: () => void }
 
@@ -32,7 +35,7 @@ export default function ProfileSheet({ onClose }: Props) {
     window.addEventListener('keydown', onKey, true)
     return () => {
       window.removeEventListener('keydown', onKey, true)
-      narrator.stop()
+      narrator.stopSample()
     }
   }, [onClose])
 
@@ -76,6 +79,7 @@ export default function ProfileSheet({ onClose }: Props) {
               <textarea className="field" rows={3} value={profile.about} maxLength={800} onChange={(e) => change((p) => ({ ...p, about: e.target.value }), 900)} />
             </section>
             <Sources profile={profile} sources={sources} setSources={setSources} change={change} />
+            <History />
             <JudgeAndVoice profile={profile} codex={codex} voices={voices} change={change} refreshCodex={() => void briefingApi.codexStatus().then(setCodex)} />
           </div>
         )}
@@ -331,13 +335,17 @@ function Sources({ profile, sources, setSources, change }: { profile: Profile; s
 
 function JudgeAndVoice({ profile, codex, voices, change, refreshCodex }: { profile: Profile; codex: CodexStatus | null; voices: { id: string; name: string }[]; change: Change; refreshCodex: () => void }) {
   const [path, setPath] = useState(profile.codexPath ?? '')
+  const [model, setModel] = useState(profile.translateModel)
   const [speaking, setSpeaking] = useState(false)
+  const { voice: engine } = useBriefingPlayer()
   const v = profile.voice
+  const speed = speedOfRate(v.rate)
   const sample = async () => {
     setSpeaking(true)
-    await narrator.play('Bom dia. Desde ontem, separei sete coisas que importam pra você. Vamos lá.', v)
+    await narrator.sample('Bom dia! Desde ontem, separei sete coisas que importam pra você. Vamos lá?', speed)
     setSpeaking(false)
   }
+  const progress = voiceProgressLabel(engine)
   return (
     <section className="brf-sec">
       <h3>Juiz e voz</h3>
@@ -371,6 +379,32 @@ function JudgeAndVoice({ profile, codex, voices, change, refreshCodex }: { profi
             <option value="medium">caprichado (mais lento)</option>
           </select>
         </label>
+        <label className="brf-switch">
+          <input type="checkbox" checked={profile.localAi} onChange={(e) => (change((p) => ({ ...p, localAi: e.target.checked }), 0), setTimeout(refreshCodex, 400))} />
+          <span /> Modelos locais no seu Mac (Ollama): gosto pessoal e tradução
+        </label>
+        {profile.localAi && (
+          <>
+            <p className="brf-muted">
+              {codex === null
+                ? 'Conferindo o Ollama…'
+                : `Gosto pessoal (${profile.embedModel}): ${codex.embedReady ? 'pronto' : 'indisponível'} · Tradução local (${localModelLabel(profile.translateModel)}): ${codex.translateReady ? 'pronta' : 'indisponível'}${!codex.embedReady || !codex.translateReady ? ` — ${codex.localError?.replace(/^\[[^\]]+\]\s*/, '') ?? 'o Ollama não respondeu'}` : ''}.`}
+            </p>
+            <div className="brf-field-row">
+              <input
+                className="field"
+                placeholder="Modelo de tradução (ex.: gemma4:e2b)"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                onBlur={() => change((p) => ({ ...p, translateModel: model.trim() || 'gemma4:e2b' }), 0)}
+                spellCheck={false}
+              />
+              <button className="btn" onClick={() => (change((p) => ({ ...p, translateModel: model.trim() || 'gemma4:e2b' }), 0), setTimeout(refreshCodex, 400))}>
+                Conferir
+              </button>
+            </div>
+          </>
+        )}
       </div>
       <div className="brf-voice-set">
         <VoiceOrb size={64} active={speaking} />
@@ -378,30 +412,70 @@ function JudgeAndVoice({ profile, codex, voices, change, refreshCodex }: { profi
           {voices.length > 0 && (
             <label className="brf-inline">
               Voz
-              <select className="brf-select" value={voices.find((x) => x.id === v.voice || x.name === v.voice)?.id ?? ''} onChange={(e) => change((p) => ({ ...p, voice: { ...p.voice, voice: e.target.value } }), 0)}>
+              <select className="brf-select" value={voices.find((x) => x.id === v.voice)?.id ?? voices[0].id} onChange={(e) => change((p) => ({ ...p, voice: { ...p.voice, voice: e.target.value } }), 0)}>
                 {voices.map((x) => (
                   <option key={x.id} value={x.id}>
-                    {x.name}
+                    {x.name} · neural, no seu Mac
                   </option>
                 ))}
               </select>
             </label>
           )}
-          <label className="brf-inline">
-            Velocidade <b>{v.rate}</b>
-            <input className="brf-range" type="range" min={140} max={260} step={5} value={v.rate} onChange={(e) => change((p) => ({ ...p, voice: { ...p.voice, rate: Number(e.target.value) } }))} />
-          </label>
-          {narrator.native && (
-            <label className="brf-switch">
-              <input type="checkbox" checked={v.jarvis} onChange={(e) => change((p) => ({ ...p, voice: { ...p.voice, jarvis: e.target.checked } }), 0)} />
-              <span /> filtro Jarvis
-            </label>
-          )}
+          <div className="brf-inline">
+            Velocidade
+            <div className="brf-speeds" role="radiogroup" aria-label="Velocidade">
+              {SPEEDS.map((s) => (
+                <button key={s} role="radio" aria-checked={s === speed} className={s === speed ? 'is-on' : ''} onClick={() => change((p) => ({ ...p, voice: { ...p.voice, rate: rateOfSpeed(s) } }), 0)}>
+                  {String(s).replace('.', ',')}×
+                </button>
+              ))}
+            </div>
+          </div>
+          {progress && <p className="brf-muted">{progress}</p>}
+          {engine.phase === 'error' && <p className="brf-muted">A voz neural não carregou: {engine.error}</p>}
           <button className="btn sm" onClick={() => void sample()} disabled={speaking}>
-            <IconPlay size={11} /> Ouvir amostra
+            <IconPlay size={11} /> {speaking && engine.phase !== 'ready' ? 'Preparando a voz…' : 'Ouvir amostra'}
           </button>
         </div>
       </div>
+    </section>
+  )
+}
+
+const LEVEL_WORD = { otimo: 'ótimo', ok: 'ok', fraco: 'fraco' } as const
+
+function History() {
+  const { ratings, profile } = useBriefing()
+  useEffect(() => {
+    void loadRatings()
+  }, [])
+  const tuning = profile?.tuning
+  return (
+    <section className="brf-sec">
+      <h3>Como foram os briefings</h3>
+      <p className="brf-muted">{historyLine(ratings)}</p>
+      {tuning && (tuning.depth > 0 || tuning.fresh > 0) && (
+        <p className="brf-muted">
+          Ajustes ativos: {[tuning.depth ? `menos notícia rasa (nível ${tuning.depth})` : '', tuning.fresh ? `notícias mais frescas (nível ${tuning.fresh})` : ''].filter(Boolean).join(' · ')}
+        </p>
+      )}
+      <ul className="brf-history">
+        {ratings.slice(0, 7).map((r) => (
+          <li key={r.editionDate} className={r.undone ? 'is-undone' : ''}>
+            <span className="brf-history-d">{new Date(`${r.editionDate}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+            <b>{LEVEL_WORD[r.rating]}</b>
+            <span className="brf-history-a">
+              {r.undone ? 'ajuste desfeito' : r.adjustments.length ? r.adjustments.map((a) => a.label).join(', ') : 'sem ajuste'}
+              {r.note ? ` · “${r.note}”` : ''}
+            </span>
+            {!r.undone && r.adjustments.length > 0 && (
+              <button className="btn sm quiet" onClick={() => void undoRating(r.editionDate)}>
+                desfazer
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
     </section>
   )
 }

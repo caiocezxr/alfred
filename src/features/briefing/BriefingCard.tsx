@@ -1,12 +1,16 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { openExternal } from '../../shared/openExternal'
-import { areaCounts, estimateSeconds } from './assemble.ts'
+import { estimateSeconds } from './assemble.ts'
 import { direction, fmtChange, fmtValue } from './market.ts'
-import { ensureToday, prepare, useBriefing, vote, type BriefState } from './store.ts'
-import { AREA_LABEL, type Area, type BriefItem, type Edition } from './types.ts'
+import { Front } from './Front.tsx'
+import { ensureFloatingMiniPlayer, useCardPresence } from './MiniPlayer.tsx'
+import { briefingPlayer, rateOfSpeed, speedOfRate, useBriefingPlayer, voiceProgressLabel, type PlayerState } from './player.ts'
+import { localModelLabel } from './profile.ts'
+import { ensureToday, prepare, retryToday, useBriefing, type BriefState } from './store.ts'
+import { AREA_LABEL, type BriefItem, type Edition } from './types.ts'
 import {
-  AreaDot, IconCards, IconCheck, IconExternal, IconMore, IconRedo, IconStar, IconUser,
+  AreaDot, IconCards, IconCheck, Interest, IconExternal, IconLeft, IconMore, IconPause, IconPlay, IconRedo, IconRight, IconStar, IconUser,
   useOutside, Wave,
 } from './ui.tsx'
 import './briefing.css'
@@ -24,22 +28,37 @@ export default function BriefingCard() {
   const st = useBriefing()
   const [overlay, setOverlay] = useState<Overlay>(null)
   useEffect(() => {
-    void ensureToday()
-  }, [])
+    if (st.phase === 'idle') void ensureToday()
+  }, [st.phase])
   useEffect(() => {
     const onFocus = () => void ensureToday()
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [])
 
-  const busy = st.phase === 'checking' || st.phase === 'waiting' || st.phase === 'collecting' || st.phase === 'judging' || st.phase === 'assembling'
   const edition = st.edition
+  const voice = st.profile?.voice
+  useEffect(() => {
+    if (edition && st.phase === 'ready' && edition.items.length) briefingPlayer.prepare(edition, voice?.voice ?? 'pf_dora')
+  }, [edition, st.phase, voice?.voice])
+  useEffect(() => {
+    if (voice) briefingPlayer.setSpeed(speedOfRate(voice.rate))
+  }, [voice])
+  useEffect(() => {
+    const open = () => edition && setOverlay({ kind: 'show', listen: true })
+    window.addEventListener('briefing:open', open)
+    return () => window.removeEventListener('briefing:open', open)
+  }, [edition])
+
+  const busy = st.phase === 'checking' || st.phase === 'waiting' || st.phase === 'collecting' || st.phase === 'judging' || st.phase === 'assembling'
   const showPreparing = busy && (st.phase !== 'checking' || !edition)
 
   return (
     <>
       <section className={`panel brf-card reveal ${showPreparing ? 'is-preparing' : ''}`} style={{ ['--i' as string]: 2 }} aria-label="Briefing do dia" aria-busy={busy}>
         {showPreparing ? (
+          <Preparing st={st} />
+        ) : st.phase === 'idle' && !edition ? (
           <Preparing st={st} />
         ) : st.phase === 'error' || !edition ? (
           <Failed message={st.error} />
@@ -86,7 +105,7 @@ function Preparing({ st }: { st: BriefState }) {
   const detail =
     st.phase === 'waiting'
       ? 'Já está sendo preparado em outra janela…'
-      : st.phase === 'checking'
+      : st.phase === 'checking' || st.phase === 'idle'
         ? 'Conferindo o de hoje…'
         : step === 0
           ? p.total
@@ -136,7 +155,7 @@ function Failed({ message }: { message: string | null }) {
         disabled={trying}
         onClick={() => {
           setTrying(true)
-          void prepare(false).finally(() => setTrying(false))
+          void retryToday().finally(() => setTrying(false))
         }}
       >
         <IconRedo /> Tentar de novo
@@ -145,215 +164,144 @@ function Failed({ message }: { message: string | null }) {
   )
 }
 
-const GLYPH: Record<Area, string> = {
-  dinheiro: 'M12 3v18M16.5 7.5c0-1.7-2-3-4.5-3s-4.5 1.3-4.5 3 1.6 2.6 4.5 3.2 4.5 1.6 4.5 3.3-2 3-4.5 3-4.5-1.3-4.5-3',
-  codigo: 'M8.5 7 4 12l4.5 5M15.5 7 20 12l-4.5 5M13.5 5l-3 14',
-  ia: 'M12 3.5c.6 3.9 2.6 5.9 6.5 6.5-3.9.6-5.9 2.6-6.5 6.5-.6-3.9-2.6-5.9-6.5-6.5 3.9-.6 5.9-2.6 6.5-6.5zM18.5 15.5c.3 1.6 1 2.3 2.5 2.5-1.5.2-2.2.9-2.5 2.5-.3-1.6-1-2.3-2.5-2.5 1.5-.2 2.2-.9 2.5-2.5z',
-  potencializa: 'M13 3 5.5 13.5H11l-1 7.5 7.5-10.5H12z',
-  seguranca: 'M12 3.5 5 6.2v5.3c0 4.3 3 7.6 7 9 4-1.4 7-4.7 7-9V6.2zM9 12l2.2 2.2L15.5 10',
-  mundo: 'M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17zM3.5 12h17M12 3.5c2.3 2.4 3.4 5.2 3.4 8.5s-1.1 6.1-3.4 8.5c-2.3-2.4-3.4-5.2-3.4-8.5s1.1-6.1 3.4-8.5z',
-}
+const listening = (p: PlayerState, e: Edition) => p.date === e.date && (p.status === 'playing' || p.status === 'loading' || p.status === 'paused')
 
-function Glyph({ area }: { area: Area }) {
-  return (
-    <svg className="bx-glyph" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-      <path d={GLYPH[area]} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
+function judgeLabel(e: Edition) {
+  const parts = [e.judge === 'codex' ? `Juiz: Codex${e.model ? ` (${e.model})` : ''}` : `Sem o juiz${e.judgeNote ? `: ${e.judgeNote}` : ''}`]
+  if (e.translatedBy) parts.push(`Tradução local: ${localModelLabel(e.translatedBy)}`)
+  if (e.taste) parts.push(`Gosto pessoal: ${e.taste.positives + e.taste.negatives} sinais (${e.taste.method})`)
+  return parts.join(' · ')
 }
 
 function Ready({ edition, st, open }: { edition: Edition; st: BriefState; open: (o: Overlay) => void }) {
   const [menu, setMenu] = useState(false)
-  const [active, setActive] = useState(-1)
-  const [edges, setEdges] = useState({ start: true, end: false })
+  const [card, setCard] = useState<HTMLDivElement | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
-  const rail = useRef<HTMLDivElement>(null)
+  const player = useBriefingPlayer()
   useOutside(menu, () => setMenu(false), menuRef)
-  const wpm = st.profile?.voice.rate ?? 185
-  const minutes = Math.max(1, Math.round(estimateSeconds(edition, wpm) / 60))
+  useCardPresence(card)
+  const speed = speedOfRate(st.profile?.voice.rate ?? 185)
+  const minutes = Math.max(1, Math.round(estimateSeconds(edition, rateOfSpeed(speed)) / 60))
+  const on = listening(player, edition)
+  const reading = on ? player.program?.chapters[player.chapter] : undefined
+  const readingKey = reading?.kind === 'item' ? reading.key : null
+  const resume = !on && player.resume?.date === edition.date && player.status !== 'ended' ? player.resume : null
+  const listen = (fromStart = false) => {
+    ensureFloatingMiniPlayer()
+    if (fromStart) briefingPlayer.forgetResume()
+    briefingPlayer.play(edition, { resume: !fromStart && !!resume, voice: st.profile?.voice.voice ?? 'pf_dora', speed })
+  }
+  const prep = voiceProgressLabel(player.voice)
+  const wait = on && (player.status === 'loading' || player.buffering) ? (prep ?? 'preparando a voz…') : null
   const n = edition.items.length
-  const counts = useMemo(() => areaCounts(edition.items), [edition])
   const date = new Date(`${edition.date}T12:00:00`)
   const interested = edition.leftOut.filter((i) => st.votes.get(i.key)?.signal === 'interest').length
 
-  useEffect(() => {
-    const el = rail.current
-    if (!el) return
-    const update = () => {
-      const max = el.scrollWidth - el.clientWidth
-      setEdges({ start: el.scrollLeft < 8, end: el.scrollLeft > max - 8 })
-      const cards = [...el.querySelectorAll<HTMLElement>('[data-story]')]
-      const mid = el.scrollLeft + el.clientWidth * 0.35
-      let idx = -1
-      cards.forEach((c, i) => {
-        if (c.offsetLeft <= mid) idx = i
-      })
-      setActive(el.scrollLeft < 8 ? -1 : idx)
-    }
-    update()
-    el.addEventListener('scroll', update, { passive: true })
-    const ro = new ResizeObserver(update)
-    ro.observe(el)
-    return () => {
-      el.removeEventListener('scroll', update)
-      ro.disconnect()
-    }
-  }, [edition])
-
-  const page = (dir: 1 | -1) => {
-    const el = rail.current
-    if (el) el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: 'smooth' })
-  }
-  const goTo = (i: number) => {
-    const el = rail.current
-    const card = el?.querySelectorAll<HTMLElement>('[data-story]')[i]
-    if (el && card) el.scrollTo({ left: card.offsetLeft - 20, behavior: 'smooth' })
-  }
-
   return (
-    <div className="bx">
-      <header className="bx-head">
-        <div className="bx-brand">
-          <span className="bx-label">Briefing</span>
-          <span className="bx-date">{SHORT_DAY.format(date).replace(/\./g, '')}</span>
+    <div className={`bf ${on ? 'is-on-air' : ''}`} ref={setCard}>
+      <header className="bf-head">
+        <div className="bf-brand">
+          <span className="bf-label display">Briefing</span>
+          <span className="bf-date">{SHORT_DAY.format(date).replace(/\./g, '')}</span>
+          <span className="bf-count">
+            {n} {n === 1 ? 'notícia' : 'notícias'} · ≈ {minutes} min
+          </span>
           {edition.judge === 'fallback' && (
-            <span className="brf-note" title={edition.judgeNote ? `Feito sem o juiz: ${edition.judgeNote}.` : 'Feito sem o juiz.'}>
+            <span className="bf-note" title={edition.judgeNote ? `Feito sem o juiz: ${edition.judgeNote}.` : 'Feito sem o juiz.'}>
               sem o juiz
             </span>
           )}
           {st.redoError && (
-            <span className="brf-note is-warn" title={st.redoError}>
+            <span className="bf-note is-warn" title={st.redoError}>
               não deu para refazer
             </span>
           )}
         </div>
-        {n > 0 && (
-          <div className="bx-segs" aria-hidden="true">
-            {edition.items.map((it, i) => (
-              <button key={it.key} tabIndex={-1} className={`bx-seg brf-a-${it.area} ${i <= active ? 'is-on' : ''}`} onClick={() => goTo(i)} />
-            ))}
-          </div>
-        )}
-        <button className="bx-play" onClick={() => open({ kind: 'show', listen: true })}>
-          <Wave />
-          Ouvir
-          <span className="bx-play-min">{minutes} min</span>
-        </button>
-        <div className="brf-menu-wrap" ref={menuRef}>
-          <button className="btn quiet brf-icon-btn" onClick={() => setMenu((v) => !v)} aria-haspopup="menu" aria-expanded={menu} aria-label="Mais opções">
-            <IconMore />
-          </button>
-          {menu && (
-            <div className="brf-menu" role="menu">
-              <button role="menuitem" onClick={() => (setMenu(false), open({ kind: 'triage' }))}>
-                <IconCards /> Triagem rápida
+        <div className="bf-tools">
+          {on ? (
+            <div className="bf-air" role="group" aria-label="Controles do áudio">
+              <button className="bf-icon" onClick={() => briefingPlayer.prev()} aria-label="História anterior">
+                <IconLeft />
               </button>
-              <button role="menuitem" onClick={() => (setMenu(false), open({ kind: 'profile' }))}>
-                <IconUser /> Meu perfil
+              <button className="bf-play is-on" onClick={() => briefingPlayer.toggle()} aria-label={player.status === 'paused' ? 'Continuar' : 'Pausar'}>
+                {player.status === 'paused' ? <IconPlay size={12} /> : <IconPause size={12} />}
+                <span>{wait ?? (player.status === 'paused' ? 'Continuar' : 'Pausar')}</span>
               </button>
-              <button role="menuitem" onClick={() => (setMenu(false), void prepare(true))}>
-                <IconRedo /> Refazer o briefing de hoje
+              <button className="bf-icon" onClick={() => briefingPlayer.next()} aria-label="Próxima história">
+                <IconRight />
               </button>
-              <div className="brf-menu-foot">
-                {edition.judge === 'codex' ? `Juiz: Codex${edition.model ? ` (${edition.model})` : ''}` : `Sem o juiz${edition.judgeNote ? `: ${edition.judgeNote}` : ''}`}
-                <br />
-                {edition.stats.sourcesOk} de {edition.stats.sources} fontes · {edition.stats.entries} notícias lidas
-              </div>
             </div>
+          ) : (
+            <>
+              {resume && (
+                <button className="bf-text-btn" onClick={() => listen(true)} title="Ouvir desde o começo">
+                  do começo
+                </button>
+              )}
+              <button className="bf-play" onClick={() => listen()} title={resume ? `Continuar de onde parou: ${resume.label}` : (prep ?? undefined)}>
+                <Wave />
+                <span>{resume ? 'Continuar' : 'Ouvir'}</span>
+                <em>{prep && player.voice.phase === 'downloading' ? `${Math.round((player.voice.loaded / Math.max(1, player.voice.total)) * 100)}%` : `${minutes} min`}</em>
+              </button>
+            </>
           )}
+          <button className="bf-icon" onClick={() => open({ kind: 'show', listen: on })} title="Apresentação em tela cheia" aria-label="Apresentação em tela cheia">
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <div className="brf-menu-wrap" ref={menuRef}>
+            <button className="bf-icon" onClick={() => setMenu((v) => !v)} aria-haspopup="menu" aria-expanded={menu} aria-label="Mais opções">
+              <IconMore />
+            </button>
+            {menu && (
+              <div className="brf-menu" role="menu">
+                <button role="menuitem" onClick={() => (setMenu(false), open({ kind: 'triage' }))}>
+                  <IconCards /> Triagem rápida
+                </button>
+                <button role="menuitem" onClick={() => (setMenu(false), open({ kind: 'left' }))}>
+                  <IconStar on={interested > 0} /> O que ficou de fora ({edition.leftOut.length})
+                </button>
+                <button role="menuitem" onClick={() => (setMenu(false), open({ kind: 'profile' }))}>
+                  <IconUser /> Meu perfil
+                </button>
+                <button role="menuitem" onClick={() => (setMenu(false), void prepare(true))}>
+                  <IconRedo /> Refazer o briefing de hoje
+                </button>
+                <div className="brf-menu-foot">
+                  {judgeLabel(edition)}
+                  <br />
+                  {edition.stats.sourcesOk} de {edition.stats.sources} fontes · {edition.stats.entries} notícias lidas
+                  {edition.hiddenEnglish ? (
+                    <>
+                      <br />
+                      {edition.hiddenEnglish} em inglês ficaram de fora (sem tradutor)
+                    </>
+                  ) : null}
+                  {player.voice.phase === 'ready' && player.prepared < player.total ? (
+                    <>
+                      <br />
+                      Voz: {player.prepared} de {player.total} frases prontas
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
-      <div className={`bx-stage ${edges.start ? 'at-start' : ''} ${edges.end ? 'at-end' : ''}`}>
-        <div className="bx-rail" ref={rail}>
-          <article className="bx-cover">
-            <div className="bx-cover-top">
-              <span className="bx-cover-n display">{n}</span>
-              <span className="bx-cover-t display">
-                {n === 0 ? 'nada passou na peneira' : n === 1 ? 'coisa que importa' : 'coisas que importam'}
-                <em> desde ontem</em>
-              </span>
-            </div>
-            {n > 0 && (
-              <ul className="bx-mix">
-                {counts.map((c) => (
-                  <li key={c.area} className={`brf-a-${c.area}`}>
-                    <i style={{ flexGrow: c.count }} />
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="bx-mix-legend">
-              {counts.map((c) => (
-                <span key={c.area} className={`brf-a-${c.area}`}>
-                  <b />
-                  {AREA_LABEL[c.area]} {c.count}
-                </span>
-              ))}
-            </div>
-            {n > 0 && (
-              <button className="bx-start" onClick={() => open({ kind: 'show', listen: false })}>
-                Começar a apresentação
-                <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-                  <path d="M2.5 7h9M8 3.5 11.5 7 8 10.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-            )}
-          </article>
+      <Front edition={edition} st={st} player={player} readingKey={readingKey} onAir={on} />
 
-          {edition.items.map((it, i) => (
-            <button
-              key={it.key}
-              data-story
-              className={`bx-story brf-a-${it.area} ${edition.focusKey === it.key ? 'is-focus' : ''}`}
-              style={{ ['--i' as string]: i }}
-              onClick={() => open({ kind: 'show', listen: false, startKey: it.key })}
-            >
-              <span className="bx-story-top">
-                <span className="bx-story-i">{String(i + 1).padStart(2, '0')}</span>
-                <span className="bx-story-area">{edition.focusKey === it.key ? 'Foco do dia' : AREA_LABEL[it.area]}</span>
-                <Glyph area={it.area} />
-              </span>
-              <span className="bx-story-title display">{it.title}</span>
-              {it.why && <span className="bx-story-why">{it.why}</span>}
-              <span className="bx-story-src">
-                {it.source}
-                {it.outlets > 1 && <em> +{it.outlets - 1}</em>}
-              </span>
-            </button>
-          ))}
-
-          {edition.leftOut.length > 0 && (
-            <button className="bx-end" onClick={() => open({ kind: 'left' })}>
-              <span className="bx-end-n display">{edition.leftOut.length}</span>
-              <span className="bx-end-t">ficaram de fora hoje</span>
-              <span className="bx-end-sub">
-                {interested > 0 ? (
-                  <>
-                    <IconStar on /> {interested} marcadas
-                  </>
-                ) : (
-                  'Marque o que te interessa'
-                )}
-              </span>
-            </button>
-          )}
-        </div>
-        <button className="bx-nav is-prev" onClick={() => page(-1)} aria-label="Anteriores" tabIndex={edges.start ? -1 : 0}>
-          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M10 3.5 5.5 8l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-        <button className="bx-nav is-next" onClick={() => page(1)} aria-label="Próximas" tabIndex={edges.end ? -1 : 0}>
-          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-      </div>
-
-      <footer className="bx-foot">
-        <MarketStrip edition={edition} />
+      <footer className="bf-foot">
+        <MarketStrip edition={edition} reading={on && player.program?.chapters[player.chapter]?.kind === 'market'} />
+        {edition.leftOut.length > 0 && (
+          <button className="bf-text-btn" onClick={() => open({ kind: 'left' })}>
+            {edition.leftOut.length} ficaram de fora{interested > 0 ? ` · ${interested} marcadas` : ''}
+          </button>
+        )}
       </footer>
+      {on && <AirLine />}
     </div>
   )
 }
@@ -373,11 +321,29 @@ function LeftSheet({ edition, st, onClose, onTriage }: { edition: Edition; st: B
   )
 }
 
-function MarketStrip({ edition }: { edition: Edition }) {
+function AirLine() {
+  const ref = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    let raf = 0
+    const tick = () => {
+      if (ref.current) ref.current.style.transform = `scaleX(${briefingPlayer.totalProgress()})`
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [])
+  return (
+    <span className="bx-airline" aria-hidden="true">
+      <span ref={ref} />
+    </span>
+  )
+}
+
+function MarketStrip({ edition, reading = false }: { edition: Edition; reading?: boolean }) {
   if (!edition.market.length) return <div className="brf-ticker is-empty">Sem cotações hoje</div>
   const at = edition.marketAt ? TIME.format(new Date(edition.marketAt)) : null
   return (
-    <div className="brf-ticker" title={at ? `Cotações das ${at}` : undefined}>
+    <div className={`brf-ticker ${reading ? 'is-reading' : ''}`} title={at ? `Cotações das ${at}` : undefined}>
       {edition.market.map((q) => {
         const d = direction(q.changePct)
         return (
@@ -430,9 +396,7 @@ function LeftRow({ item, on }: { item: BriefItem; on: boolean }) {
           {item.reason ? ` · ${item.reason}` : ''}
         </span>
       </div>
-      <button className={`brf-interest ${on ? 'is-on' : ''}`} onClick={() => void vote(item, 'interest', 'left_out', null, false)} aria-pressed={on}>
-        <IconStar on={on} /> {on ? 'te interessa' : 'isso me interessa'}
-      </button>
+      <Interest item={item} origin="left_out" kept={false} variant="row" />
       <button className="brf-icon-link" onClick={() => void openExternal(item.url)} title="Abrir o original" aria-label={`Abrir o original de ${item.title}`}>
         <IconExternal />
       </button>

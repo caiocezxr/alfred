@@ -1,5 +1,5 @@
 
-export const AREAS = ['dinheiro', 'codigo', 'ia', 'potencializa', 'seguranca', 'mundo'] as const
+export const AREAS = ['dinheiro', 'codigo', 'ia', 'potencializa', 'seguranca', 'politica', 'mundo'] as const
 export type Area = (typeof AREAS)[number]
 export type Lang = 'pt' | 'en'
 
@@ -9,6 +9,7 @@ export const AREA_LABEL: Record<Area, string> = {
   ia: 'IA',
   potencializa: 'Ferramentas',
   seguranca: 'Segurança',
+  politica: 'Política',
   mundo: 'Mundo',
 }
 
@@ -18,8 +19,19 @@ export const AREA_LONG: Record<Area, string> = {
   ia: 'IA e modelos',
   potencializa: 'Stacks e ferramentas',
   seguranca: 'Cibersegurança',
-  mundo: 'Mundo',
+  politica: 'Política: Brasil, EUA, China e Europa',
+  mundo: 'Grandes fatos do mundo',
 }
+
+export const CADERNOS = ['politica', 'investimentos', 'ia_dev'] as const
+export type Caderno = (typeof CADERNOS)[number]
+export const CADERNO_LABEL: Record<Caderno, string> = {
+  politica: 'Política',
+  investimentos: 'Investimentos e oportunidades',
+  ia_dev: 'IA e desenvolvimento',
+}
+export const cadernoOf = (a: Area): Caderno => (a === 'politica' || a === 'mundo' ? 'politica' : a === 'dinheiro' ? 'investimentos' : 'ia_dev')
+export type CadernoInfo = { lead: string | null; keys: string[] }
 
 export const isArea = (s: unknown): s is Area => typeof s === 'string' && (AREAS as readonly string[]).includes(s)
 
@@ -36,6 +48,8 @@ export type EditionRow = {
   error: string | null
   payload: Edition | null
   attempts: number
+  beatAt?: string | null
+  owner?: string | null
 }
 
 export type TodayInfo = { edition: EditionRow | null; previousDate: string | null; windowFrom: string | null; stale: boolean }
@@ -99,6 +113,7 @@ export type Feedback = {
 
 export type AreaPref = { id: Area; enabled: boolean; weight: number; note: string }
 export type VoicePrefs = { voice: string; rate: number; jarvis: boolean }
+export type Tuning = { depth: number; fresh: number }
 export type Profile = {
   v: number
   areas: AreaPref[]
@@ -108,11 +123,26 @@ export type Profile = {
   useRadarSources: boolean
   learning: boolean
   voice: VoicePrefs
+  tuning: Tuning
   codexPath: string | null
   judgeEffort: 'low' | 'medium' | 'high'
+  localAi: boolean
+  translateModel: string
+  embedModel: string
 }
 
-export type CodexStatus = { found: boolean; path: string | null; configured: boolean; error: string | null }
+export type CodexStatus = {
+  found: boolean
+  path: string | null
+  configured: boolean
+  error: string | null
+  localEnabled: boolean
+  translateModel: string
+  embedModel: string
+  translateReady: boolean
+  embedReady: boolean
+  localError: string | null
+}
 export type Voice = { id: string; name: string; locale: string }
 
 export type QuoteUnit = 'usd' | 'brl' | 'pct' | 'pts'
@@ -154,15 +184,23 @@ export type JudgedItem = {
   narration: string | null
   reason: string | null
 }
+export type Segue = { id: string; segue: string }
+export type Leads = { politica: string | null; investimentos: string | null; iaDev: string | null }
 export type JudgeOutput = {
   opening: string | null
   closing: string | null
   focusId: string | null
   market: string | null
+  rundown?: Segue[]
+  leads?: Leads
   items: JudgedItem[]
   model: string | null
   elapsedMs: number
 }
+export type TranslateItem = { id: string; title: string; excerpt: string | null }
+export type TasteScore = { id: string; score: number; z: number; near: string | null; nearSim: number | null }
+export type TasteResult = { model: string; method: string; positives: number; negatives: number; embedded: number; cached: number; embedMs: number; elapsedMs: number; scores: TasteScore[] }
+export type Translated = { id: string; title: string; summary: string | null }
 
 export type BriefItem = {
   key: string
@@ -174,6 +212,8 @@ export type BriefItem = {
   why: string
   action: string | null
   narration: string
+  segue?: string
+  caderno?: Caderno
   source: string
   sourceId: string
   url: string
@@ -202,5 +242,17 @@ export type Edition = {
   market: Quote[]
   marketAt: string | null
   marketNarration: string | null
+  script?: 2
+  hiddenEnglish?: number
+  translatedBy?: string | null
+  cadernos?: Record<Caderno, CadernoInfo>
+  taste?: { method: string; positives: number; negatives: number } | null
   stats: { sources: number; sourcesOk: number; entries: number; candidates: number; durationMs: number; judgeMs: number | null }
 }
+
+export type RatingLevel = 'otimo' | 'ok' | 'fraco'
+export type RatingReason = 'faltou_dinheiro' | 'faltou_ferramenta' | 'faltou_codigo' | 'muito_mundo' | 'muita_ia' | 'muita_politica' | 'noticia_velha' | 'muito_raso' | 'fontes_ruins'
+export type Adjust = { kind: 'area' | 'tuning'; key: string; delta: number; label: string }
+export type RatingInput = { editionDate: string; rating: RatingLevel; reasons: RatingReason[]; moreAreas: Area[]; note: string | null }
+export type Rating = RatingInput & { adjustments: Adjust[]; undone: boolean; updatedAt: string }
+export type RatingOut = { rating: Rating; profile: Profile }
