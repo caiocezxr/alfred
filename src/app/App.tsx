@@ -9,6 +9,7 @@ import { Segmented } from '../shared/ui/Segmented'
 import { isTauri } from '../shared/db/api'
 import { CommandPalette } from './CommandPalette'
 import { RitualGate } from './Ritual'
+import { ProfileSwitch } from './ProfileSwitch'
 import { PaletteIcon, RouteIcon, SearchIcon, SidebarIcon } from './Icons'
 import { ROUTES, navigate, requestIntent, useRoute, withThemeTransition, type Route } from './router'
 import './shell.css'
@@ -27,6 +28,7 @@ const Home = lazy(loaders.home)
 const Habits = lazy(loaders.habits)
 const Ideas = lazy(loaders.ideas)
 const Work = lazy(loaders.work)
+const Island = lazy(() => import('../features/work/Island'))
 const Radar = lazy(loaders.radar)
 const Notes = lazy(loaders.notes)
 
@@ -87,7 +89,7 @@ export function App() {
         e.preventDefault()
         setThemePicker((v) => !v)
       } else {
-        const r = ROUTES.find((x) => x.key === k && x.ready)
+        const r = e.shiftKey ? undefined : ROUTES.find((x) => x.key === k && x.ready)
         if (r) {
           e.preventDefault()
           navigate(r.id)
@@ -110,6 +112,9 @@ export function App() {
           <button className="side-toggle" onClick={() => setCollapsed((v) => !v)} aria-label={collapsed ? 'Expandir barra lateral' : 'Recolher barra lateral'} title="⌘\">
             <SidebarIcon />
           </button>
+        </div>
+        <div className="side-profile">
+          <ProfileSwitch compact={collapsed} />
         </div>
         <button className="side-search" onClick={() => setPalette(true)} title="Comandos (⌘K)">
           <SearchIcon />
@@ -153,6 +158,9 @@ export function App() {
       <RitualGate active={ritualOnHome} />
       {palette && <CommandPalette onClose={() => setPalette(false)} onToast={onToast} />}
       {toast && <div className="toast" role="status">{toast}</div>}
+      <Suspense fallback={null}>
+        <Island />
+      </Suspense>
     </div>
   )
 }

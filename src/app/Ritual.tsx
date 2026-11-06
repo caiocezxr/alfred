@@ -5,6 +5,7 @@ import { greetingFor, type Period } from '../shared/greeting'
 import { MOODS, type Mood } from '../features/mood/api'
 import { Face } from '../features/mood/CheckIn'
 import { patchToday, useToday } from '../features/mood/store'
+import { Launch, shouldLaunch } from './Launch'
 import './ritual.css'
 
 const SKIP = 'ps.ritual.skip'
@@ -51,6 +52,7 @@ export function RitualGate({ active }: { active: boolean }) {
   const { today, loaded } = useToday()
   const [manual, setManual] = useState(false)
   const [closed, setClosed] = useState(false)
+  const [launching, setLaunching] = useState(shouldLaunch)
   const decided = useRef<boolean | null>(null)
 
   useEffect(() => {
@@ -66,6 +68,16 @@ export function RitualGate({ active }: { active: boolean }) {
 
   const auto = decided.current === true
   const waiting = active && !loaded
+  if (launching)
+    return (
+      <Launch
+        intoRitual={active && (waiting || auto)}
+        onDone={() => {
+          if (!(active && decided.current)) delete document.documentElement.dataset.intro
+          setLaunching(false)
+        }}
+      />
+    )
   if (closed || (!auto && !manual && !waiting)) return null
   if (waiting) return createPortal(<div className="rt is-wait" aria-hidden="true" />, document.body)
 
