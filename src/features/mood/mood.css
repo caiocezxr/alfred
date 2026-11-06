@@ -1,0 +1,454 @@
+.ck {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  max-width: 560px;
+}
+
+.ck-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+
+.ck-ico {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  flex: none;
+}
+
+.ck-steam {
+  animation: ck-steam 2.4s ease-in-out infinite;
+}
+
+@keyframes ck-steam {
+  50% {
+    opacity: 0.35;
+    transform: translateY(-0.6px);
+  }
+}
+
+.ck-q {
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.ck-q b {
+  font-weight: 600;
+}
+
+.ck-coffee.is-done .ck-q {
+  color: var(--text-2);
+}
+
+.ck-q.is-new {
+  animation: ck-pop 520ms var(--ease-out);
+}
+
+@keyframes ck-pop {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.ck-btn {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out);
+}
+
+.ck-btn:hover {
+  background: var(--surface-hover);
+}
+
+.ck-btn:active {
+  transform: scale(0.96);
+}
+
+.ck-btn.is-yes {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.ck-btn.is-yes:hover {
+  background: color-mix(in srgb, var(--accent) 88%, var(--text));
+}
+
+.ck-faces {
+  display: flex;
+  gap: 4px;
+}
+
+.ck-face {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out), transform var(--t-med) var(--ease-out), opacity var(--t-med);
+}
+
+.ck-face:hover {
+  color: var(--mc);
+  background: color-mix(in srgb, var(--mc) 14%, transparent);
+  transform: translateY(-2px);
+}
+
+.ck-face.is-on {
+  color: var(--mc);
+  background: color-mix(in srgb, var(--mc) 18%, transparent);
+  transform: scale(1.12);
+}
+
+.ck-face.is-dim {
+  opacity: 0.45;
+}
+
+.ck-link {
+  margin-left: auto;
+  white-space: nowrap;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font-size: 12.5px;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--text-2) 40%, transparent);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.ck-link:hover {
+  color: var(--accent);
+}
+
+.ck-note {
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-solid) 40%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  animation: ck-pop 360ms var(--ease-out);
+  transition: border-color var(--t-fast);
+}
+
+.ck-note:focus {
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.ck-note::placeholder {
+  color: var(--text-2);
+}
+
+.my-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  background: var(--scrim-overlay);
+  animation: my-fade 160ms ease;
+}
+
+@keyframes my-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.my-panel {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 18px;
+  width: min(1040px, 94vw);
+  max-height: 90vh;
+  padding: 26px 30px 22px;
+  border-radius: 22px;
+  border: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--surface-solid) 97%, transparent);
+  box-shadow: inset 0 1px 0 var(--highlight), 0 40px 120px -20px var(--shadow);
+  animation: my-rise 360ms var(--ease-out);
+}
+
+@keyframes my-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+}
+
+.my-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 28px;
+}
+
+.my-head .icon-btn {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+}
+
+.my-year {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.my-year h2 {
+  font-size: 44px;
+}
+
+.my-nav {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.my-nav:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.my-nav:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.my-stats {
+  display: flex;
+  gap: 26px;
+  margin-left: auto;
+  margin-right: 40px;
+}
+
+.my-stats div {
+  display: grid;
+  gap: 2px;
+}
+
+.my-stats b {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  font-size: 30px;
+  line-height: 1;
+}
+
+.my-stats span {
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.my-grid {
+  display: grid;
+  grid-template-columns: 22px repeat(12, 1fr);
+  gap: 6px;
+  overflow: auto;
+}
+
+.my-daynums,
+.my-month {
+  display: grid;
+  grid-template-rows: 18px repeat(31, 12px);
+  gap: 3px;
+}
+
+.my-daynums {
+  padding-top: 21px;
+  grid-template-rows: repeat(31, 12px);
+}
+
+.my-daynums span {
+  font-size: 9.5px;
+  line-height: 1;
+  color: var(--text-2);
+  text-align: right;
+  align-self: center;
+}
+
+.my-mname {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  text-align: center;
+}
+
+.my-cell {
+  display: block;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--surface-hover);
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.my-cell.is-set {
+  background: var(--mc);
+  animation: my-cell 420ms var(--ease-out) both;
+}
+
+@keyframes my-cell {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+.my-cell.is-void {
+  background: transparent;
+}
+
+.my-cell.is-future {
+  opacity: 0.45;
+}
+
+.my-cell.is-today {
+  box-shadow: 0 0 0 1.5px var(--accent);
+}
+
+.my-cell:not(.is-void):hover {
+  transform: scale(1.25);
+}
+
+.my-foot {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 28px;
+  align-items: start;
+}
+
+.my-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.my-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.my-legend i {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--mc);
+}
+
+.my-insights {
+  display: grid;
+  gap: 6px;
+}
+
+.my-insights p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.my-insights p::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 10px 2px 0;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.my-insights .my-empty {
+  color: var(--text-2);
+}
+
+.my-insights .my-empty::before {
+  display: none;
+}
+
+.my-tip {
+  position: fixed;
+  z-index: 95;
+  transform: translate(-50%, calc(-100% - 10px));
+  min-width: 170px;
+  max-width: 260px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--hairline);
+  background: var(--surface-solid);
+  box-shadow: 0 16px 40px -14px var(--shadow);
+  pointer-events: none;
+  font-size: 12.5px;
+}
+
+.my-tip-date {
+  color: var(--text-2);
+  font-size: 11.5px;
+}
+
+.my-tip-mood {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+.my-tip-coffee {
+  color: var(--text-2);
+  font-weight: 400;
+}
+
+.my-tip-none {
+  margin-top: 4px;
+  color: var(--text-2);
+}
+
+.my-tip-note {
+  margin-top: 6px;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ck-steam,
+  .ck-q.is-new,
+  .ck-note,
+  .my-panel,
+  .my-cell.is-set {
+    animation: none;
+  }
+}
