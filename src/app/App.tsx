@@ -2,8 +2,8 @@ import { lazy, Suspense, useCallback, useEffect, useState, useSyncExternalStore 
 import { errorStore } from '../shared/db/stores'
 import { Wallpaper } from '../shared/themes/Wallpaper'
 import {
-  ACCENTS, DISPLAY_FONTS, TEXTURES, TEXT_FONTS, THEMES, THEME_ORDER, initTheme, resetLook, setLook, setTheme, themeVars, useTheme, useThemeState,
-  type DisplayFontId, type Texture, type TextFontId, type ThemeId, type Tone,
+  ACCENTS, DISPLAY_FONTS, STYLES, TEXTURES, TEXT_FONTS, THEMES, THEME_ORDER, initTheme, resetLook, setLook, setStyle, setTheme, styleDef, themeVars, useTheme, useThemeState,
+  type DisplayFontId, type StyleId, type Texture, type TextFontId, type ThemeId, type Tone,
 } from '../shared/themes/themes'
 import { Segmented } from '../shared/ui/Segmented'
 import { isTauri } from '../shared/db/api'
@@ -202,34 +202,51 @@ function ThemePicker({ onClose }: { onClose: () => void }) {
       <div className="theme-picker" role="dialog" aria-label="Aparência">
         <aside className="tp-themes">
           <h2>Aparência</h2>
-          {THEME_ORDER.map((id, i) => {
-            const t = THEMES[id]
-            return (
+          <div className="tp-mode" role="radiogroup" aria-label="Modo">
+            {THEME_ORDER.map((id) => (
               <button
                 key={id}
-                className={`tp-theme reveal ${focus === id ? 'is-focus' : ''} ${st.theme === id ? 'is-on' : ''}`}
-                style={{ ['--i' as string]: i }}
+                role="radio"
+                aria-checked={st.theme === id}
+                className={st.theme === id ? 'is-on' : ''}
                 onClick={(e) => {
                   setFocus(id)
                   if (st.theme !== id) withThemeTransition(e.clientX, e.clientY, () => setTheme(id))
                 }}
               >
-                <ThemePreview id={id} />
-                <span className="tp-meta">
-                  <span className="tp-name">{t.name}</span>
-                  <span className="tp-tag">{t.tagline}</span>
-                </span>
-                {st.theme === id && <span className="tp-dot" aria-label="tema ativo" />}
+                {id === 'claro' ? <SunGlyph /> : <MoonGlyph />}
+                {THEMES[id].name}
               </button>
-            )
-          })}
-          <p className="tp-foot">Cada tema guarda os próprios ajustes.</p>
+            ))}
+          </div>
+          <div className="tp-styles">
+            {STYLES.map((sd, i) => (
+              <button
+                key={sd.id}
+                className={`tp-theme reveal ${st.style === sd.id ? 'is-on is-focus' : ''}`}
+                style={{ ['--i' as string]: i }}
+                onClick={(e) => {
+                  if (st.style !== sd.id) withThemeTransition(e.clientX, e.clientY, () => setStyle(sd.id))
+                }}
+              >
+                <ThemePreview id={st.theme} style={sd.id} />
+                <span className="tp-meta">
+                  <span className="tp-name">{sd.name}</span>
+                  <span className="tp-tag">{sd.tagline}</span>
+                </span>
+                {st.style === sd.id && <span className="tp-dot" aria-label="estilo ativo" />}
+              </button>
+            ))}
+          </div>
+          <p className="tp-foot">Cada estilo tem versão clara e escura, e guarda os próprios ajustes.</p>
         </aside>
 
         <section className="tp-detail">
           <div className="tp-head">
             <div>
-              <div className="kicker">{THEMES[focus].name}</div>
+              <div className="kicker">
+                {styleDef(st.style).name} · {THEMES[focus].name}
+              </div>
               <h3>Ajuste do seu jeito</h3>
             </div>
             <div className="tp-head-actions">
@@ -347,11 +364,12 @@ function ThemePicker({ onClose }: { onClose: () => void }) {
   )
 }
 
-function ThemePreview({ id }: { id: ThemeId }) {
-  const look = useThemeState().look[id]
-  const vars = themeVars(id, look)
+function ThemePreview({ id, style }: { id: ThemeId; style: StyleId }) {
+  const st = useThemeState()
+  const look = (st.looks[style] ?? styleDef(style))[id]
+  const vars = themeVars(id, look, style)
   return (
-    <span className="tp-preview" style={vars as React.CSSProperties}>
+    <span className={`tp-preview is-${style}`} style={vars as React.CSSProperties}>
       <span className="tpp-kicker" />
       <span className="tpp-title">Bom dia</span>
       <span className="tpp-card">
@@ -360,6 +378,23 @@ function ThemePreview({ id }: { id: ThemeId }) {
         <span className="tpp-pill" />
       </span>
     </span>
+  )
+}
+
+function SunGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+      <circle cx="8" cy="8" r="3" />
+      <path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1" />
+    </svg>
+  )
+}
+
+function MoonGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round">
+      <path d="M13.2 10.1A5.6 5.6 0 0 1 5.9 2.8a5.6 5.6 0 1 0 7.3 7.3z" />
+    </svg>
   )
 }
 

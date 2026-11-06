@@ -1029,3 +1029,111 @@ textarea.field {
   opacity: 0;
   transform: translateX(-14px);
 }
+
+.tp-mode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin: 4px 0 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+
+.tp-mode button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 32px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+
+.tp-mode button.is-on {
+  background: var(--surface-solid);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), inset 0 1px 0 var(--highlight);
+}
+
+.tp-styles {
+  display: grid;
+  gap: 8px;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 2px;
+}
+
+.tp-styles .tp-theme {
+  grid-template-columns: 112px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.tp-styles .tp-preview {
+  aspect-ratio: 16 / 11;
+  padding: 8px 10px;
+  gap: 4px;
+  position: relative;
+  isolation: isolate;
+}
+
+.tp-styles .tp-preview::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: var(--tex-image);
+  background-size: var(--tex-size);
+  opacity: var(--tex-opacity);
+  mix-blend-mode: var(--tex-blend);
+}
+
+.tp-styles .tpp-title {
+  font-size: 15px;
+}
+
+.tp-styles .tpp-card {
+  padding: 5px 6px;
+}
+
+:root[data-style='tecnologico'] .kicker,
+:root[data-style='tecnologico'] .bx-date,
+:root[data-style='tecnologico'] .hc-k {
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  letter-spacing: 0.08em;
+}
+
+:root[data-style='tecnologico'] .panel {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent),
+    0 0 0 0.5px color-mix(in srgb, var(--accent) 10%, transparent),
+    0 24px 60px -30px var(--shadow);
+}
+
+:root[data-style='carbono'] .panel {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.4),
+    0 24px 60px -24px var(--shadow);
+}
+
+:root[data-style='couro'] .panel {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
+    inset 0 1px 0 var(--highlight),
+    0 24px 60px -24px var(--shadow);
+}
+
+:root[data-style='papel'] .panel {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}

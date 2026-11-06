@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../shared/db/api'
-import { THEMES, THEME_ORDER, setTheme } from '../shared/themes/themes'
+import { STYLES, THEMES, THEME_ORDER, setStyle, setTheme } from '../shared/themes/themes'
 import { ROUTES, navigate, requestIntent } from './router'
 
 type Cmd = { id: string; label: string; hint?: string; group: string; run: () => void }
@@ -34,7 +34,8 @@ export function CommandPalette({ onClose, onToast }: { onClose: () => void; onTo
         },
       },
       ...ROUTES.filter((r) => r.ready).map((r) => ({ id: `go-${r.id}`, label: `Ir para ${r.label}`, hint: `⌘${r.key}`, group: 'Navegar', run: () => navigate(r.id) })),
-      ...THEME_ORDER.map((t) => ({ id: `theme-${t}`, label: `Tema: ${THEMES[t].name}`, hint: THEMES[t].tagline, group: 'Aparência', run: () => setTheme(t) })),
+      ...THEME_ORDER.map((t) => ({ id: `theme-${t}`, label: `Modo ${THEMES[t].name.toLowerCase()}`, hint: THEMES[t].tagline, group: 'Aparência', run: () => setTheme(t) })),
+      ...STYLES.map((x) => ({ id: `style-${x.id}`, label: `Estilo: ${x.name}`, hint: x.tagline, group: 'Aparência', run: () => setStyle(x.id) })),
     ],
     [onToast],
   )

@@ -15,7 +15,8 @@ export const THEME_ORDER: ThemeId[] = ['claro', 'escuro']
 export type DisplayFontId = 'cormorant' | 'garamond' | 'fraunces' | 'bodoni' | 'josefin' | 'sistema' | 'instrument' | 'unbounded' | 'syne'
 export type TextFontId = 'sistema' | 'arredondada' | 'serifada'
 export type Tone = 'neutro' | 'quente' | 'frio'
-export type Texture = 'liso' | 'grao' | 'papel' | 'linho' | 'pontos'
+export type Texture = 'liso' | 'grao' | 'papel' | 'linho' | 'pontos' | 'carbono' | 'couro' | 'grade'
+export type StyleId = 'classico' | 'papel' | 'tecnologico' | 'carbono' | 'couro'
 
 export const DISPLAY_FONTS: Record<DisplayFontId, { label: string; note: string; family: string; weight: string; tracking: string; adjust?: string }> = {
   cormorant: { label: 'Cormorant', note: 'clássica, acento alto', family: "'Cormorant Garamond', 'EB Garamond', Georgia, serif", weight: '500', tracking: '0.005em' },
@@ -77,6 +78,9 @@ export const TEXTURES: { id: Texture; label: string }[] = [
   { id: 'papel', label: 'Papel' },
   { id: 'linho', label: 'Linho' },
   { id: 'pontos', label: 'Pontilhado' },
+  { id: 'grade', label: 'Grade' },
+  { id: 'carbono', label: 'Carbono' },
+  { id: 'couro', label: 'Couro' },
 ]
 
 const svgUrl = (svg: string) => `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
@@ -86,6 +90,38 @@ export function textureVars(t: Texture, amount: number, size: number, scheme: 'l
   const a = Math.min(1, Math.max(0, amount))
   const ink = scheme === 'dark' ? '255,255,255' : '40,30,20'
   if (t === 'liso' || a < 0.01) return { '--tex-image': 'none', '--tex-opacity': '0', '--tex-size': 'auto', '--tex-blend': 'normal' }
+  if (t === 'grade') {
+    const step = Math.round(14 + k * 26)
+    return {
+      '--tex-image': svgUrl(`<svg xmlns='http://www.w3.org/2000/svg' width='${step}' height='${step}'><path d='M${step} 0H0V${step}' fill='none' stroke='rgb(${ink})' stroke-width='0.6'/></svg>`),
+      '--tex-opacity': (a * 0.22).toFixed(3),
+      '--tex-size': `${step}px ${step}px`,
+      '--tex-blend': 'normal',
+    }
+  }
+  if (t === 'carbono') {
+    const c = Math.round(4 + k * 6)
+    const hi = scheme === 'dark' ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.55)'
+    const lo = scheme === 'dark' ? 'rgba(0,0,0,0.55)' : 'rgba(0,0,0,0.12)'
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${c * 2}' height='${c * 2}'><defs><linearGradient id='a' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='${hi}'/><stop offset='1' stop-color='${lo}'/></linearGradient><linearGradient id='b' x1='0' y1='0' x2='1' y2='0'><stop offset='0' stop-color='${hi}'/><stop offset='1' stop-color='${lo}'/></linearGradient></defs><rect width='${c}' height='${c}' fill='url(#a)'/><rect x='${c}' y='${c}' width='${c}' height='${c}' fill='url(#a)'/><rect x='${c}' width='${c}' height='${c}' fill='url(#b)'/><rect y='${c}' width='${c}' height='${c}' fill='url(#b)'/></svg>`
+    return {
+      '--tex-image': svgUrl(svg),
+      '--tex-opacity': (a * 0.9).toFixed(3),
+      '--tex-size': `${c * 2}px ${c * 2}px`,
+      '--tex-blend': scheme === 'dark' ? 'overlay' : 'multiply',
+    }
+  }
+  if (t === 'couro') {
+    const f = (0.32 - k * 0.2).toFixed(3)
+    const light = scheme === 'dark' ? '#8a6a4a' : '#d9c3a3'
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='260' height='260'><filter id='n' x='0' y='0' width='100%' height='100%' filterUnits='userSpaceOnUse' primitiveUnits='userSpaceOnUse'><feTurbulence type='fractalNoise' baseFrequency='${f}' numOctaves='4' stitchTiles='stitch' result='t'/><feDiffuseLighting in='t' lighting-color='${light}' surfaceScale='2.2'><feDistantLight azimuth='225' elevation='52'/></feDiffuseLighting></filter><rect width='100%' height='100%' filter='url(#n)'/></svg>`
+    return {
+      '--tex-image': svgUrl(svg),
+      '--tex-opacity': (a * (scheme === 'dark' ? 0.32 : 0.4)).toFixed(3),
+      '--tex-size': '260px 260px',
+      '--tex-blend': scheme === 'dark' ? 'soft-light' : 'multiply',
+    }
+  }
   if (t === 'pontos') {
     const step = Math.round(6 + k * 14)
     const r = (0.6 + k * 1.1).toFixed(2)
@@ -113,10 +149,63 @@ export function textureVars(t: Texture, amount: number, size: number, scheme: 'l
   }
 }
 
-export const DEFAULT_LOOK: Record<ThemeId, Appearance> = {
-  claro: { accent: '#8c6a3a', display: 'instrument', text: 'sistema', glass: 0.8, depth: 0.35, tone: 'quente', contrast: 0.5, radius: 20, window: 0, texture: 'grao', grain: 0.35, grainSize: 0.3 },
-  escuro: { accent: '#d6c19c', display: 'instrument', text: 'sistema', glass: 0.72, depth: 1, tone: 'neutro', contrast: 0.5, radius: 20, window: 0, texture: 'grao', grain: 0.35, grainSize: 0.3 },
-}
+export type StyleDef = { id: StyleId; name: string; tagline: string; claro: Appearance; escuro: Appearance }
+
+const L = (p: Partial<Appearance> & Pick<Appearance, 'accent' | 'display'>): Appearance => ({
+  text: 'sistema',
+  glass: 0.8,
+  depth: 0.5,
+  tone: 'neutro',
+  contrast: 0.5,
+  radius: 18,
+  window: 0,
+  texture: 'grao',
+  grain: 0.35,
+  grainSize: 0.3,
+  ...p,
+})
+
+export const STYLES: StyleDef[] = [
+  {
+    id: 'classico',
+    name: 'Clássico',
+    tagline: 'Sóbrio, serifa editorial e vidro',
+    claro: L({ accent: '#8c6a3a', display: 'instrument', glass: 0.8, depth: 0.35, tone: 'quente', radius: 20 }),
+    escuro: L({ accent: '#d6c19c', display: 'instrument', glass: 0.72, depth: 1, tone: 'neutro', radius: 20 }),
+  },
+  {
+    id: 'papel',
+    name: 'Papel',
+    tagline: 'Fibra, tinta e tipografia de livro',
+    claro: L({ accent: '#9b2c1f', display: 'garamond', text: 'serifada', glass: 0.9, depth: 0.4, tone: 'quente', radius: 10, texture: 'papel', grain: 0.6, grainSize: 0.45 }),
+    escuro: L({ accent: '#d9a066', display: 'garamond', text: 'serifada', glass: 0.85, depth: 0.6, tone: 'quente', radius: 10, texture: 'papel', grain: 0.55, grainSize: 0.45 }),
+  },
+  {
+    id: 'tecnologico',
+    name: 'Tecnológico',
+    tagline: 'Grade, instrumentos e luz ciano',
+    claro: L({ accent: '#0a72d1', display: 'sistema', glass: 0.86, depth: 0.55, tone: 'frio', contrast: 0.7, radius: 8, texture: 'grade', grain: 0.5, grainSize: 0.35 }),
+    escuro: L({ accent: '#36e0ff', display: 'sistema', glass: 0.7, depth: 0.85, tone: 'frio', contrast: 0.7, radius: 8, texture: 'grade', grain: 0.55, grainSize: 0.35 }),
+  },
+  {
+    id: 'carbono',
+    name: 'Carbono',
+    tagline: 'Fibra de carbono e vermelho de corrida',
+    claro: L({ accent: '#c40500', display: 'sistema', glass: 0.88, depth: 0.5, tone: 'neutro', contrast: 0.65, radius: 12, texture: 'carbono', grain: 0.35, grainSize: 0.3 }),
+    escuro: L({ accent: '#ff2a1f', display: 'sistema', glass: 0.74, depth: 0.85, tone: 'neutro', contrast: 0.65, radius: 12, texture: 'carbono', grain: 0.55, grainSize: 0.3 }),
+  },
+  {
+    id: 'couro',
+    name: 'Couro',
+    tagline: 'Conhaque, couro e latão',
+    claro: L({ accent: '#8a5a24', display: 'bodoni', glass: 0.86, depth: 0.45, tone: 'quente', radius: 16, texture: 'couro', grain: 0.55, grainSize: 0.4 }),
+    escuro: L({ accent: '#c99a55', display: 'bodoni', glass: 0.76, depth: 0.8, tone: 'quente', radius: 16, texture: 'couro', grain: 0.6, grainSize: 0.4 }),
+  },
+]
+
+export const styleDef = (id: StyleId) => STYLES.find((x) => x.id === id) ?? STYLES[0]
+
+export const DEFAULT_LOOK: Record<ThemeId, Appearance> = { claro: STYLES[0].claro, escuro: STYLES[0].escuro }
 
 type RGB = [number, number, number]
 const hex = (h: string): RGB => {
@@ -142,18 +231,35 @@ const rgba = (h: string, a: number) => {
   return `rgba(${r},${g},${b},${a.toFixed(3)})`
 }
 
-const DARK = {
-  soft: { neutro: '#161618', quente: '#18140f', frio: '#11151b' },
-  deep: { neutro: '#000000', quente: '#050302', frio: '#020407' },
-  text: { neutro: '#f4f2ee', quente: '#f6efe4', frio: '#edf2f8' },
-}
-const LIGHT = {
-  soft: { neutro: '#ececea', quente: '#f1eadf', frio: '#e7edf3' },
-  bright: { neutro: '#ffffff', quente: '#fffdf8', frio: '#fbfdff' },
-  text: { neutro: '#18181a', quente: '#1b1814', frio: '#141a22' },
+type Tones = Record<Tone, string>
+type Pal = { dark: { soft: Tones; deep: Tones; text: Tones }; light: { soft: Tones; bright: Tones; text: Tones } }
+const t3 = (neutro: string, quente: string, frio: string): Tones => ({ neutro, quente, frio })
+
+const PALETTES: Record<StyleId, Pal> = {
+  classico: {
+    dark: { soft: t3('#161618', '#18140f', '#11151b'), deep: t3('#000000', '#050302', '#020407'), text: t3('#f4f2ee', '#f6efe4', '#edf2f8') },
+    light: { soft: t3('#ececea', '#f1eadf', '#e7edf3'), bright: t3('#ffffff', '#fffdf8', '#fbfdff'), text: t3('#18181a', '#1b1814', '#141a22') },
+  },
+  papel: {
+    dark: { soft: t3('#1d1b18', '#211b14', '#1a1c1f'), deep: t3('#100f0d', '#120e0a', '#0d0f12'), text: t3('#ece6da', '#efe3cc', '#e2e6ea') },
+    light: { soft: t3('#e9e3d6', '#eadfc8', '#e1e3e2'), bright: t3('#f7f3ea', '#f8f0df', '#f2f4f2'), text: t3('#26221c', '#2a2219', '#1f2428') },
+  },
+  tecnologico: {
+    dark: { soft: t3('#10141a', '#14130f', '#0b121b'), deep: t3('#05070a', '#070604', '#03070d'), text: t3('#dfe8f0', '#ece4d6', '#d8e8f6') },
+    light: { soft: t3('#e6eaee', '#ece8e1', '#e2e9f1'), bright: t3('#f8fafc', '#fbf9f5', '#f6f9fd'), text: t3('#0f1720', '#1c1812', '#0b1622') },
+  },
+  carbono: {
+    dark: { soft: t3('#161616', '#171513', '#131518'), deep: t3('#070707', '#080706', '#06070a'), text: t3('#ededed', '#efebe4', '#e8ecf0') },
+    light: { soft: t3('#e2e2e0', '#e6e2dc', '#dfe2e5'), bright: t3('#f5f5f3', '#f7f4ef', '#f3f5f7'), text: t3('#121212', '#17140f', '#0f1317') },
+  },
+  couro: {
+    dark: { soft: t3('#1e1712', '#21160e', '#1a1815'), deep: t3('#0f0b08', '#120b06', '#0d0c0a'), text: t3('#f0e6d8', '#f3e4cf', '#e9e6e0') },
+    light: { soft: t3('#eadfd0', '#ecdcc4', '#e3ddd4'), bright: t3('#f8f1e7', '#faefdd', '#f4f0ea'), text: t3('#2a1e15', '#2e1d10', '#241f1a') },
+  },
 }
 
-export function themeVars(id: ThemeId, a: Appearance): Record<string, string> {
+export function themeVars(id: ThemeId, a: Appearance, style: StyleId = 'classico'): Record<string, string> {
+  const P = PALETTES[style] ?? PALETTES.classico
   const c = Math.min(1, Math.max(0, a.contrast))
   const font = DISPLAY_FONTS[a.display] ?? DISPLAY_FONTS.cormorant
   const common = {
@@ -171,8 +277,8 @@ export function themeVars(id: ThemeId, a: Appearance): Record<string, string> {
     '--win-opacity': String(isTauri ? 1 - a.window : 1),
   }
   if (id === 'escuro') {
-    const bg = mix(DARK.soft[a.tone], DARK.deep[a.tone], a.depth)
-    const text = DARK.text[a.tone]
+    const bg = mix(P.dark.soft[a.tone], P.dark.deep[a.tone], a.depth)
+    const text = P.dark.text[a.tone]
     return {
       ...common,
       ...textureVars(a.texture, a.grain, a.grainSize, 'dark'),
@@ -192,8 +298,8 @@ export function themeVars(id: ThemeId, a: Appearance): Record<string, string> {
       '--backdrop': `radial-gradient(120% 100% at 80% 8%, ${mix(bg, text, 0.045)} 0%, ${bg} 55%, ${bg} 100%)`,
     }
   }
-  const bg = mix(LIGHT.soft[a.tone], LIGHT.bright[a.tone], a.depth)
-  const text = LIGHT.text[a.tone]
+  const bg = mix(P.light.soft[a.tone], P.light.bright[a.tone], a.depth)
+  const text = P.light.text[a.tone]
   return {
     ...common,
     ...textureVars(a.texture, a.grain, a.grainSize, 'light'),
@@ -214,13 +320,14 @@ export function themeVars(id: ThemeId, a: Appearance): Record<string, string> {
   }
 }
 
-type State = { theme: ThemeId; fontV?: number; look: Record<ThemeId, Appearance> }
+type Looks = Record<ThemeId, Appearance>
+type State = { theme: ThemeId; style: StyleId; fontV?: number; look: Looks; looks: Partial<Record<StyleId, Looks>> }
 
 const LS_KEY = 'ps.theme.v3'
 const LEGACY_KEY = 'ps.theme.v2'
 
-const clean = (id: ThemeId, a: Partial<Appearance> | undefined): Appearance => {
-  const d = DEFAULT_LOOK[id]
+const clean = (id: ThemeId, a: Partial<Appearance> | undefined, style: StyleId = 'classico'): Appearance => {
+  const d = styleDef(style)[id]
   const v = { ...d, ...(a ?? {}) }
   return {
     accent: /^#[0-9a-f]{6}$/i.test(v.accent) ? v.accent : d.accent,
@@ -238,20 +345,30 @@ const clean = (id: ThemeId, a: Partial<Appearance> | undefined): Appearance => {
   }
 }
 
+const isStyle = (v: unknown): v is StyleId => STYLES.some((x) => x.id === v)
+
+const withLook = (st: Omit<State, 'look'>): State => {
+  const cur = st.looks[st.style] ?? { claro: styleDef(st.style).claro, escuro: styleDef(st.style).escuro }
+  return { ...st, looks: { ...st.looks, [st.style]: cur }, look: cur }
+}
+
 function parse(d: unknown): State | null {
   if (!d || typeof d !== 'object') return null
-  const o = d as { theme?: string; look?: Record<string, Partial<Appearance>>; prefs?: { glass?: number } }
+  const o = d as { theme?: string; style?: string; fontV?: number; look?: Record<string, Partial<Appearance>>; looks?: Record<string, Record<string, Partial<Appearance>>>; prefs?: { glass?: number } }
   const theme: ThemeId = o.theme === 'claro' ? 'claro' : 'escuro'
-  if (o.look) {
-    const fresh = (o as { fontV?: number }).fontV !== 2
+  const style: StyleId = isStyle(o.style) ? o.style : 'classico'
+  const looks: Partial<Record<StyleId, Looks>> = {}
+  if (o.looks) {
+    for (const [k, v] of Object.entries(o.looks)) if (isStyle(k) && v) looks[k] = { claro: clean('claro', v.claro, k), escuro: clean('escuro', v.escuro, k) }
+  } else if (o.look) {
+    const fresh = o.fontV !== 2
     const fix = (a: Appearance): Appearance => (fresh && a.display === 'cormorant' ? { ...a, display: 'instrument' } : a)
-    return { theme, fontV: 2, look: { claro: fix(clean('claro', o.look.claro)), escuro: fix(clean('escuro', o.look.escuro)) } }
+    looks.classico = { claro: fix(clean('claro', o.look.claro)), escuro: fix(clean('escuro', o.look.escuro)) }
+  } else {
+    const glass = o.prefs?.glass
+    looks.classico = { claro: clean('claro', glass ? { glass } : undefined), escuro: clean('escuro', glass ? { glass } : undefined) }
   }
-  const glass = o.prefs?.glass
-  return {
-    theme,
-    look: { claro: clean('claro', glass ? { glass } : undefined), escuro: clean('escuro', glass ? { glass } : undefined) },
-  }
+  return withLook({ theme, style, fontV: 2, looks })
 }
 
 function loadState(): State {
@@ -262,7 +379,7 @@ function loadState(): State {
     } catch {
     }
   }
-  return { theme: 'escuro', look: { claro: DEFAULT_LOOK.claro, escuro: DEFAULT_LOOK.escuro } }
+  return withLook({ theme: 'escuro', style: 'classico', looks: {} })
 }
 
 let state = loadState()
@@ -283,8 +400,9 @@ function commit(next: State) {
 export function applyTheme() {
   const id = state.theme
   const root = document.documentElement
-  const vars = themeVars(id, state.look[id])
+  const vars = themeVars(id, state.look[id], state.style)
   root.dataset.theme = id
+  root.dataset.style = state.style
   root.dataset.scheme = vars['--scheme']
   root.style.colorScheme = vars['--scheme']
   for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v)
@@ -305,12 +423,18 @@ export function setTheme(id: ThemeId) {
   if (id !== state.theme) commit({ ...state, theme: id })
 }
 
+export function setStyle(style: StyleId) {
+  if (style !== state.style) commit(withLook({ ...state, style }))
+}
+
 export function setLook(id: ThemeId, patch: Partial<Appearance>) {
-  commit({ ...state, look: { ...state.look, [id]: clean(id, { ...state.look[id], ...patch }) } })
+  const look = { ...state.look, [id]: clean(id, { ...state.look[id], ...patch }, state.style) }
+  commit({ ...state, look, looks: { ...state.looks, [state.style]: look } })
 }
 
 export function resetLook(id: ThemeId) {
-  commit({ ...state, look: { ...state.look, [id]: DEFAULT_LOOK[id] } })
+  const look = { ...state.look, [id]: styleDef(state.style)[id] }
+  commit({ ...state, look, looks: { ...state.looks, [state.style]: look } })
 }
 
 export async function initTheme() {
