@@ -5,7 +5,7 @@ import { areaCounts, estimateSeconds, screensOf, weatherSentence, type Screen } 
 import { decimalsOf, direction, fmtChange, fmtNumber, periodLabel, unitParts } from './market.ts'
 import { ensureProfile, updateProfile, useBriefing } from './store.ts'
 import { AREA_LONG, type Area, type Edition, type Quote } from './types.ts'
-import { AreaChip, CountUp, IconClose, IconExternal, IconLeft, IconPause, IconPlay, IconRight, IconSpark, VoiceOrb, Votes } from './ui.tsx'
+import { AreaChip, CountUp, IconClose, IconExternal, IconLeft, IconPause, IconPlay, IconRight, IconSpark, Votes, Wave } from './ui.tsx'
 import { listVoices, narrator } from './voice.ts'
 
 type Props = { edition: Edition; listen: boolean; onClose: () => void; onTriage: () => void; startKey?: string }
@@ -195,7 +195,7 @@ export default function Presentation({ edition, listen, onClose, onTriage, start
 
         <div className="brf-voice">
           <button className="brf-orb-dock" onClick={toggleListen} aria-label={!listening ? 'Ouvir (espaço)' : paused ? 'Continuar' : 'Pausar'} title="Espaço">
-            <VoiceOrb size={listening ? 112 : 84} active={listening} key={listening ? 'big' : 'small'} />
+            <Wave size="lg" live={listening} />
             <span className="brf-orb-state">{!listening || paused ? <IconPlay size={15} /> : <IconPause size={15} />}</span>
           </button>
           <div className="brf-voice-opts">

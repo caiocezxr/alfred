@@ -257,3 +257,13 @@ export function useOutside(open: boolean, onClose: () => void, ...refs: React.Re
     }
   }, [open, onClose])
 }
+
+export function Wave({ size = 'sm', live = false }: { size?: 'sm' | 'lg'; live?: boolean }) {
+  return (
+    <span className={`bx-wave is-${size} ${live ? 'is-live' : ''}`} aria-hidden="true">
+      {[0, 1, 2, 3, 4].map((i) => (
+        <i key={i} style={{ ['--w' as string]: i }} />
+      ))}
+    </span>
+  )
+}
