@@ -51,7 +51,13 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
   const [accounts, setAccounts] = useState<GhAccount[] | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [pr, setPr] = useState<{ company: Company; login: string } | null>(null)
-  const [only, setOnly] = useState<string | null>(null)
+  const [picked, setPicked] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('ps.github.account')
+    } catch {
+      return null
+    }
+  })
   const [switching, setSwitching] = useState<string | null>(null)
 
   const loadAccounts = () => {
@@ -63,7 +69,18 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
   useEffect(loadAccounts, [])
 
   const companies = state.companies
-  const visible = (scope === 'all' ? companies : companies.filter((c) => c.id === scope)).filter((c) => !only || s.stations[c.id] === only)
+  const logins = (accounts ?? []).map((a) => a.login)
+  const scoped = scope !== 'all' ? s.stations[scope] : null
+  const only = (scoped && logins.includes(scoped) ? scoped : null) ?? (picked && logins.includes(picked) ? picked : null) ?? logins.find((l) => Object.values(s.stations).includes(l)) ?? logins[0] ?? null
+  const pick = (l: string) => {
+    setPicked(l)
+    try {
+      localStorage.setItem('ps.github.account', l)
+    } catch {}
+  }
+  const owned = companies.filter((c) => only && s.stations[c.id] === only)
+  const visible = scope === 'all' ? owned : owned.filter((c) => c.id === scope)
+  const tint = owned[0] ?? null
   const active = accounts?.find((a) => a.active)?.login ?? null
   const makeActive = async (login: string) => {
     setSwitching(login)
@@ -80,15 +97,27 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
     <div className="gh">
       {accounts && accounts.length > 0 && (
         <section className="gh-accts reveal" style={{ ['--i' as string]: 0 }} aria-label="Contas do GitHub">
-          <div className="gh-acct-seg" role="radiogroup" aria-label="Ver conta">
-            <button role="radio" aria-checked={!only} className={!only ? 'is-on' : ''} onClick={() => setOnly(null)}>
-              Todas
-            </button>
-            {accounts.map((a) => (
-              <button key={a.login} role="radio" aria-checked={only === a.login} className={only === a.login ? 'is-on' : ''} onClick={() => setOnly(a.login)}>
-                <img src={`https://github.com/${a.login}.png?size=48`} alt="" />@{a.login}
-              </button>
-            ))}
+          <div className="gh-acct-seg" role="tablist" aria-label="Conta do GitHub">
+            {accounts.map((a) => {
+              const st = companies.filter((c) => s.stations[c.id] === a.login)
+              return (
+                <button
+                  key={a.login}
+                  role="tab"
+                  aria-selected={only === a.login}
+                  className={only === a.login ? 'is-on' : ''}
+                  style={st[0] ? coStyle(st[0]) : undefined}
+                  onClick={() => pick(a.login)}
+                  disabled={scope !== 'all' && !!scoped && scoped !== a.login}
+                >
+                  <img src={`https://github.com/${a.login}.png?size=48`} alt="" />
+                  <span>
+                    @{a.login}
+                    <small>{st.length ? st.map((c) => c.name).join(' · ') : 'sem estação'}</small>
+                  </span>
+                </button>
+              )
+            })}
           </div>
           <div className="gh-active">
             <span className="gh-muted">ativa no terminal:</span>
@@ -103,6 +132,39 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
           </div>
         </section>
       )}
+
+      {(() => {
+        const used = new Set(Object.values(s.stations).filter(Boolean))
+        const fresh = (accounts ?? []).filter((a) => a.ok && !used.has(a.login))
+        const free = companies.filter((c) => !s.stations[c.id])
+        if (!fresh.length || !free.length) return null
+        const target = free.find((c) => fresh[0].login.toLowerCase().includes(c.id) || fresh[0].login.toLowerCase().includes(c.name.toLowerCase())) ?? free[0]
+        return (
+          <section className="gh-newacct reveal" style={coStyle(target)}>
+            <img src={`https://github.com/${fresh[0].login}.png?size=64`} alt="" />
+            <span>
+              Conta nova no gh: <b>@{fresh[0].login}</b>. Ligar à estação <b>{target.name}</b>?
+            </span>
+            <span className="gh-grow" />
+            <select defaultValue={target.id} id="gh-newacct-target" aria-label="Estação">
+              {free.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <button
+              className="gh-new"
+              onClick={() => {
+                const sel = (document.getElementById('gh-newacct-target') as HTMLSelectElement | null)?.value ?? target.id
+                setGh({ stations: { ...s.stations, [sel]: fresh[0].login } })
+              }}
+            >
+              Ligar
+            </button>
+          </section>
+        )
+      })()}
 
       <section className="gh-stations reveal" style={{ ['--i' as string]: 1 }}>
         <header className="gh-h">
@@ -152,13 +214,24 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
         {accounts && accounts.length > 0 && <p className="gh-foot">Outra conta? No Terminal: <code>gh auth login</code> e depois recarregue aqui.</p>}
       </section>
 
-      {visible
-        .filter((c) => s.stations[c.id])
-        .map((c, i) => (
-          <Station key={c.id} company={c} login={s.stations[c.id]} index={i} state={state} onNewPr={() => setPr({ company: c, login: s.stations[c.id] })} />
-        ))}
+      {only && (
+        <section className="gh-acct-head reveal" style={tint ? coStyle(tint) : undefined} key={only}>
+          <img src={`https://github.com/${only}.png?size=96`} alt="" />
+          <div>
+            <span className="gh-k">Você está em</span>
+            <h2 className="display">@{only}</h2>
+            <span className="gh-muted">{owned.length ? `estação ${owned.map((c) => c.name).join(' e ')}` : 'esta conta ainda não está ligada a nenhuma empresa: escolha acima em Estações'}</span>
+          </div>
+          <span className="gh-grow" />
+          {only === active ? <span className="gh-pill is-on">ativa no terminal</span> : <span className="gh-pill">o terminal está em @{active}</span>}
+        </section>
+      )}
 
-      <Guardian companies={companies} />
+      {visible.map((c, i) => (
+        <Station key={`${only}-${c.id}`} company={c} login={s.stations[c.id]} index={i} state={state} onNewPr={() => setPr({ company: c, login: s.stations[c.id] })} />
+      ))}
+
+      {only && <Guardian companies={companies} login={only} key={`g-${only}`} />}
 
       {pr && <NewPr company={pr.company} login={pr.login} onClose={() => setPr(null)} />}
     </div>
@@ -540,7 +613,7 @@ function NewPr({ company, login, onClose }: { company: Company; login: string; o
   )
 }
 
-function Guardian({ companies }: { companies: Company[] }) {
+function Guardian({ companies, login: account }: { companies: Company[]; login: string }) {
   const s = useGhSettings()
   const [base, setBase] = useState(s.base)
   const [repos, setRepos] = useState<LocalRepo[] | null>(null)
@@ -597,13 +670,18 @@ function Guardian({ companies }: { companies: Company[] }) {
     }
   }
 
-  const bad = (repos ?? []).filter((r) => verdict(r).tone === 'bad').length
+  const mine = (repos ?? []).filter((r) => {
+    const co = stationOf(r)
+    return !co || s.stations[co] === account
+  })
+  const others = (repos ?? []).length - mine.length
+  const bad = mine.filter((r) => verdict(r).tone === 'bad').length
 
   return (
     <section className="gh-guard reveal" style={{ ['--i' as string]: 6 }}>
       <header className="gh-h">
-        <span className="gh-k">Guardião de identidade</span>
-        <span className="gh-hint">cada repositório local commita e faz push com a conta da estação certa</span>
+        <span className="gh-k">Guardião de identidade · @{account}</span>
+        <span className="gh-hint">repositórios locais desta conta commitam e fazem push com ela</span>
       </header>
       <form
         className="gh-scan"
@@ -616,12 +694,18 @@ function Guardian({ companies }: { companies: Company[] }) {
         <button className="gh-new" disabled={busy}>
           {busy ? 'Procurando…' : repos ? 'Procurar de novo' : 'Procurar repositórios'}
         </button>
-        {repos && <span className="gh-muted">{repos.length} repositórios{bad ? ` · ${bad} com a conta errada` : ' · tudo certo'}</span>}
+        {repos && (
+          <span className="gh-muted">
+            {mine.length} de @{account}
+            {bad ? ` · ${bad} com a conta errada` : ' · tudo certo'}
+            {others ? ` · ${others} de outras contas ocultos` : ''}
+          </span>
+        )}
       </form>
       {err && <p className="gh-err">{err}</p>}
-      {repos && repos.length > 0 && (
+      {mine.length > 0 && (
         <ul className="gh-locals">
-          {repos.map((r) => {
+          {mine.map((r) => {
             const v = verdict(r)
             const co = stationOf(r)
             return (
