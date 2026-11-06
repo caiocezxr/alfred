@@ -91,7 +91,42 @@ button {
     0 24px 60px -24px var(--shadow);
   backdrop-filter: blur(26px) saturate(1.4);
   -webkit-backdrop-filter: blur(26px) saturate(1.4);
-  transition: transform var(--t-med) var(--ease-out), border-color var(--t-med) var(--ease-out), box-shadow var(--t-med) var(--ease-out);
+  transition: transform var(--t-med) var(--ease-out), border-color var(--t-med) var(--ease-out), box-shadow var(--t-med) var(--ease-out), --lit 420ms var(--ease-out);
+}
+
+@property --lit {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+
+.panel::before,
+.bx-story::before,
+.bx-cover::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  pointer-events: none;
+  padding: 1px;
+  background: radial-gradient(280px circle at var(--mx, 50%) var(--my, 0%), color-mix(in srgb, var(--text) 42%, transparent), transparent 62%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: var(--lit, 0);
+}
+
+
+.panel {
+  --sheen: radial-gradient(520px circle at var(--mx, 50%) var(--my, -40%), color-mix(in srgb, var(--text) calc(var(--lit, 0) * 5%), transparent), transparent 55%);
+  background-image:
+    var(--sheen),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-solid) calc(var(--glass, 0.72) * 100% + 6%), transparent),
+      color-mix(in srgb, var(--surface-solid) calc(var(--glass, 0.72) * 100% - 12%), transparent)
+    );
 }
 
 button.panel:hover {
