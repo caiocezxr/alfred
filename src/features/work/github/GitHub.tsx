@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { openExternal } from '../../../shared/openExternal'
 import { CompanyMark, coStyle } from '../brand'
@@ -7,6 +7,7 @@ import type { Scope } from '../logic'
 import { createItem } from '../store'
 import type { Company, WorkState } from '../types'
 import { checkOf, getGh, gh, noreply, setGh, useGhSettings, type Branches, type Dashboard, type GhAccount, type Issue, type LocalRepo, type Pr, type Repo } from './api'
+import { PrSheet } from './PrSheet'
 import './github.css'
 
 const rel = (iso: string) => {
@@ -59,6 +60,10 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
     }
   })
   const [switching, setSwitching] = useState<string | null>(null)
+  const [sheet, setSheet] = useState<{ login: string; repo: string; number: number; review: boolean } | null>(null)
+  const [setup, setSetup] = useState(false)
+  const seg = useRef<HTMLDivElement>(null)
+  const [pill, setPill] = useState<{ x: number; w: number } | null>(null)
 
   const loadAccounts = () => {
     setErr(null)
@@ -77,11 +82,19 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
     try {
       localStorage.setItem('ps.github.account', l)
     } catch {}
+    if (accounts && accounts.find((a) => a.active)?.login !== l) void makeActive(l)
   }
   const owned = companies.filter((c) => only && s.stations[c.id] === only)
   const visible = scope === 'all' ? owned : owned.filter((c) => c.id === scope)
   const tint = owned[0] ?? null
   const active = accounts?.find((a) => a.active)?.login ?? null
+  useLayoutEffect(() => {
+    const box = seg.current
+    const btn = box?.querySelector<HTMLElement>(`[data-login="${only}"]`)
+    if (!box || !btn) return setPill(null)
+    setPill({ x: btn.offsetLeft, w: btn.offsetWidth })
+  }, [only, accounts, s.stations])
+  const linked = Object.values(s.stations).some(Boolean)
   const makeActive = async (login: string) => {
     setSwitching(login)
     try {
@@ -97,7 +110,8 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
     <div className="gh">
       {accounts && accounts.length > 0 && (
         <section className="gh-accts reveal" style={{ ['--i' as string]: 0 }} aria-label="Contas do GitHub">
-          <div className="gh-acct-seg" role="tablist" aria-label="Conta do GitHub">
+          <div className="gh-acct-seg" role="tablist" aria-label="Conta do GitHub" ref={seg}>
+            {pill && <i className="gh-acct-pill" style={{ transform: `translateX(${pill.x}px)`, width: pill.w }} aria-hidden="true" />}
             {accounts.map((a) => {
               const st = companies.filter((c) => s.stations[c.id] === a.login)
               return (
@@ -107,6 +121,7 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
                   aria-selected={only === a.login}
                   className={only === a.login ? 'is-on' : ''}
                   style={st[0] ? coStyle(st[0]) : undefined}
+                  data-login={a.login}
                   onClick={() => pick(a.login)}
                   disabled={scope !== 'all' && !!scoped && scoped !== a.login}
                 >
@@ -120,15 +135,13 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
             })}
           </div>
           <div className="gh-active">
-            <span className="gh-muted">ativa no terminal:</span>
-            <b>@{active ?? '—'}</b>
-            {accounts
-              .filter((a) => a.login !== active)
-              .map((a) => (
-                <button key={a.login} className="gh-ghost" onClick={() => void makeActive(a.login)} disabled={!!switching} title="Roda gh auth switch">
-                  {switching === a.login ? 'Trocando…' : `Usar @${a.login}`}
-                </button>
-              ))}
+            <span className={`gh-term ${switching ? 'is-busy' : ''}`}>
+              <i aria-hidden="true" />
+              {switching ? `trocando o terminal para @${switching}…` : `terminal em @${active ?? '—'}`}
+            </span>
+            <button className={`gh-ghost ${setup || !linked ? 'is-on' : ''}`} onClick={() => setSetup((v) => !v)}>
+              <Icon name="gear" size={12} /> Estações
+            </button>
           </div>
         </section>
       )}
@@ -166,6 +179,7 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
         )
       })()}
 
+      {(setup || !linked || err || (accounts && accounts.length === 0)) && (
       <section className="gh-stations reveal" style={{ ['--i' as string]: 1 }}>
         <header className="gh-h">
           <span className="gh-k">Estações</span>
@@ -213,6 +227,7 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
         )}
         {accounts && accounts.length > 0 && <p className="gh-foot">Outra conta? No Terminal: <code>gh auth login</code> e depois recarregue aqui.</p>}
       </section>
+      )}
 
       {only && (
         <section className="gh-acct-head reveal" style={tint ? coStyle(tint) : undefined} key={only}>
@@ -228,17 +243,35 @@ export function GitHubView({ state, scope }: { state: WorkState; scope: Scope })
       )}
 
       {visible.map((c, i) => (
-        <Station key={`${only}-${c.id}`} company={c} login={s.stations[c.id]} index={i} state={state} onNewPr={() => setPr({ company: c, login: s.stations[c.id] })} />
+        <Station
+          key={`${only}-${c.id}`}
+          company={c}
+          login={s.stations[c.id]}
+          index={i}
+          state={state}
+          onNewPr={() => setPr({ company: c, login: s.stations[c.id] })}
+          onOpen={(p, review) => setSheet({ login: s.stations[c.id], repo: p.repository.nameWithOwner, number: p.number, review })}
+        />
       ))}
 
       {only && <Guardian companies={companies} login={only} key={`g-${only}`} />}
 
       {pr && <NewPr company={pr.company} login={pr.login} onClose={() => setPr(null)} />}
+      {sheet && (
+        <PrSheet
+          login={sheet.login}
+          repo={sheet.repo}
+          number={sheet.number}
+          review={sheet.review}
+          onClose={() => setSheet(null)}
+          onChanged={() => boards.delete(sheet.login)}
+        />
+      )}
     </div>
   )
 }
 
-function Station({ company, login, index, state, onNewPr }: { company: Company; login: string; index: number; state: WorkState; onNewPr: () => void }) {
+function Station({ company, login, index, state, onNewPr, onOpen }: { company: Company; login: string; index: number; state: WorkState; onNewPr: () => void; onOpen: (p: Pr, review: boolean) => void }) {
   const { data, err, busy, reload } = useDashboard(login)
   const s = useGhSettings()
   const person = s.people[login]
@@ -302,12 +335,12 @@ function Station({ company, login, index, state, onNewPr }: { company: Company; 
         <div className="gh-cols">
           <Col title="Meus PRs" n={counts!.mine} empty="Nenhum PR seu aberto.">
             {data.mine.nodes.map((p) => (
-              <PrCard key={p.url} pr={p} login={login} onDone={reload} />
+              <PrCard key={p.url} pr={p} login={login} onDone={reload} onOpen={() => onOpen(p, false)} />
             ))}
           </Col>
           <Col title="Pra você revisar" n={counts!.review} empty="Ninguém pediu sua revisão.">
             {data.review.nodes.map((p) => (
-              <PrCard key={p.url} pr={p} login={login} review onDone={reload} />
+              <PrCard key={p.url} pr={p} login={login} review onDone={reload} onOpen={() => onOpen(p, true)} />
             ))}
           </Col>
           <Col title="Issues com você" n={counts!.issues} empty="Nenhuma issue atribuída.">
@@ -335,7 +368,7 @@ function Col({ title, n, empty, children }: { title: string; n: number; empty: s
 const CHECK_LABEL: Record<string, string> = { SUCCESS: 'checks ok', FAILURE: 'checks falhando', ERROR: 'checks com erro', PENDING: 'checks rodando', EXPECTED: 'checks esperando' }
 const REVIEW_LABEL: Record<string, string> = { APPROVED: 'aprovado', CHANGES_REQUESTED: 'pediram ajustes', REVIEW_REQUIRED: 'aguardando review' }
 
-function PrCard({ pr, login, review, onDone }: { pr: Pr; login: string; review?: boolean; onDone: () => void }) {
+function PrCard({ pr, login, review, onDone, onOpen }: { pr: Pr; login: string; review?: boolean; onDone: () => void; onOpen: () => void }) {
   const check = checkOf(pr)
   const [arm, setArm] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -357,7 +390,7 @@ function PrCard({ pr, login, review, onDone }: { pr: Pr; login: string; review?:
   }
   return (
     <li className={`gh-pr is-${(check ?? 'none').toLowerCase()}`}>
-      <button className="gh-pr-main" onClick={() => void openExternal(pr.url)} title="Abrir no GitHub">
+      <button className="gh-pr-main" onClick={onOpen} title="Ver o PR">
         <span className="gh-pr-top">
           <span className="gh-repo">{pr.repository.nameWithOwner.split('/')[1]}</span>
           <span className="gh-num">#{pr.number}</span>

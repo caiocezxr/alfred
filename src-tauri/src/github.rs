@@ -256,6 +256,61 @@ pub async fn github_pr_merge(login: String, repo: String, number: u32, method: S
     .await
 }
 
+#[tauri::command]
+pub async fn github_pr_detail(login: String, repo: String, number: u32) -> R<Value> {
+    if !valid_repo(&repo) || number == 0 {
+        return Err("PR inválido".into());
+    }
+    blocking(move || {
+        let (owner, name) = repo.split_once('/').unwrap();
+        let data = graphql(
+            &login,
+            "query($owner: String!, $name: String!, $n: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $n) { \
+             number title url state isDraft merged mergeable reviewDecision headRefName baseRefName additions deletions changedFiles createdAt bodyHTML \
+             author { login avatarUrl } \
+             commits(last: 1) { nodes { commit { oid statusCheckRollup { state contexts(first: 40) { nodes { \
+               ... on CheckRun { __typename name conclusion status detailsUrl } \
+               ... on StatusContext { __typename context state targetUrl } } } } } } } \
+             reviews(last: 15) { nodes { author { login avatarUrl } state submittedAt bodyText } } \
+             comments(last: 15) { nodes { author { login avatarUrl } bodyText createdAt } } } } }",
+            json!({ "owner": owner, "name": name, "n": number }),
+        )?;
+        let files = call(&login, "GET", &format!("/repos/{repo}/pulls/{number}/files?per_page=80"), None)?;
+        let list: Vec<Value> = files
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|f| {
+                let patch: String = f["patch"].as_str().unwrap_or("").chars().take(24000).collect();
+                json!({ "filename": f["filename"], "status": f["status"], "additions": f["additions"], "deletions": f["deletions"], "patch": patch })
+            })
+            .collect();
+        Ok(json!({ "pr": data["repository"]["pullRequest"], "files": list }))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn github_pr_review(login: String, repo: String, number: u32, event: String, body: String) -> R<Value> {
+    if !valid_repo(&repo) || number == 0 {
+        return Err("PR inválido".into());
+    }
+    let event = match event.as_str() {
+        "APPROVE" | "REQUEST_CHANGES" | "COMMENT" => event,
+        _ => return Err("ação de review inválida".into()),
+    };
+    let body: String = body.chars().take(8000).collect();
+    if event != "APPROVE" && body.trim().is_empty() {
+        return Err("escreva um comentário".into());
+    }
+    blocking(move || {
+        let v = call(&login, "POST", &format!("/repos/{repo}/pulls/{number}/reviews"), Some(&json!({ "event": event, "body": body })))?;
+        Ok(json!({ "state": v["state"] }))
+    })
+    .await
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalRepo {

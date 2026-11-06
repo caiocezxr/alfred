@@ -102,6 +102,8 @@ pub fn run() {
             github::github_branches,
             github::github_pr_create,
             github::github_pr_merge,
+            github::github_pr_detail,
+            github::github_pr_review,
             github::github_local_scan,
             github::github_identity_apply,
             radar::radar_item_set,

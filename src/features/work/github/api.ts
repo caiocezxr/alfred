@@ -35,6 +35,32 @@ export type Branches = {
     pullRequests: { nodes: { number: number; headRefName: string; url: string }[] }
   }
 }
+export type CheckCtx = { __typename: 'CheckRun'; name: string; conclusion: string | null; status: string; detailsUrl: string | null } | { __typename: 'StatusContext'; context: string; state: string; targetUrl: string | null }
+export type PrDetail = {
+  pr: {
+    number: number
+    title: string
+    url: string
+    state: 'OPEN' | 'CLOSED' | 'MERGED'
+    isDraft: boolean
+    merged: boolean
+    mergeable: Pr['mergeable']
+    reviewDecision: Pr['reviewDecision']
+    headRefName: string
+    baseRefName: string
+    additions: number
+    deletions: number
+    changedFiles: number
+    createdAt: string
+    bodyHTML: string
+    author: { login: string; avatarUrl: string } | null
+    commits: { nodes: { commit: { oid: string; statusCheckRollup: { state: Check; contexts: { nodes: CheckCtx[] } } | null } }[] }
+    reviews: { nodes: { author: { login: string; avatarUrl: string } | null; state: string; submittedAt: string; bodyText: string }[] }
+    comments: { nodes: { author: { login: string; avatarUrl: string } | null; bodyText: string; createdAt: string }[] }
+  }
+  files: { filename: string; status: string; additions: number; deletions: number; patch: string }[]
+}
+
 export type LocalRepo = {
   path: string
   name: string
@@ -75,6 +101,8 @@ export const gh = {
   createPr: (login: string, repo: string, head: string, base: string, title: string, body: string, draft: boolean) =>
     call<{ number: number; url: string }>('github_pr_create', { login, repo, head, base, title, body, draft }),
   mergePr: (login: string, repo: string, number: number, method = 'squash') => call<{ merged: boolean; message: string }>('github_pr_merge', { login, repo, number, method }),
+  prDetail: (login: string, repo: string, number: number) => call<PrDetail>('github_pr_detail', { login, repo, number }),
+  review: (login: string, repo: string, number: number, event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT', body = '') => call<{ state: string }>('github_pr_review', { login, repo, number, event, body }),
   scan: (base: string) => call<LocalRepo[]>('github_local_scan', { base }),
   applyIdentity: (path: string, login: string, name: string, email: string) => call<LocalRepo>('github_identity_apply', { path, login, name, email }),
 }
