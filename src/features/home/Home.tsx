@@ -5,7 +5,7 @@ import { civil, fmtLong } from '../../shared/dates'
 import { isScheduled, setCheckin, useHabits } from '../../shared/db/stores'
 import { openWorkItem, toggleTodo, useWorkToday, type TodayEntry } from '../work/today'
 import { CITIES, homeCity, localTime } from './geo'
-import { describe, useWeather, type Weather } from './weather'
+import { describe, useWeather } from './weather'
 import BriefingCard from '../briefing/BriefingCard'
 import { MoodChip } from '../mood/CheckIn'
 import { openRitual } from '../../app/Ritual'
@@ -70,12 +70,8 @@ export default function Home() {
       </h1>
       <div className="home-micro">
         <DayClock city={home} />
+        <WeatherStrip />
         <MoodChip onOpen={openRitual} onOpenYear={() => setYear(true)} />
-        {todays.length > 0 && (
-          <span className="home-habits-note">
-            {doneHabits} de {todays.length} hábitos feitos
-          </span>
-        )}
       </div>
     </header>
   )
@@ -86,9 +82,14 @@ export default function Home() {
   }
 
   const todayCard = (
-    <section className={`panel home-today is-${work.health.level} reveal`} style={{ ['--i' as string]: 2 }}>
+    <div className={`home-today is-${work.health.level}`}>
       <div className="panel-head">
         <h2>Hoje</h2>
+        {todays.length > 0 && (
+          <span className="home-habits-note">
+            {doneHabits}/{todays.length} hábitos
+          </span>
+        )}
         <button
           className="btn quiet sm"
           onClick={() => {
@@ -99,16 +100,8 @@ export default function Home() {
           + To-do
         </button>
       </div>
-      {work.loaded && work.health.total > 0 && (
-        <button className="home-health" onClick={() => navigate('work')} title="Abrir a Workstation">
-          <span className="home-health-bar">
-            <i style={{ transform: `scaleX(${work.health.progress})` }} />
-          </span>
-          <span className="home-health-label">{work.health.label}</span>
-        </button>
-      )}
       {top.length === 0 && todays.length === 0 ? (
-        <p className="home-empty">{work.loaded ? 'Tudo verde por aqui. Os to-dos do dia, prazos e o que não pode esquecer aparecem aqui.' : ' '}</p>
+        <p className="home-empty">{work.loaded ? 'Nada pendente. Os to-dos do dia e os prazos aparecem aqui.' : ' '}</p>
       ) : (
         top.length > 0 && (
           <ul className="home-tasks">
@@ -150,7 +143,7 @@ export default function Home() {
           })}
         </div>
       )}
-    </section>
+    </div>
   )
 
   return (
@@ -167,15 +160,11 @@ export default function Home() {
       )}
       <div className="home-wrap">
         <div className="home-hero-cell">{hero}</div>
-        <div className="home-wx-cell">
-          <WeatherCard />
-        </div>
         <div className="home-main">
           <BriefingCard />
         </div>
         <aside className="home-right">
-          <WorkCockpit />
-          {todayCard}
+          <WorkCockpit>{todayCard}</WorkCockpit>
         </aside>
       </div>
     </div>
@@ -285,86 +274,33 @@ function useMinuteTick() {
   }, [])
 }
 
-function WeatherCard({ compact = false }: { compact?: boolean }) {
-  const { data, at, error, loading, refresh } = useWeather()
+function WeatherStrip() {
+  const { data, error, loading, refresh } = useWeather()
   useMinuteTick()
-  const ago = at ? Math.round((Date.now() - at) / 60000) : null
-  const when = ago === null ? '' : ago < 1 ? 'atualizado agora' : ago < 60 ? `atualizado há ${ago} min` : `atualizado há ${Math.round(ago / 60)} h`
+  const now = new Date()
+  if (!data) return <span className="wxs is-empty">{loading || !error ? 'clima…' : 'sem clima'}</span>
   return (
-    <section className={`panel wx reveal ${compact ? 'is-compact' : ''}`} style={{ ['--i' as string]: 1 }} aria-label="Clima em Fortaleza, Recife e Frankfurt">
-      {data ? (
-        <>
-          <div className="wx-cities is-three">
-            {data.map((w, i) => (
-              <WeatherCity key={w.city} w={w} compact={compact} abroad={i >= 2} />
-            ))}
-          </div>
-        </>
-      ) : (
-        <p className="wx-empty">{loading || !error ? 'Buscando o clima…' : 'Sem conexão para buscar o clima agora.'}</p>
-      )}
-      <footer className="wx-foot">
-        <span>
-          {error && data ? 'sem conexão · ' : ''}
-          {when}
-        </span>
-        <button className="wx-refresh" onClick={() => void refresh()} disabled={loading} aria-label="Atualizar clima">
-          <svg className={loading ? 'is-spinning' : ''} width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M13.5 8a5.5 5.5 0 1 1-1.7-4M13.5 2.5V5H11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-      </footer>
-    </section>
+    <button className="wxs" onClick={() => void refresh()} title="Atualizar o clima" aria-label="Clima; clique para atualizar">
+      {data.map((w, i) => {
+        const d = describe(w.code)
+        const city = CITIES.find((c) => c.name === w.city)
+        const abroad = i >= 2 && city
+        return (
+          <span
+            key={w.city}
+            className="wxs-city"
+            title={`${w.city}: ${d.label}, máx ${Math.round(w.max)}° mín ${Math.round(w.min)}°, chuva ${w.rain}%${abroad && city ? ` · ${localTime(city.tz, now)} lá` : ''}`}
+          >
+            <WeatherIcon kind={d.icon} night={!w.isDay} />
+            <b>
+              <CountUp value={Math.round(w.temp)} />°
+            </b>
+            <small>{abroad && city ? `${w.city.slice(0, 3)} ${localTime(city.tz, now)}` : w.city === 'Fortaleza' ? 'FOR' : w.city.slice(0, 3)}</small>
+          </span>
+        )
+      })}
+    </button>
   )
-}
-
-function WeatherCity({ w, compact, abroad = false }: { w: Weather; compact: boolean; abroad?: boolean }) {
-  const d = describe(w.code)
-  const city = CITIES.find((c) => c.name === w.city)
-  const [now, setNow] = useState(() => new Date())
-  useEffect(() => {
-    if (!abroad) return
-    const id = setInterval(() => setNow(new Date()), 30_000)
-    return () => clearInterval(id)
-  }, [abroad])
-  const diff = abroad && city ? Math.round((tzOffset(city.tz, now) - tzOffset(CITIES[0].tz, now)) / 60) : 0
-  return (
-    <div className="wx-city">
-      <div className="wx-name">
-        {w.city}
-        {abroad && city && (
-          <span className="wx-tz">
-            {localTime(city.tz, now)} · {diff >= 0 ? `+${diff}h` : `${diff}h`}
-          </span>
-        )}
-      </div>
-      <div className="wx-main">
-        <WeatherIcon kind={d.icon} night={!w.isDay} />
-        <span className="wx-temp">
-          <CountUp value={Math.round(w.temp)} />°
-        </span>
-      </div>
-      <div className="wx-desc">{d.label}</div>
-      {!compact && (
-        <div className="wx-meta">
-          <span>
-            <b>{Math.round(w.max)}°</b> / {Math.round(w.min)}°
-          </span>
-          <span title="Chance de chuva hoje">
-            <Drop /> {w.rain}%
-          </span>
-          {!abroad && <span title="Sensação térmica">sensação {Math.round(w.feels)}°</span>}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function tzOffset(tz: string, d: Date) {
-  const p = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(d)
-  const g = (t: string) => Number(p.find((x) => x.type === t)?.value)
-  const asUtc = Date.UTC(g('year'), g('month') - 1, g('day'), g('hour') % 24, g('minute'))
-  return Math.round((asUtc - d.getTime()) / 60000)
 }
 
 function WeatherIcon({ kind, night }: { kind: ReturnType<typeof describe>['icon']; night: boolean }) {
@@ -426,12 +362,6 @@ function CountUp({ value, ms = 900 }: { value: number; ms?: number }) {
   }, [value, ms])
   return <>{shown}</>
 }
-
-const Drop = () => (
-  <svg width="9" height="11" viewBox="0 0 9 11" aria-hidden="true" style={{ verticalAlign: '-1px' }}>
-    <path d="M4.5.8C3 3 1 5 1 7a3.5 3.5 0 0 0 7 0C8 5 6 3 4.5.8z" fill="#69b4ff" />
-  </svg>
-)
 
 const Tick = () => (
   <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">

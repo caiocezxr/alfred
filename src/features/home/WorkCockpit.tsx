@@ -1,24 +1,14 @@
-import { useMemo } from 'react'
+import type { ReactNode } from 'react'
 import { navigate } from '../../app/router'
-import { civil } from '../../shared/dates'
 import { profileScope, useProfile } from '../../shared/profile'
 import { Gauge, GaugeCenter } from '../work/Gauge'
-import { weekScore, type WeekScore as Score } from '../work/logic'
-import { WeekScore } from '../work/WeekScore'
-import { useWork } from '../work/store'
 import { useWorkToday } from '../work/today'
 import '../work/work.css'
 
-export function WorkCockpit() {
+export function WorkCockpit({ children }: { children?: ReactNode }) {
   const profile = useProfile()
   const scope = profileScope(profile)
-  const { state } = useWork()
   const today = useWorkToday(scope)
-  const day = civil()
-  const score = useMemo<Score>(
-    () => (state ? weekScore(state, day, scope) : { delivered: 0, validated: 0, done: 0, byCompany: {}, split: {}, last: null, lastAt: null }),
-    [state, day, scope],
-  )
   const h = today.health
   const red = h.total ? Math.min(1, (today.counts.late + today.counts.forget) / h.total) : 0
   const doing = today.counts.doing
@@ -32,9 +22,9 @@ export function WorkCockpit() {
   return (
     <section className={`panel hc reveal is-${h.level}`} style={{ ['--i' as string]: 2 }} aria-label="Workstation">
       <header className="hc-head">
-        <span className="hc-k">Workstation</span>
+        <span className="hc-k">Seu dia</span>
         <button className="hc-open" onClick={() => navigate('work')}>
-          Abrir
+          Workstation
           <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
             <path d="M2 6h7.5M6.5 3 9.5 6 6.5 9" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
@@ -69,7 +59,7 @@ export function WorkCockpit() {
           </div>
         </div>
       </div>
-      <WeekScore score={score} companies={state?.companies ?? []} variant="compact" className="hc-score" />
+      {children}
     </section>
   )
 }
