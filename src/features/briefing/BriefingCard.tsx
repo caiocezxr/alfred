@@ -38,7 +38,14 @@ export default function BriefingCard() {
   const edition = st.edition
   const voice = st.profile?.voice
   useEffect(() => {
-    if (edition && st.phase === 'ready' && edition.items.length) briefingPlayer.prepare(edition, voice?.voice ?? 'pf_dora')
+    if (!edition || st.phase !== 'ready' || !edition.items.length) return
+    let t = 0
+    const go = () => {
+      if (document.documentElement.dataset.launch !== undefined || document.visibilityState === 'hidden') t = window.setTimeout(go, 2500)
+      else briefingPlayer.prepare(edition, voice?.voice ?? 'pf_dora')
+    }
+    t = window.setTimeout(go, 2500)
+    return () => window.clearTimeout(t)
   }, [edition, st.phase, voice?.voice])
   useEffect(() => {
     if (voice) briefingPlayer.setSpeed(speedOfRate(voice.rate))

@@ -84,8 +84,10 @@ class VoiceEngine {
     this.spawn()
   }
 
+  private eager = false
+
   private grow() {
-    const want = poolSize(navigator.hardwareConcurrency, this.state.device)
+    const want = this.eager ? poolSize(navigator.hardwareConcurrency, this.state.device) : 1
     while (this.slots.length < want && this.queue.length > this.slots.filter((s) => s.ready && !s.job).length) this.spawn()
   }
 
@@ -163,6 +165,7 @@ class VoiceEngine {
     const ids = new Set(fresh.map((w) => w.id))
     const rest = this.queue.filter((w) => !ids.has(w.id))
     this.queue = first ? [...fresh, ...rest] : [...rest, ...fresh]
+    if (first && fresh.length) this.eager = true
     this.ensure()
     this.pump()
   }
@@ -183,6 +186,7 @@ class VoiceEngine {
       }
     }
     if (firstReady) this.grow()
+    if (!this.queue.length && this.slots.every((s) => !s.job)) this.eager = false
     if (!this.queue.length && this.slots.every((s) => !s.job)) this.idleTimer = window.setTimeout(() => this.shrink(), IDLE_MS)
   }
 

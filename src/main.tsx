@@ -17,11 +17,14 @@ import '@fontsource/syne/700.css'
 import './shared/tokens.css'
 import { App } from './app/App'
 import { applyTheme } from './shared/themes/themes'
+import { startRest } from './shared/ui/rest'
 import { startSpotlight } from './shared/ui/spotlight'
 
 applyTheme()
 
 startSpotlight()
+
+startRest()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

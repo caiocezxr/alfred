@@ -345,6 +345,7 @@ export class CurlRenderer {
       this.probe = gl.createFramebuffer()
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.probe)
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, pt, 0)
+      gl.bindTexture(gl.TEXTURE_2D, null)
     }
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.probe)
     gl.viewport(0, 0, 1, 1)
@@ -366,6 +367,8 @@ export class CurlRenderer {
     gl.uniform1f(L.uF, 1)
     gl.uniform1f(L.uFlipF, 0)
     gl.uniform1f(L.uAlpha, 1)
+    gl.activeTexture(gl.TEXTURE1)
+    gl.bindTexture(gl.TEXTURE_2D, null)
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, t)
     gl.uniform1i(L.uHasF, 1)
