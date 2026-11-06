@@ -1,5 +1,5 @@
 import { addDays, civil, daysBetween, parseCivil, weekday } from '../../shared/dates.ts'
-import type { ChecklistEntry, Company, DayMark, Kind, Priority, Settings, Stage, Todo, TodoCheck, TodoMode, WorkEvent, WorkItem, WorkState } from './types.ts'
+import type { ChecklistEntry, Company, DayMark, Kind, Priority, Session, Settings, Stage, Todo, TodoCheck, TodoMode, WorkEvent, WorkItem, WorkState } from './types.ts'
 import { STAGES } from './types.ts'
 
 export type Scope = 'all' | string
@@ -949,4 +949,185 @@ export function planNotifications(
 export function pruneSent(sent: Record<string, string>, today: string, keepDays = 4): Record<string, string> {
   const min = addDays(today, -keepDays)
   return Object.fromEntries(Object.entries(sent).filter(([, d]) => d >= min))
+}
+
+export function boardColumns(items: WorkItem[], scope: Scope, today: string): { stage: Stage; items: WorkItem[] }[] {
+  const mine = items.filter((i) => inScope(scope, i.companyId))
+  const since = addDays(today, -7)
+  return STAGES.map((stage) => {
+    let list = mine.filter((i) => i.stage === stage)
+    if (stage === 'done') list = list.filter((i) => i.doneAt && civilOf(i.doneAt) >= since).sort((a, b) => b.doneAt!.localeCompare(a.doneAt!))
+    else list = list.sort((a, b) => Number(!!b.focusedAt) - Number(!!a.focusedAt) || a.sort - b.sort)
+    return { stage, items: list }
+  })
+}
+
+export function moveSelection(cols: { items: WorkItem[] }[], current: string | null, key: 'up' | 'down' | 'left' | 'right'): string | null {
+  const flat = cols.flatMap((c) => c.items)
+  if (!flat.length) return null
+  let ci = cols.findIndex((c) => c.items.some((i) => i.id === current))
+  if (ci < 0) return flat[0].id
+  let ri = cols[ci].items.findIndex((i) => i.id === current)
+  if (key === 'down') ri = Math.min(cols[ci].items.length - 1, ri + 1)
+  if (key === 'up') ri = Math.max(0, ri - 1)
+  if (key === 'left' || key === 'right') {
+    const step = key === 'left' ? -1 : 1
+    let k = ci + step
+    while (k >= 0 && k < cols.length && !cols[k].items.length) k += step
+    if (k < 0 || k >= cols.length) return current
+    ci = k
+    ri = Math.min(ri, cols[ci].items.length - 1)
+  }
+  return cols[ci].items[ri].id
+}
+
+export const sessionMs = (s: Session, now: number) => Math.max(0, (s.endedAt ? Date.parse(s.endedAt) : now) - Date.parse(s.startedAt))
+export const runningSession = (sessions: Session[]) => sessions.find((s) => !s.endedAt) ?? null
+
+export function itemTimeMs(sessions: Session[], itemId: string, now: number): number {
+  return sessions.filter((s) => s.itemId === itemId).reduce((t, s) => t + sessionMs(s, now), 0)
+}
+
+function overlap(s: Session, from: number, to: number, now: number) {
+  const a = Math.max(Date.parse(s.startedAt), from)
+  const b = Math.min(s.endedAt ? Date.parse(s.endedAt) : now, to)
+  return Math.max(0, b - a)
+}
+
+export function rangeTimeMs(sessions: Session[], items: WorkItem[], fromDay: string, toDay: string, now: number, scope: Scope = 'all'): Record<string, number> {
+  const from = parseCivil(fromDay).getTime()
+  const to = parseCivil(addDays(toDay, 1)).getTime()
+  const company = new Map(items.map((i) => [i.id, i.companyId]))
+  const out: Record<string, number> = {}
+  for (const s of sessions) {
+    const co = company.get(s.itemId)
+    if (!co || !inScope(scope, co)) continue
+    const ms = overlap(s, from, to, now)
+    if (ms) out[co] = (out[co] ?? 0) + ms
+  }
+  return out
+}
+
+export const sumTime = (r: Record<string, number>) => Object.values(r).reduce((a, b) => a + b, 0)
+
+export function fmtDur(ms: number): string {
+  const m = Math.round(ms / 60000)
+  if (m < 1) return ms > 0 ? '<1 min' : '0 min'
+  if (m < 60) return `${m} min`
+  const h = Math.floor(m / 60)
+  const r = m % 60
+  return r ? `${h}h${String(r).padStart(2, '0')}` : `${h}h`
+}
+
+export function fmtClock(ms: number): string {
+  const t = Math.floor(ms / 1000)
+  const h = Math.floor(t / 3600)
+  const m = Math.floor((t % 3600) / 60)
+  const sec = t % 60
+  return h ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`
+}
+
+export type RulerPin = {
+  id: string
+  kind: 'todo' | 'forget' | 'due'
+  minute: number | null
+  title: string
+  companyId: string
+  todoId: string | null
+  itemId: string | null
+  done: boolean
+}
+export type RulerSegment = { id: string; itemId: string; companyId: string; start: number; end: number; running: boolean }
+export type RulerModel = { startMin: number; endMin: number; nowMin: number; pins: RulerPin[]; allDay: RulerPin[]; segments: RulerSegment[] }
+
+const toMin = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5))
+
+export function rulerModel(state: Pick<WorkState, 'items' | 'todos' | 'todoChecks' | 'sessions'>, today: string, now: Date, scope: Scope = 'all'): RulerModel {
+  const nowMin = now.getHours() * 60 + now.getMinutes()
+  const pins: RulerPin[] = []
+  const allDay: RulerPin[] = []
+  for (const t of state.todos) {
+    if (!inSpace(scope, t.companyId)) continue
+    const applies = t.mode === 'dated' ? t.dueDate === today : t.mode === 'daily' ? todoAppliesOn(t, today) : !t.doneAt
+    if (!applies) continue
+    const done = todoDoneOn(t, state.todoChecks, today)
+    const pin: RulerPin = { id: `todo:${t.id}`, kind: t.mustNotForget ? 'forget' : 'todo', minute: t.remindTime ? toMin(t.remindTime) : null, title: t.title, companyId: t.companyId, todoId: t.id, itemId: null, done }
+    if (pin.minute !== null) pins.push(pin)
+    else if (t.mode === 'dated' && !done) allDay.push(pin)
+  }
+  for (const i of state.items) {
+    if (!inScope(scope, i.companyId) || i.dueDate !== today || i.stage === 'done' || isPost(i.stage)) continue
+    allDay.push({ id: `item:${i.id}`, kind: 'due', minute: null, title: label(i), companyId: i.companyId, todoId: null, itemId: i.id, done: false })
+  }
+  const company = new Map(state.items.map((i) => [i.id, i.companyId]))
+  const dayStart = parseCivil(today).getTime()
+  const dayEnd = dayStart + 864e5
+  const segments: RulerSegment[] = []
+  for (const s of state.sessions) {
+    const co = company.get(s.itemId)
+    if (!co || !inScope(scope, co)) continue
+    const a = Math.max(Date.parse(s.startedAt), dayStart)
+    const b = Math.min(s.endedAt ? Date.parse(s.endedAt) : now.getTime(), dayEnd)
+    if (b <= a) continue
+    segments.push({ id: s.id, itemId: s.itemId, companyId: co, start: Math.round((a - dayStart) / 6e4), end: Math.round((b - dayStart) / 6e4), running: !s.endedAt })
+  }
+  const marks = [nowMin, ...pins.map((p) => p.minute!), ...segments.flatMap((s) => [s.start, s.end])]
+  const startMin = Math.max(0, Math.min(8 * 60, Math.floor((Math.min(...marks) - 30) / 60) * 60))
+  const endMin = Math.min(24 * 60, Math.max(19 * 60, Math.ceil((Math.max(...marks) + 30) / 60) * 60))
+  pins.sort((a, b) => a.minute! - b.minute!)
+  return { startMin, endMin, nowMin, pins, allDay, segments }
+}
+
+export type Nudge = {
+  id: string
+  kind: AlertKind
+  tone: 'red' | 'amber' | 'soft'
+  text: string
+  itemIds: string[]
+  action: { kind: AlertAction; label: string } | null
+}
+
+export function nudges(alerts: Alert[]): Nudge[] {
+  const by = new Map<AlertKind, Alert[]>()
+  for (const a of alerts) by.set(a.kind, [...(by.get(a.kind) ?? []), a])
+  const out: Nudge[] = []
+  const tone = (a: Alert) => (a.severity === 3 ? 'red' : a.severity === 2 ? 'amber' : 'soft') as Nudge['tone']
+  const single = (a: Alert): Nudge => ({ id: a.id, kind: a.kind, tone: tone(a), text: `${a.title} · ${a.detail}`, itemIds: a.itemId ? [a.itemId] : [], action: a.action })
+  const group = (kind: AlertKind, text: (n: number, list: Alert[]) => string, label: string) => {
+    const list = by.get(kind)
+    if (!list?.length) return
+    if (list.length === 1) return void out.push(single(list[0]))
+    out.push({ id: `group:${kind}`, kind, tone: tone(list[0]), text: text(list.length, list), itemIds: list.map((a) => a.itemId!).filter(Boolean), action: list[0].action ? { kind: list[0].action.kind, label } : null })
+  }
+  for (const a of by.get('returned') ?? []) out.push(single(a))
+  group('overdue', (n) => `${n} prazos vencidos`, 'Todos para amanhã')
+  group('validation', (n, l) => `${n} entregas sem validação há ${Math.min(...l.map((a) => a.days))}+ dias`, 'Cobrei todas')
+  group('waiting', (n) => `${n} itens aguardando alguém`, 'Cobrei todos')
+  group('due_today', (n) => `${n} itens com prazo hoje`, 'Pôr no foco')
+  for (const a of by.get('unchecked') ?? []) out.push(single(a))
+  for (const a of by.get('wip') ?? []) out.push(single(a))
+  group('close', (n) => `${n} validados esperando fechar`, 'Concluir todos')
+  group('stale', (n) => `${n} parados em Fazendo`, 'Adiar 3 dias')
+  return out
+}
+
+export type WeekScore = { delivered: number; validated: number; done: number; byCompany: Record<string, number> }
+
+export function weekScore(state: Pick<WorkState, 'items' | 'events'>, today: string, scope: Scope = 'all'): WeekScore {
+  const ws = weekStart(today)
+  const company = new Map(state.items.map((i) => [i.id, i.companyId]))
+  const out: WeekScore = { delivered: 0, validated: 0, done: 0, byCompany: {} }
+  for (const e of state.events) {
+    if (e.kind !== 'stage' || !e.fromStage || !e.toStage || civilOf(e.at) < ws) continue
+    const co = company.get(e.itemId)
+    if (!co || !inScope(scope, co)) continue
+    if (stageIndex(e.toStage) <= stageIndex(e.fromStage)) continue
+    if (crossesDelivery(e.fromStage, e.toStage)) {
+      out.delivered++
+      out.byCompany[co] = (out.byCompany[co] ?? 0) + 1
+    }
+    if (e.toStage === 'validated') out.validated++
+    if (e.toStage === 'done') out.done++
+  }
+  return out
 }

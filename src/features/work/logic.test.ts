@@ -1,9 +1,10 @@
 import {
+  boardColumns, weekScore, fmtClock, fmtDur, itemTimeMs, moveSelection, nudges, rangeTimeMs, rulerModel, runningSession, sumTime,
   computeAlerts, computeHealth, computeMetrics, dayGrid, deliveryCycles, deliveryWeeks, dueState, findDuplicate, fixedTodos, forgetList,
   handledToday, healthLabel, parseCapture, parseDateWord, pendingChecks, planNotifications, previousWorkday, pruneSent, standup, streak,
   suggestFocus, todayTodos, upcomingTodos, weekStart,
 } from './logic.ts'
-import type { ChecklistEntry, Company, Todo, TodoCheck, WorkEvent, WorkItem } from './types.ts'
+import type { ChecklistEntry, Company, Session, Todo, TodoCheck, WorkEvent, WorkItem } from './types.ts'
 import { DEFAULT_SETTINGS } from './types.ts'
 
 type Assert = {
@@ -354,4 +355,103 @@ test('notificações: lembrete na hora, prazo e validação de manhã, sem repet
   const off = { ...s, settings: { ...DEFAULT_SETTINGS, notifyReminders: false, notifyDue: false, notifyValidation: false } }
   assert.equal(planNotifications(off, morning, {}).length, 0)
   assert.deepEqual(Object.keys(pruneSent({ a: '2026-10-01', b: TODAY }, TODAY)), ['b'])
+})
+
+test('quadro: colunas, concluídos recentes e seleção por teclado', () => {
+  const a = mk({ stage: 'todo', sort: 2 })
+  const b = mk({ stage: 'todo', sort: 1 })
+  const f = mk({ stage: 'todo', sort: 9, focusedAt: at(TODAY) })
+  const d = mk({ stage: 'doing' })
+  const old = mk({ stage: 'done', doneAt: at('2026-10-01') })
+  const fresh = mk({ stage: 'done', doneAt: at(TODAY) })
+  const other = mk({ stage: 'doing', companyId: 'livelo' })
+  const cols = boardColumns([a, b, f, d, old, fresh, other], 'statix', TODAY)
+  assert.deepEqual(cols[0].items.map((i) => i.id), [f.id, b.id, a.id])
+  assert.deepEqual(cols[1].items.map((i) => i.id), [d.id])
+  assert.deepEqual(cols[5].items.map((i) => i.id), [fresh.id])
+  assert.equal(moveSelection(cols, null, 'down'), f.id)
+  assert.equal(moveSelection(cols, f.id, 'down'), b.id)
+  assert.equal(moveSelection(cols, f.id, 'up'), f.id)
+  assert.equal(moveSelection(cols, a.id, 'right'), d.id)
+  assert.equal(moveSelection(cols, d.id, 'right'), fresh.id)
+  assert.equal(moveSelection(cols, fresh.id, 'right'), fresh.id)
+  assert.equal(moveSelection([], null, 'down'), null)
+})
+
+test('tempo: sessões, por item, por empresa e formatos', () => {
+  const a = mk({ companyId: 'statix' })
+  const b = mk({ companyId: 'livelo' })
+  const now = Date.parse(at(TODAY, 15))
+  const ss: Session[] = [
+    { id: 's1', itemId: a.id, startedAt: at(TODAY, 9), endedAt: at(TODAY, 10) },
+    { id: 's2', itemId: b.id, startedAt: at('2026-11-05', 23), endedAt: at(TODAY, 1) },
+    { id: 's3', itemId: a.id, startedAt: at(TODAY, 14), endedAt: null },
+  ]
+  assert.equal(runningSession(ss)?.id, 's3')
+  assert.equal(itemTimeMs(ss, a.id, now), 2 * 36e5)
+  const r = rangeTimeMs(ss, [a, b], TODAY, TODAY, now)
+  assert.equal(r.statix, 2 * 36e5)
+  assert.equal(r.livelo, 36e5)
+  assert.equal(sumTime(r), 3 * 36e5)
+  assert.equal(rangeTimeMs(ss, [a, b], TODAY, TODAY, now, 'livelo').statix, undefined)
+  assert.equal(fmtDur(0), '0 min')
+  assert.equal(fmtDur(25 * 6e4), '25 min')
+  assert.equal(fmtDur(65 * 6e4), '1h05')
+  assert.equal(fmtDur(120 * 6e4), '2h')
+  assert.equal(fmtClock(65 * 1000), '1:05')
+  assert.equal(fmtClock(3723 * 1000), '1:02:03')
+})
+
+test('régua do dia: pinos, prazos sem horário, sessões e faixa', () => {
+  const now = new Date(`${TODAY}T10:30:00`)
+  const t1 = td({ remindTime: '17:00', title: 'Mandar horas', mustNotForget: true })
+  const t2 = td({ mode: 'daily', remindTime: '09:00' })
+  const t3 = td({ mode: 'dated', dueDate: TODAY })
+  const t4 = td({ mode: 'dated', dueDate: '2026-11-20', remindTime: '08:00' })
+  const due = mk({ dueDate: TODAY, stage: 'doing' })
+  const delivered = mk({ dueDate: TODAY, stage: 'delivered' })
+  const s: Session[] = [{ id: 's', itemId: due.id, startedAt: at(TODAY, 7), endedAt: null }]
+  const m = rulerModel({ items: [due, delivered], todos: [t1, t2, t3, t4], todoChecks: [{ todoId: t2.id, date: TODAY }], sessions: s }, TODAY, now)
+  assert.deepEqual(m.pins.map((p) => [p.todoId, p.minute, p.kind, p.done]), [[t2.id, 540, 'todo', true], [t1.id, 1020, 'forget', false]])
+  assert.deepEqual(m.allDay.map((p) => p.todoId ?? p.itemId), [t3.id, due.id])
+  assert.equal(m.segments.length, 1)
+  assert.equal(m.segments[0].start, 420)
+  assert.equal(m.segments[0].end, 630)
+  assert.ok(m.segments[0].running)
+  assert.equal(m.startMin, 360)
+  assert.equal(m.endMin, 1140)
+  assert.equal(m.nowMin, 630)
+})
+
+test('cutucadas agrupam alertas em ações de um clique', () => {
+  const v1 = mk({ stage: 'delivered', deliveredAt: at('2026-11-02') })
+  const v2 = mk({ stage: 'tested', deliveredAt: at('2026-11-03') })
+  const ret = mk({ stage: 'doing', returnOpen: true, returnedAt: at(TODAY) })
+  const late = mk({ dueDate: '2026-11-01' })
+  const n = nudges(computeAlerts(base([v1, v2, ret, late], [ev(ret.id, 'returned', at(TODAY), { note: 'bug' })]), TODAY))
+  assert.equal(n[0].kind, 'returned')
+  const val = n.find((x) => x.kind === 'validation')!
+  assert.equal(val.text, '2 entregas sem validação há 3+ dias')
+  assert.deepEqual(new Set(val.itemIds), new Set([v1.id, v2.id]))
+  assert.deepEqual(val.action, { kind: 'followup', label: 'Cobrei todas' })
+  const od = n.find((x) => x.kind === 'overdue')!
+  assert.equal(od.action?.kind, 'due_tomorrow')
+  assert.equal(od.itemIds.length, 1)
+  assert.equal(nudges([]).length, 0)
+})
+
+test('placar da semana: entregas, validações e conclusões', () => {
+  const a = mk()
+  const b = mk({ companyId: 'livelo' })
+  const events = [
+    st(a.id, 'doing', 'delivered', at('2026-11-02')),
+    st(a.id, 'delivered', 'validated', at('2026-11-03')),
+    st(a.id, 'validated', 'done', at('2026-11-04')),
+    st(b.id, 'doing', 'done', at('2026-11-05')),
+    st(b.id, 'done', 'doing', at('2026-11-05', 13)),
+    st(a.id, 'doing', 'delivered', at('2026-10-30')),
+  ]
+  const w = weekScore(base([a, b], events), TODAY)
+  assert.deepEqual(w, { delivered: 2, validated: 1, done: 2, byCompany: { statix: 1, livelo: 1 } })
+  assert.equal(weekScore(base([a, b], events), TODAY, 'livelo').delivered, 1)
 })

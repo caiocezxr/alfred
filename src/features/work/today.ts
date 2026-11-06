@@ -33,8 +33,9 @@ function useMinute() {
   return t
 }
 
-export function useWorkToday(scope: string = 'all'): WorkToday {
-  const { state } = useWork()
+export function useWorkToday(scopeArg?: string): WorkToday {
+  const { state, scope: current } = useWork()
+  const scope = scopeArg ?? current
   const tick = useMinute()
   useEffect(() => {
     void loadWork()

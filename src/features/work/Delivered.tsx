@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { addDays, parseCivil } from '../../shared/dates'
 import { CompanyMark, coStyle } from './brand'
 import { Icon } from './icons'
-import { computeMetrics, deliveryWeeks, shortDay, weekStart, type Scope } from './logic'
+import { computeMetrics, deliveryWeeks, fmtDur, itemTimeMs, rangeTimeMs, shortDay, sumTime, weekStart, type Scope } from './logic'
 import { openItem } from './store'
 import type { WorkState } from './types'
 
@@ -16,6 +16,9 @@ export function Delivered({ state, today, scope }: { state: WorkState; today: st
   const max = Math.max(1, ...m.weeks.map((w) => w.total))
   const cur = weekStart(today)
   const order = state.companies.map((c) => c.id)
+  const nowMs = Date.now()
+  const weekTime = rangeTimeMs(state.sessions, state.items, cur, today, nowMs, scope)
+  const weekTotal = sumTime(weekTime)
   return (
     <div className="wk-delivered">
       <section className="panel wk-metrics reveal" style={{ ['--i' as string]: 1 }} aria-label="Métricas">
@@ -56,8 +59,17 @@ export function Delivered({ state, today, scope }: { state: WorkState; today: st
             </dd>
           </div>
           <div>
-            <dt>Concluídos em 7 dias</dt>
-            <dd>{m.doneLast7}</dd>
+            <dt>Tempo esta semana</dt>
+            <dd>
+              {weekTotal ? fmtDur(weekTotal) : '—'}
+              <small>
+                {weekTotal
+                  ? Object.entries(weekTime)
+                      .map(([co, ms]) => `${companies.get(co)?.name ?? co} ${fmtDur(ms)}`)
+                      .join(' · ')
+                  : `${m.doneLast7} concluídos em 7 dias`}
+              </small>
+            </dd>
           </div>
         </dl>
         {m.systems.length > 0 && (
@@ -117,6 +129,12 @@ export function Delivered({ state, today, scope }: { state: WorkState; today: st
                         </li>
                       ))}
                     </ol>
+                    {itemTimeMs(state.sessions, c.itemId, nowMs) >= 60000 && (
+                      <span className="wk-dl-time">
+                        <Icon name="clock" size={11} />
+                        {fmtDur(itemTimeMs(state.sessions, c.itemId, nowMs))}
+                      </span>
+                    )}
                     {c.returned && (
                       <span className="wk-dl-ret">
                         <Icon name="back" size={11} />

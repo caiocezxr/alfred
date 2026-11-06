@@ -109,6 +109,7 @@ pub struct WorkState {
     attachments: Vec<Attachment>,
     secrets: Vec<SecretMeta>,
     days: Vec<DayMark>,
+    sessions: Vec<Session>,
 }
 
 #[derive(Serialize, Debug)]
@@ -116,6 +117,23 @@ pub struct WorkState {
 pub struct ItemChange {
     pub item: Item,
     pub events: Vec<Event>,
+    pub sessions: Vec<Session>,
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Session {
+    pub id: String,
+    pub item_id: String,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct TimerChange {
+    pub item_ids: Vec<String>,
+    pub sessions: Vec<Session>,
 }
 
 #[derive(Deserialize, Default)]
@@ -328,7 +346,7 @@ fn events_of(c: &Connection, item_id: &str) -> rusqlite::Result<Vec<Event>> {
 }
 
 fn change(c: &Connection, id: &str) -> Res<ItemChange> {
-    Ok(ItemChange { item: find_item(c, id)?, events: db(events_of(c, id))? })
+    Ok(ItemChange { item: find_item(c, id)?, events: db(events_of(c, id))?, sessions: list_sessions(c, Some(id))? })
 }
 
 fn log(c: &Connection, item_id: &str, kind: &str, from: Option<&str>, to: Option<&str>, note: &str, pending: Option<i64>) -> Res<()> {
@@ -399,6 +417,7 @@ pub fn load(c: &Connection) -> Res<WorkState> {
         attachments: list_attachments(c, None)?,
         secrets: list_secrets(c)?,
         days: list_days(c)?,
+        sessions: list_sessions(c, None)?,
     })
 }
 
@@ -546,6 +565,9 @@ pub fn move_stage(c: &mut Connection, id: &str, to: &str, force: bool, note: Opt
         ),
         params![id, to, to_i as i64, crossing],
     ))?;
+    if to_i >= 2 {
+        db(tx.execute(&format!("UPDATE work_sessions SET ended_at = {NOW} WHERE item_id = ?1 AND ended_at IS NULL"), params![id]))?;
+    }
     log(&tx, id, "stage", Some(&cur.stage), Some(to), note.as_deref().unwrap_or(""), pending)?;
     db(tx.commit())?;
     change(c, id)
@@ -1423,6 +1445,64 @@ pub fn day_set(c: &Connection, d: DayMark) -> Res<DayMark> {
     Ok(d)
 }
 
+fn session_from(r: &Row) -> rusqlite::Result<Session> {
+    Ok(Session { id: r.get(0)?, item_id: r.get(1)?, started_at: r.get(2)?, ended_at: r.get(3)? })
+}
+
+fn list_sessions(c: &Connection, item_id: Option<&str>) -> Res<Vec<Session>> {
+    let mut st = db(c.prepare(
+        "SELECT id, item_id, started_at, ended_at FROM work_sessions
+         WHERE (?1 IS NULL AND started_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-400 days')) OR item_id = ?1
+         ORDER BY started_at, rowid",
+    ))?;
+    db(st.query_map(params![item_id], session_from).and_then(|m| m.collect()))
+}
+
+fn running_item(c: &Connection) -> Res<Option<String>> {
+    db(c.query_row("SELECT item_id FROM work_sessions WHERE ended_at IS NULL", [], |r| r.get(0)).optional())
+}
+
+fn timer_change(c: &Connection, ids: Vec<String>) -> Res<TimerChange> {
+    let mut sessions = Vec::new();
+    for id in &ids {
+        sessions.extend(list_sessions(c, Some(id))?);
+    }
+    Ok(TimerChange { item_ids: ids, sessions })
+}
+
+pub fn timer_start(c: &mut Connection, item_id: &str) -> Res<TimerChange> {
+    let it = find_item(c, item_id)?;
+    if it.stage == "done" {
+        return Err("item concluído não conta tempo".into());
+    }
+    let prev = running_item(c)?;
+    if prev.as_deref() == Some(item_id) {
+        return timer_change(c, vec![item_id.to_string()]);
+    }
+    let tx = db(c.transaction())?;
+    db(tx.execute(&format!("UPDATE work_sessions SET ended_at = {NOW} WHERE ended_at IS NULL"), []))?;
+    db(tx.execute("INSERT INTO work_sessions (id, item_id) VALUES (?1, ?2)", params![new_id(), item_id]))?;
+    db(tx.commit())?;
+    let mut ids = vec![item_id.to_string()];
+    if let Some(p) = prev {
+        ids.push(p);
+    }
+    timer_change(c, ids)
+}
+
+pub fn timer_stop(c: &Connection) -> Res<TimerChange> {
+    let Some(prev) = running_item(c)? else { return Ok(TimerChange { item_ids: vec![], sessions: vec![] }) };
+    db(c.execute(&format!("UPDATE work_sessions SET ended_at = {NOW} WHERE ended_at IS NULL"), []))?;
+    timer_change(c, vec![prev])
+}
+
+pub fn session_delete(c: &Connection, id: &str) -> Res<TimerChange> {
+    let item: Option<String> = db(c.query_row("SELECT item_id FROM work_sessions WHERE id = ?1", params![id], |r| r.get(0)).optional())?;
+    let item = item.ok_or_else(|| "sessão não encontrada".to_string())?;
+    db(c.execute("DELETE FROM work_sessions WHERE id = ?1", params![id]))?;
+    timer_change(c, vec![item])
+}
+
 fn run<T>(state: &State<AppState>, f: impl FnOnce(&mut Connection) -> Res<T>) -> R<T> {
     let mut out: Option<Res<T>> = None;
     with_conn(state, |c| {
@@ -1623,6 +1703,21 @@ pub fn work_secret_delete(state: State<AppState>, id: String) -> R<()> {
 #[tauri::command]
 pub fn work_day_set(state: State<AppState>, date: String, green: bool, open_count: i64, handled_count: i64) -> R<DayMark> {
     run(&state, |c| day_set(c, DayMark { date, green, open_count, handled_count }))
+}
+
+#[tauri::command]
+pub fn work_timer_start(state: State<AppState>, item_id: String) -> R<TimerChange> {
+    run(&state, |c| timer_start(c, &item_id))
+}
+
+#[tauri::command]
+pub fn work_timer_stop(state: State<AppState>) -> R<TimerChange> {
+    run(&state, |c| timer_stop(c))
+}
+
+#[tauri::command]
+pub fn work_session_delete(state: State<AppState>, id: String) -> R<TimerChange> {
+    run(&state, |c| session_delete(c, &id))
 }
 
 #[cfg(test)]
@@ -2095,5 +2190,35 @@ mod tests {
         assert!(!s2.notify_due);
         assert_eq!(s2.notify_hour, 8);
         assert!(set_settings(&c, Settings { notify_hour: 24, ..s }).is_err());
+    }
+
+    #[test]
+    fn cronometro_um_por_vez_e_para_ao_entregar() {
+        let (mut c, t) = fresh();
+        let a = item(&mut c, "statix", "a");
+        let b = item(&mut c, "livelo", "b");
+        let ch = timer_start(&mut c, &a.id).unwrap();
+        assert_eq!(ch.sessions.len(), 1);
+        assert!(ch.sessions[0].ended_at.is_none());
+        assert_eq!(timer_start(&mut c, &a.id).unwrap().sessions.len(), 1);
+        let ch = timer_start(&mut c, &b.id).unwrap();
+        assert_eq!(ch.item_ids, vec![b.id.clone(), a.id.clone()]);
+        let mine: Vec<_> = ch.sessions.iter().filter(|s| s.item_id == a.id).collect();
+        assert!(mine[0].ended_at.is_some());
+        assert!(c.execute("INSERT INTO work_sessions (id, item_id) VALUES ('x', ?1)", params![a.id]).is_err());
+        check_all(&c, &b);
+        let mv = move_stage(&mut c, &b.id, "delivered", false, None).unwrap();
+        assert!(mv.sessions.iter().all(|s| s.ended_at.is_some()));
+        assert!(timer_stop(&c).unwrap().item_ids.is_empty());
+        timer_start(&mut c, &a.id).unwrap();
+        let st = timer_stop(&c).unwrap();
+        assert_eq!(st.item_ids, vec![a.id.clone()]);
+        assert_eq!(load(&c).unwrap().sessions.len(), 3);
+        let sid = st.sessions[0].id.clone();
+        assert_eq!(session_delete(&c, &sid).unwrap().sessions.len(), 1);
+        move_stage(&mut c, &a.id, "done", true, None).unwrap();
+        assert!(timer_start(&mut c, &a.id).is_err());
+        delete(&mut c, &t.0, &MemVault::default(), &a.id).unwrap();
+        assert_eq!(load(&c).unwrap().sessions.len(), 1);
     }
 }

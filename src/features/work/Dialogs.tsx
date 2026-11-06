@@ -66,6 +66,8 @@ function DialogSwitch({ dialog, state, scope }: { dialog: Dialog; state: WorkSta
       return <DeleteDialog itemId={dialog.itemId} state={state} />
     case 'settings':
       return <WorkSettings state={state} tab={dialog.tab} onClose={close} />
+    case 'keys':
+      return <KeysDialog />
   }
 }
 
@@ -461,6 +463,47 @@ function DeleteDialog({ itemId, state }: { itemId: string; state: WorkState }) {
           }}
         >
           Excluir
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
+const KEYS: [string[], string][] = [
+  [['J', 'K'], 'Descer e subir no quadro'],
+  [['H', 'L'], 'Coluna anterior e próxima'],
+  [['Enter'], 'Abrir o item selecionado'],
+  [['E'], 'Avançar estágio'],
+  [['B'], 'Voltou (com motivo)'],
+  [['F'], 'Pôr ou tirar do foco'],
+  [['T'], 'Começar ou pausar o cronômetro'],
+  [['W'], 'Marcar como aguardando'],
+  [['/', 'N'], 'Capturar algo novo'],
+  [['0', '1', '2', '3'], 'Todos, Statix, Livelo, Pessoal'],
+  [['Esc'], 'Limpar seleção ou fechar'],
+  [['?'], 'Esta lista'],
+]
+
+function KeysDialog() {
+  return (
+    <Modal label="Atalhos de teclado" onClose={close} className="is-keys">
+      <h2 className="display">Atalhos</h2>
+      <p>Tudo sem tirar a mão do teclado. Selecione um cartão com J/K e aja nele.</p>
+      <dl className="wk-keys">
+        {KEYS.map(([ks, d]) => (
+          <div key={d}>
+            <dt>
+              {ks.map((k) => (
+                <kbd key={k}>{k}</kbd>
+              ))}
+            </dt>
+            <dd>{d}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="wk-dialog-actions">
+        <button className="btn primary" data-autofocus onClick={close}>
+          Entendi
         </button>
       </div>
     </Modal>

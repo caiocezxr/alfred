@@ -54,6 +54,8 @@ export type ImportTask = { title: string; note: string; dueDate: string | null; 
 export type Attachment = { id: string; itemId: string; mime: string; size: number; createdAt: string }
 export type SecretMeta = { id: string; itemId: string | null; companyId: string | null; label: string; createdAt: string }
 export type DayMark = { date: string; green: boolean; openCount: number; handledCount: number }
+export type Session = { id: string; itemId: string; startedAt: string; endedAt: string | null }
+export type TimerChange = { itemIds: string[]; sessions: Session[] }
 
 export type WorkItem = {
   id: string
@@ -109,9 +111,10 @@ export type WorkState = {
   attachments: Attachment[]
   secrets: SecretMeta[]
   days: DayMark[]
+  sessions: Session[]
 }
 
-export type ItemChange = { item: WorkItem; events: WorkEvent[] }
+export type ItemChange = { item: WorkItem; events: WorkEvent[]; sessions: Session[] }
 
 export type NewItem = {
   companyId: string

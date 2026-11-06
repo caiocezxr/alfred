@@ -4,14 +4,14 @@ import { openExternal } from '../../shared/openExternal'
 import { secretsAvailable, workApi } from './api'
 import { CompanyMark, coStyle } from './brand'
 import { Icon, type IconName } from './icons'
-import { checklistFor, dueLabel, dueState, isPost, pendingChecks, when } from './logic'
+import { checklistFor, civilOf, dueLabel, dueState, fmtClock, fmtDur, isPost, itemTimeMs, pendingChecks, sessionMs, when } from './logic'
 import {
-  addNote, attach, deleteNote, detach, openDialog, openItem, requestMove, resume, secretAdd, secretDelete, setCheck, setFocus, setWaiting,
-  followup, toast, updateItem, useWork,
+  addNote, attach, canMorph, closeItem, deleteNote, deleteSession, detach, followup, openDialog, openItem, requestMove, resume, secretAdd,
+  secretDelete, setCheck, setFocus, setWaiting, toast, toggleTimer, updateItem, useWork,
 } from './store'
 import {
   KINDS, KIND_LABEL, NEXT_ACTION, PRIORITIES, PRIORITY_LABEL, STAGES, STAGE_LABEL, type Attachment, type SecretMeta, type Stage, type WorkEvent,
-  type WorkItem, type WorkState,
+  type Session, type WorkItem, type WorkState,
 } from './types'
 
 export function Drawer({ state, today }: { state: WorkState; today: string }) {
@@ -20,6 +20,7 @@ export function Drawer({ state, today }: { state: WorkState; today: string }) {
   const panel = useRef<HTMLDivElement>(null)
   const [leaving, setLeaving] = useState(false)
   const close = () => {
+    if (canMorph() && document.querySelector(`[data-card="${openId}"]`)) return closeItem()
     setLeaving(true)
     setTimeout(() => {
       setLeaving(false)
@@ -155,6 +156,7 @@ export function Drawer({ state, today }: { state: WorkState; today: string }) {
                   Aguardando…
                 </button>
               ))}
+            {item.stage !== 'done' && <TimerButton item={item} sessions={state.sessions} />}
             {(item.waitingOn || item.stage === 'delivered' || item.stage === 'tested') && (
               <button className="btn wk-big" onClick={() => void followup(item.id)}>
                 <Icon name="user" size={14} />
@@ -168,6 +170,7 @@ export function Drawer({ state, today }: { state: WorkState; today: string }) {
           </div>
 
           <ChecklistBlock item={item} state={state} />
+          <TimeBlock item={item} sessions={state.sessions.filter((x) => x.itemId === item.id)} today={today} />
           <NotesBlock item={item} events={events} today={today} />
           <AttachmentsBlock item={item} attachments={state.attachments.filter((a) => a.itemId === item.id)} />
           <SecretsBlock owner={{ itemId: item.id }} secrets={state.secrets.filter((x) => x.itemId === item.id)} />
@@ -725,6 +728,62 @@ function Timeline({ events, today }: { events: WorkEvent[]; today: string }) {
           </li>
         ))}
       </ol>
+    </Block>
+  )
+}
+
+function useSecondTick(on: boolean) {
+  const [, setT] = useState(0)
+  useEffect(() => {
+    if (!on) return
+    const id = setInterval(() => setT((x) => x + 1), 1000)
+    return () => clearInterval(id)
+  }, [on])
+}
+
+function TimerButton({ item, sessions }: { item: WorkItem; sessions: Session[] }) {
+  const run = sessions.find((x) => !x.endedAt)
+  const live = run?.itemId === item.id
+  useSecondTick(live)
+  return (
+    <button className={`btn wk-big wk-timer-btn ${live ? 'is-live' : ''}`} onClick={() => void toggleTimer(item.id)}>
+      <Icon name={live ? 'pause' : 'play'} size={13} />
+      {live ? <span className="wk-mono">{fmtClock(sessionMs(run!, Date.now()))}</span> : 'Contar tempo'}
+    </button>
+  )
+}
+
+function TimeBlock({ item, sessions, today }: { item: WorkItem; sessions: Session[]; today: string }) {
+  const live = sessions.some((x) => !x.endedAt)
+  useSecondTick(live)
+  if (!sessions.length) return null
+  const now = Date.now()
+  const total = itemTimeMs(sessions, item.id, now)
+  const todayMs = sessions.filter((x) => civilOf(x.startedAt) === today || !x.endedAt).reduce((t, x) => t + sessionMs(x, now), 0)
+  const list = [...sessions].reverse().slice(0, 8)
+  const max = Math.max(...list.map((x) => sessionMs(x, now)), 1)
+  return (
+    <Block title="Tempo" icon="clock" aside={<span>{fmtDur(total)} no total</span>}>
+      <p className="wk-muted">
+        {sessions.length} {sessions.length === 1 ? 'sessão' : 'sessões'}
+        {todayMs > 0 ? ` · ${fmtDur(todayMs)} hoje` : ''}
+      </p>
+      <ul className="wk-sessions">
+        {list.map((x) => (
+          <li key={x.id} className={!x.endedAt ? 'is-live' : ''}>
+            <span className="wk-sess-at">{when(x.startedAt, today)}</span>
+            <span className="wk-sess-bar">
+              <i style={{ transform: `scaleX(${sessionMs(x, now) / max})` }} />
+            </span>
+            <span className="wk-sess-d">{x.endedAt ? fmtDur(sessionMs(x, now)) : fmtClock(sessionMs(x, now))}</span>
+            {x.endedAt && (
+              <button className="wk-icon-btn" onClick={() => void deleteSession(x.id)} aria-label="Apagar sessão" title="Apagar sessão">
+                <Icon name="x" size={11} />
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
     </Block>
   )
 }

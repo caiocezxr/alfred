@@ -1,6 +1,6 @@
 import type {
   Attachment, ChecklistEntry, Company, CompanyPatch, DayMark, ImportTask, ItemChange, ItemPatch, NewItem, NewTodo, SecretMeta, Settings,
-  Stage, Todo, TodoCheck, TodoMode, TodoPatch, WorkEvent, WorkItem, WorkState,
+  Session, Stage, TimerChange, Todo, TodoCheck, TodoMode, TodoPatch, WorkEvent, WorkItem, WorkState,
 } from './types.ts'
 import { DEFAULT_SETTINGS, KINDS, PRIORITIES, STAGES } from './types.ts'
 
@@ -17,6 +17,7 @@ type Db = {
   tasksImported: boolean
   attachments: Attachment[]
   days: DayMark[]
+  sessions: Session[]
 }
 
 export const LOCAL_KEY = 'ps.work.v1'
@@ -49,6 +50,7 @@ function seed(): Db {
     tasksImported: false,
     attachments: [],
     days: [],
+    sessions: [],
   }
 }
 
@@ -129,7 +131,12 @@ export function createLocal(storage: Storage, clock: () => Date = () => new Date
       const order = activeChecklist()
       return { ...it, checks: order.filter((c) => it.checks.includes(c.id)).sort((x, y) => x.sort - y.sort).map((c) => c.id) }
     }
-    const change = (id: string): ItemChange => ({ item: view(item(id)), events: db.events.filter((e) => e.itemId === id) })
+    const change = (id: string): ItemChange => ({
+      item: view(item(id)),
+      events: db.events.filter((e) => e.itemId === id),
+      sessions: db.sessions.filter((x) => x.itemId === id),
+    })
+    const timerChange = (ids: string[]): TimerChange => ({ itemIds: ids, sessions: db.sessions.filter((x) => ids.includes(x.itemId)) })
     const log = (itemId: string, kind: WorkEvent['kind'], from: Stage | null, to: Stage | null, note = '', pending: number | null = null) =>
       db.events.push({ id: uid(), itemId, kind, fromStage: from, toStage: to, note: clip(note, 1000), pending, at: now() })
     const touch = (it: WorkItem) => (it.updatedAt = now())
@@ -169,6 +176,7 @@ export function createLocal(storage: Storage, clock: () => Date = () => new Date
           attachments: db.attachments,
           secrets: [] as SecretMeta[],
           days: [...db.days].sort((x, y) => x.date.localeCompare(y.date)),
+          sessions: [...db.sessions].sort((x, y) => x.startedAt.localeCompare(y.startedAt)),
         }
         return state
       }
@@ -249,6 +257,7 @@ export function createLocal(storage: Storage, clock: () => Date = () => new Date
         db.items = db.items.filter((x) => x.id !== id)
         db.events = db.events.filter((e) => e.itemId !== id)
         db.attachments = db.attachments.filter((x) => x.itemId !== id)
+        db.sessions = db.sessions.filter((x) => x.itemId !== id)
         for (const t of db.todos) if (t.itemId === id) t.itemId = null
         return save(undefined)
       }
@@ -279,6 +288,7 @@ export function createLocal(storage: Storage, clock: () => Date = () => new Date
         it.followupAt = null
         it.snoozedUntil = null
         touch(it)
+        if (ti >= 2) for (const x of db.sessions) if (x.itemId === it.id && !x.endedAt) x.endedAt = t
         log(it.id, 'stage', from, to, (a.note as string | null) ?? '', pending)
         return save(change(it.id))
       }
@@ -560,6 +570,28 @@ export function createLocal(storage: Storage, clock: () => Date = () => new Date
       case 'work_secret_reveal':
       case 'work_secret_delete':
         return secretsUnavailable()
+      case 'work_timer_start': {
+        const it = item(a.itemId as string)
+        if (it.stage === 'done') throw new Error('item concluído não conta tempo')
+        const run = db.sessions.find((x) => !x.endedAt)
+        if (run?.itemId === it.id) return timerChange([it.id])
+        const t = now()
+        if (run) run.endedAt = t
+        db.sessions.push({ id: uid(), itemId: it.id, startedAt: t, endedAt: null })
+        return save(timerChange(run ? [it.id, run.itemId] : [it.id]))
+      }
+      case 'work_timer_stop': {
+        const run = db.sessions.find((x) => !x.endedAt)
+        if (!run) return { itemIds: [], sessions: [] }
+        run.endedAt = now()
+        return save(timerChange([run.itemId]))
+      }
+      case 'work_session_delete': {
+        const x = db.sessions.find((y) => y.id === a.id)
+        if (!x) throw new Error('sessão não encontrada')
+        db.sessions = db.sessions.filter((y) => y.id !== x.id)
+        return save(timerChange([x.itemId]))
+      }
       case 'work_day_set': {
         const date = a.date as string
         if (!isDate(date)) throw new Error('data inválida')

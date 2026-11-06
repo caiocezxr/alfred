@@ -3,7 +3,7 @@ import { isTauri } from '../../shared/db/api'
 import { createLocal } from './local'
 import type {
   Attachment, ChecklistEntry, Company, CompanyPatch, DayMark, ImportTask, ItemChange, ItemPatch, NewItem, NewTodo, SecretMeta, Settings,
-  Stage, Todo, TodoCheck, TodoPatch, WorkState,
+  Stage, TimerChange, Todo, TodoCheck, TodoPatch, WorkState,
 } from './types'
 
 const local = typeof window !== 'undefined' && !isTauri ? createLocal(window.localStorage) : null
@@ -119,6 +119,10 @@ export const workApi = {
     call<SecretMeta>('work_secret_add', { itemId: owner.itemId ?? null, companyId: owner.companyId ?? null, label, value }),
   secretReveal: (id: string) => call<string>('work_secret_reveal', { id }),
   secretDelete: (id: string) => call<void>('work_secret_delete', { id }),
+
+  timerStart: (itemId: string) => call<TimerChange>('work_timer_start', { itemId }),
+  timerStop: () => call<TimerChange>('work_timer_stop'),
+  sessionDelete: (id: string) => call<TimerChange>('work_session_delete', { id }),
 
   daySet: (d: DayMark) => call<DayMark>('work_day_set', { date: d.date, green: d.green, openCount: d.openCount, handledCount: d.handledCount }),
 }

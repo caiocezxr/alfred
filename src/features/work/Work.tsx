@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { onIntent } from '../../app/router'
 import { civil, fmtLong } from '../../shared/dates'
@@ -6,15 +6,20 @@ import { Segmented } from '../../shared/ui/Segmented'
 import { Board } from './Board'
 import { CompanyMark } from './brand'
 import { Capture } from './Capture'
-import { AttentionPanel, FocusPanel, ForgetStrip, HealthPanel, TodosPanel } from './Copilot'
+import { FocusTile, ForgetTile, HealthTile, Scoreboard, TodosTile } from './Copilot'
 import { Delivered } from './Delivered'
 import { DialogHost } from './Dialogs'
 import { Drawer } from './Drawer'
 import { Icon } from './icons'
-import { computeAlerts, computeHealth, countsFor, forgetList, healthLabel, localNow, type Scope } from './logic'
+import { boardColumns, computeAlerts, computeHealth, forgetList, healthLabel, isPost, localNow, moveSelection, nudges, rulerModel, weekScore } from './logic'
 import { startNotifier } from './notify'
-import { dismissToast, loadWork, openDialog, readUi, useWork, writeUi } from './store'
-import type { WorkState } from './types'
+import { Nudges } from './Nudges'
+import { Ruler } from './Ruler'
+import {
+  dismissToast, getWork, initScope, loadWork, openDialog, openItemFrom, readUi, requestMove, select, setFocus, setScope, toggleTimer, useWork,
+  writeUi,
+} from './store'
+import { NEXT_ACTION, type WorkState } from './types'
 import './work.css'
 
 startNotifier()
@@ -28,7 +33,16 @@ function useClock() {
   return now
 }
 
-function ScopeFilter({ state, value, onChange }: { state: WorkState; value: Scope; onChange: (s: Scope) => void }) {
+function inkFor(hex: string) {
+  const n = parseInt(hex.slice(1), 16)
+  const ch = [n >> 16, (n >> 8) & 255, n & 255].map((v) => {
+    const c = v / 255
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2] > 0.4 ? '#14100a' : '#ffffff'
+}
+
+function ScopeFilter({ state, value }: { state: WorkState; value: string }) {
   const box = useRef<HTMLDivElement>(null)
   const [pill, setPill] = useState<{ x: number; w: number } | null>(null)
   const opts = [{ id: 'all', name: 'Todos' }, ...state.companies]
@@ -39,12 +53,12 @@ function ScopeFilter({ state, value, onChange }: { state: WorkState; value: Scop
   return (
     <div className="seg wk-scope" role="tablist" aria-label="Espaço" ref={box}>
       {pill && <span className="seg-pill" style={{ transform: `translateX(${pill.x}px)`, width: pill.w }} />}
-      {opts.map((o) => {
+      {opts.map((o, i) => {
         const c = state.companies.find((x) => x.id === o.id)
         return (
-          <button key={o.id} data-id={o.id} role="tab" aria-selected={value === o.id} className="seg-btn" onClick={() => onChange(o.id)}>
+          <button key={o.id} data-id={o.id} role="tab" aria-selected={value === o.id} className="seg-btn" onClick={() => setScope(o.id)} title={`${o.name} (${i})`}>
             {c && <CompanyMark company={c} size={15} />}
-            {o.name}
+            <span className="wk-scope-name">{o.name}</span>
           </button>
         )
       })}
@@ -52,114 +66,168 @@ function ScopeFilter({ state, value, onChange }: { state: WorkState; value: Scop
   )
 }
 
+function rootAccent() {
+  if (typeof document === 'undefined') return '#c2ab88'
+  return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#c2ab88'
+}
+
 export default function Work() {
-  const { state, error, toast } = useWork()
+  const { state, error, toast, scope } = useWork()
   const now = useClock()
   const today = civil(now)
   const nowLocal = localNow(now)
-  const [scope, setScopeRaw] = useState<Scope>(() => readUi().scope ?? 'all')
   const [view, setViewRaw] = useState<'board' | 'delivered'>(() => readUi().view ?? 'board')
   const capture = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
+    initScope()
     void loadWork()
   }, [])
   useEffect(() => onIntent((i) => i === 'new-task' && capture.current?.focus()), [])
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return
-      const t = e.target as HTMLElement
-      if (t.closest('input, textarea, select, [contenteditable="true"]')) return
-      if (document.querySelector('.wk-scrim, .wk-drawer')) return
-      if (e.key === 'n') {
-        e.preventDefault()
-        capture.current?.focus()
-      }
-    }
-    window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
-  }, [])
 
   const validScope = state && scope !== 'all' && !state.companies.some((c) => c.id === scope) ? 'all' : scope
-  const setScope = (s: Scope) => {
-    setScopeRaw(s)
-    writeUi({ scope: s })
-  }
   const setView = (v: 'board' | 'delivered') => {
     setViewRaw(v)
     writeUi({ view: v })
   }
 
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const t = e.target as HTMLElement
+      if (t.closest('input, textarea, select, [contenteditable="true"]')) return
+      if (document.querySelector('.wk-scrim, .wk-drawer, .wk-ghost')) return
+      const st = getWork().state
+      if (!st) return
+      const sc = getWork().scope
+      const cols = boardColumns(st.items, sc, civil())
+      const sel = getWork().selectedId
+      const item = sel ? st.items.find((i) => i.id === sel) : null
+      const dir = ({ j: 'down', ArrowDown: 'down', k: 'up', ArrowUp: 'up', h: 'left', ArrowLeft: 'left', l: 'right', ArrowRight: 'right' } as const)[e.key as 'j']
+      if (dir) {
+        e.preventDefault()
+        if (view !== 'board') setView('board')
+        select(moveSelection(cols, sel, dir))
+        return
+      }
+      if (e.key === '/' || e.key === 'n') {
+        e.preventDefault()
+        capture.current?.focus()
+        return
+      }
+      if (e.key === '?') {
+        e.preventDefault()
+        openDialog({ kind: 'keys' })
+        return
+      }
+      if (/^[0-9]$/.test(e.key)) {
+        const ids = ['all', ...st.companies.map((c) => c.id)]
+        const id = ids[Number(e.key)]
+        if (id) setScope(id)
+        return
+      }
+      if (e.key === 'Escape' && sel) return select(null)
+      if (!item) return
+      const el = document.querySelector<HTMLElement>(`[data-card="${item.id}"]`)
+      if (e.key === 'Enter' || e.key === 'o') {
+        e.preventDefault()
+        openItemFrom(item.id, el)
+      } else if (e.key === 'e') {
+        const next = NEXT_ACTION[item.stage]
+        if (next) requestMove(item.id, next.to)
+      } else if (e.key === 'b') {
+        if (isPost(item.stage)) openDialog({ kind: 'return', itemId: item.id })
+      } else if (e.key === 'f') {
+        if (item.stage !== 'done') void setFocus(item.id, !item.focusedAt)
+      } else if (e.key === 't') {
+        if (item.stage !== 'done') void toggleTimer(item.id)
+      } else if (e.key === 'w') {
+        if (item.stage !== 'done') openDialog({ kind: 'wait', itemId: item.id })
+      }
+    }
+    window.addEventListener('keydown', key)
+    return () => window.removeEventListener('keydown', key)
+  }, [view])
+
   const derived = useMemo(() => {
     if (!state) return null
     const alerts = computeAlerts(state, today, validScope)
     const health = computeHealth(state, today, nowLocal, validScope, alerts)
-    const perCompany = state.companies.map((company) => {
-      const h = computeHealth(state, today, nowLocal, company.id)
-      const c = countsFor(state.items, company.id, today)
-      return { company, health: h, counts: { doing: c.doing, waiting: c.waiting, validation: c.validation, returned: c.returned } }
-    })
+    const perCompany = state.companies.map((company) => ({ company, health: computeHealth(state, today, nowLocal, company.id) }))
     const forget = forgetList(state.todos, state.todoChecks, today, nowLocal, validScope)
-    const tips = alerts.filter((a) => a.severity < 2)
-    return { alerts, health, perCompany, forget, tips }
-  }, [state, today, nowLocal, validScope])
+    return { health, perCompany, forget, nudges: nudges(alerts), ruler: rulerModel(state, today, now, validScope), score: weekScore(state, today, validScope) }
+  }, [state, today, nowLocal, validScope, now])
+
+  const company = state?.companies.find((c) => c.id === validScope) ?? null
+  const tint = company?.color ?? rootAccent()
+  const style = {
+    '--wk-tint': tint,
+    '--accent': 'var(--wk-tint)',
+    '--accent-ink': company ? inkFor(company.color) : undefined,
+  } as CSSProperties
 
   if (!state || !derived) {
     return (
-      <section className="page wk">
+      <section className="page wk" style={style}>
         <header className="wk-head">
-          <div>
+          <div className="wk-title">
             <div className="kicker">{fmtLong.format(now)}</div>
             <h1 className="display">Workstation</h1>
-            <p className="wk-sub">{error ? `Não consegui abrir os dados: ${error}` : 'Carregando…'}</p>
           </div>
         </header>
+        <p className="wk-sub">{error ? `Não consegui abrir os dados: ${error}` : 'Carregando…'}</p>
       </section>
     )
   }
 
-  const { health, perCompany, forget, tips } = derived
+  const { health, perCompany, forget } = derived
 
   return (
-    <section className={`page wk is-${health.level}`}>
+    <section className={`page wk is-${health.level} ${forget.length ? 'has-forget' : ''}`} style={style} data-scope={validScope}>
+      <div className="wk-ambient" aria-hidden="true">
+        {[{ id: 'all', color: 'var(--accent)' }, ...state.companies].map((c) => (
+          <span key={c.id} className={`wk-amb ${validScope === c.id ? 'is-on' : ''}`} style={{ ['--amb' as string]: 'color' in c ? c.color : undefined }} />
+        ))}
+      </div>
+
       <header className="wk-head reveal" style={{ ['--i' as string]: 0 }}>
-        <div>
+        <div className="wk-title">
           <div className="kicker">{fmtLong.format(now)}</div>
           <h1 className="display">Workstation</h1>
           <p className="wk-sub">
             <span className={`wk-dot is-${health.level}`} aria-hidden="true" />
-            {healthLabel(health)}
+            <span className="wk-sub-text">{healthLabel(health)}</span>
           </p>
         </div>
+        <Scoreboard score={derived.score} companies={state.companies} />
         <div className="wk-head-tools">
-          <ScopeFilter state={state} value={validScope} onChange={setScope} />
-          <div className="wk-head-btns">
-            <button className="btn" onClick={() => openDialog({ kind: 'standup' })}>
-              <Icon name="text" size={14} />
-              Daily
-            </button>
-            <button className="btn quiet" onClick={() => openDialog({ kind: 'settings' })} aria-label="Ajustes">
-              <Icon name="gear" size={15} />
-            </button>
-          </div>
+          <ScopeFilter state={state} value={validScope} />
+          <button className="btn quiet wk-tool" onClick={() => openDialog({ kind: 'standup' })} title="Gerar o texto da daily">
+            <Icon name="text" size={14} />
+            <span>Daily</span>
+          </button>
+          <button className="btn quiet wk-tool" onClick={() => openDialog({ kind: 'keys' })} aria-label="Atalhos de teclado" title="Atalhos (?)">
+            <kbd>?</kbd>
+          </button>
+          <button className="btn quiet wk-tool" onClick={() => openDialog({ kind: 'settings' })} aria-label="Ajustes" title="Ajustes">
+            <Icon name="gear" size={15} />
+          </button>
         </div>
       </header>
 
-      <Capture ref={capture} state={state} today={today} scope={validScope} />
-      <ForgetStrip entries={forget} companies={state.companies} />
-
-      <div className="wk-top">
-        <HealthPanel state={state} health={health} perCompany={perCompany} today={today} scope={validScope} onScope={setScope} />
-        <AttentionPanel health={health} tips={tips} state={state} today={today} onTodo={(id) => openDialog({ kind: 'todo', todoId: id })} />
+      <div className="wk-strip reveal" style={{ ['--i' as string]: 1 }}>
+        <Capture ref={capture} state={state} today={today} scope={validScope} />
+        <Ruler model={derived.ruler} companies={state.companies} />
       </div>
 
-      <div className="wk-mid">
-        <TodosPanel state={state} today={today} scope={validScope} />
-        <FocusPanel state={state} today={today} scope={validScope} />
+      <div className="wk-bento">
+        <HealthTile state={state} health={health} perCompany={perCompany} today={today} scope={validScope} />
+        <ForgetTile entries={forget} companies={state.companies} />
+        <FocusTile state={state} today={today} scope={validScope} />
+        <TodosTile state={state} today={today} scope={validScope} />
       </div>
 
-      <div className="wk-view-head reveal" style={{ ['--i' as string]: 7 }}>
-        <h2 className="display">{view === 'board' ? 'Quadro' : 'Entregues'}</h2>
+      <div className="wk-toolbar reveal" style={{ ['--i' as string]: 6 }}>
         <Segmented
           label="Visão"
           value={view}
@@ -169,8 +237,10 @@ export default function Work() {
             { id: 'delivered', label: 'Entregues' },
           ]}
         />
+        <Nudges list={derived.nudges} />
       </div>
-      <div key={view} className="wk-view reveal" style={{ ['--i' as string]: 8 }}>
+
+      <div key={view} className={`wk-view is-${view} reveal`} style={{ ['--i' as string]: 7 }}>
         {view === 'board' ? <Board state={state} today={today} scope={validScope} /> : <Delivered state={state} today={today} scope={validScope} />}
       </div>
 
@@ -178,20 +248,20 @@ export default function Work() {
       <DialogHost state={state} scope={validScope} />
       {toast &&
         createPortal(
-        <div className={`wk-toast is-${toast.tone ?? 'info'}`} role="status" key={toast.id}>
-          <span>{toast.text}</span>
-          {toast.undo && (
-            <button
-              className="btn quiet"
-              onClick={() => {
-                toast.undo!()
-                dismissToast()
-              }}
-            >
-              Desfazer
-            </button>
-          )}
-        </div>,
+          <div className={`wk-toast is-${toast.tone ?? 'info'}`} role="status" key={toast.id}>
+            <span>{toast.text}</span>
+            {toast.undo && (
+              <button
+                className="btn quiet"
+                onClick={() => {
+                  toast.undo!()
+                  dismissToast()
+                }}
+              >
+                Desfazer
+              </button>
+            )}
+          </div>,
           document.body,
         )}
     </section>

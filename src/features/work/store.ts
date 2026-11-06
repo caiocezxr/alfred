@@ -1,9 +1,11 @@
 import { useSyncExternalStore } from 'react'
-import { civil } from '../../shared/dates'
+import { flushSync } from 'react-dom'
+import { addDays, civil } from '../../shared/dates'
 import { api as legacyApi } from '../../shared/db/api'
+import { HYBRID, getProfile, onProfile, profileFromScope, profileScope, setProfile } from '../../shared/profile'
 import { workApi } from './api'
-import { computeHealth, crossesDelivery, isPost, localNow, pendingChecks, todoDoneOn } from './logic'
-import type { ChecklistEntry, Company, ItemChange, ItemPatch, NewItem, NewTodo, Settings, Stage, Todo, TodoPatch, WorkItem, WorkState } from './types'
+import { computeHealth, crossesDelivery, isPost, localNow, pendingChecks, todoDoneOn, type Nudge } from './logic'
+import type { ChecklistEntry, Company, ItemChange, ItemPatch, NewItem, NewTodo, Settings, Stage, TimerChange, Todo, TodoPatch, WorkItem, WorkState } from './types'
 
 export type Dialog =
   | { kind: 'deliver'; itemId: string; to: Stage }
@@ -14,6 +16,7 @@ export type Dialog =
   | { kind: 'todo'; todoId?: string; draft?: Partial<NewTodo> }
   | { kind: 'settings'; tab?: 'alerts' | 'companies' | 'checklist' | 'notify' }
   | { kind: 'delete'; itemId: string }
+  | { kind: 'keys' }
 
 export type Toast = { id: number; text: string; tone?: 'error' | 'ok'; undo?: () => void }
 export type Celebration = { id: number; itemId: string | null; todoId: string | null; color: string | null }
@@ -26,9 +29,11 @@ type S = {
   dialog: Dialog | null
   toast: Toast | null
   celebrate: Celebration | null
+  selectedId: string | null
+  scope: string
 }
 
-let s: S = { state: null, loading: false, error: null, openId: null, dialog: null, toast: null, celebrate: null }
+let s: S = { state: null, loading: false, error: null, openId: null, dialog: null, toast: null, celebrate: null, selectedId: null, scope: profileScope(getProfile()) }
 const listeners = new Set<() => void>()
 const emit = () => listeners.forEach((l) => l())
 const set = (patch: Partial<S>) => {
@@ -63,7 +68,7 @@ export const dismissToast = () => set({ toast: null })
 const fail = (e: unknown) => toast(e instanceof Error ? e.message : String(e), { tone: 'error' })
 
 const UI_KEY = 'ps.work.ui.v1'
-export type UiPrefs = { scope?: string; view?: 'board' | 'delivered'; sound?: boolean; lastCompany?: string; asked?: boolean; captureTarget?: 'todo' | 'work'; todoTab?: 'today' | 'fixed' | 'upcoming' | 'done' }
+export type UiPrefs = { scope?: string; view?: 'board' | 'delivered'; sound?: boolean; lastCompany?: string; asked?: boolean; captureTarget?: 'todo' | 'work'; todoTab?: 'today' | 'fixed' | 'upcoming' | 'done'; slimDone?: boolean }
 export function readUi(): UiPrefs {
   try {
     return JSON.parse(localStorage.getItem(UI_KEY) ?? '{}') as UiPrefs
@@ -117,9 +122,136 @@ function apply(ch: ItemChange) {
       ...st,
       items: exists ? st.items.map((i) => (i.id === ch.item.id ? ch.item : i)) : [ch.item, ...st.items],
       events: [...st.events.filter((e) => e.itemId !== ch.item.id), ...ch.events].sort((a, b) => a.at.localeCompare(b.at)),
+      sessions: [...st.sessions.filter((x) => x.itemId !== ch.item.id), ...ch.sessions].sort((a, b) => a.startedAt.localeCompare(b.startedAt)),
     }
   })
   return ch.item
+}
+
+function applyTimer(ch: TimerChange) {
+  patchState((st) => ({
+    ...st,
+    sessions: [...st.sessions.filter((x) => !ch.itemIds.includes(x.itemId)), ...ch.sessions].sort((a, b) => a.startedAt.localeCompare(b.startedAt)),
+  }))
+}
+
+export async function startTimer(id: string) {
+  const it = itemById(id)
+  if (!it) return
+  try {
+    applyTimer(await workApi.timerStart(id))
+    if (it.stage === 'todo') await run(workApi.move(id, 'doing'))
+  } catch (e) {
+    fail(e)
+  }
+}
+export async function stopTimer() {
+  try {
+    applyTimer(await workApi.timerStop())
+  } catch (e) {
+    fail(e)
+  }
+}
+export function toggleTimer(id: string) {
+  const running = s.state?.sessions.find((x) => !x.endedAt)
+  return running?.itemId === id ? stopTimer() : startTimer(id)
+}
+export async function deleteSession(id: string) {
+  try {
+    applyTimer(await workApi.sessionDelete(id))
+  } catch (e) {
+    fail(e)
+  }
+}
+
+export const select = (id: string | null) => s.selectedId !== id && set({ selectedId: id })
+export function setScope(scope: string) {
+  if (scope === s.scope) return
+  set({ scope })
+  setProfile(profileFromScope(scope), s.state?.companies.find((c) => c.id === scope)?.color ?? null)
+}
+export function initScope() {
+  const v = profileScope(getProfile())
+  if (s.scope !== v) set({ scope: v })
+}
+if (typeof window !== 'undefined') onProfile((p) => s.scope !== profileScope(p) && set({ scope: profileScope(p) }))
+
+type VT = { startViewTransition?: (cb: () => void) => { finished: Promise<void> } }
+export const canMorph = () =>
+  typeof document !== 'undefined' && !!(document as unknown as VT).startViewTransition && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+function morph(update: () => void, el: HTMLElement | null) {
+  const doc = document as unknown as VT
+  if (!canMorph() || !el || document.documentElement.dataset.vt) return update()
+  const root = document.documentElement
+  root.dataset.vt = 'wk'
+  el.style.setProperty('view-transition-name', 'wk-item')
+  doc
+    .startViewTransition!(() => {
+      el.style.removeProperty('view-transition-name')
+      flushSync(update)
+    })
+    .finished.finally(() => {
+      delete root.dataset.vt
+      el.style.removeProperty('view-transition-name')
+    })
+}
+
+export function openItemFrom(id: string, el?: HTMLElement | null) {
+  select(id)
+  morph(() => set({ openId: id }), el ?? null)
+}
+
+export function closeItem() {
+  const id = s.openId
+  if (!id) return
+  const doc = document as unknown as VT
+  const card = document.querySelector<HTMLElement>(`[data-card="${id}"]`)
+  if (!canMorph() || !card || document.documentElement.dataset.vt) return set({ openId: null })
+  const root = document.documentElement
+  root.dataset.vt = 'wk-close'
+  doc
+    .startViewTransition!(() => {
+      flushSync(() => set({ openId: null }))
+      card.style.setProperty('view-transition-name', 'wk-item')
+    })
+    .finished.finally(() => {
+      delete root.dataset.vt
+      card.style.removeProperty('view-transition-name')
+    })
+}
+
+export async function runNudge(n: Nudge) {
+  if (!n.action) return n.itemIds[0] && openItemFrom(n.itemIds[0])
+  const today = civil()
+  const ids = n.itemIds
+  switch (n.action.kind) {
+    case 'followup':
+      for (const id of ids) await run(workApi.followup(id, null))
+      return toast(ids.length > 1 ? `${ids.length} cobranças registradas` : 'Cobrança registrada', { tone: 'ok' })
+    case 'resume':
+      for (const id of ids) await run(workApi.resume(id))
+      return
+    case 'snooze':
+      for (const id of ids) await run(workApi.snooze(id, addDays(today, 3)))
+      return toast('Adiado por 3 dias', { tone: 'ok' })
+    case 'due_tomorrow':
+      for (const id of ids) await run(workApi.update(id, { dueDate: addDays(today, 1) }))
+      return toast(ids.length > 1 ? 'Prazos movidos para amanhã' : 'Prazo movido para amanhã', { tone: 'ok' })
+    case 'focus':
+      for (const id of ids.slice(0, 3)) await run(workApi.focus(id, true))
+      return
+    case 'close':
+      for (const id of ids) {
+        const it = await run(workApi.move(id, 'done', true))
+        if (it) celebrate(id)
+      }
+      return
+    case 'open':
+      return ids[0] && openItemFrom(ids[0], document.querySelector<HTMLElement>(`[data-card="${ids[0]}"]`))
+    case 'show_doing':
+      return document.getElementById('wk-col-doing')?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+  }
 }
 
 async function run(p: Promise<ItemChange>): Promise<WorkItem | null> {
@@ -345,11 +477,14 @@ function putCompany(c: Company) {
     companies: (st.companies.some((x) => x.id === c.id) ? st.companies.map((x) => (x.id === c.id ? c : x)) : [...st.companies, c]).sort((a, b) => a.sort - b.sort),
   }))
 }
-export async function companyCreate(name: string, color: string) {
+export async function companyCreate(name: string, color: string): Promise<Company | null> {
   try {
-    putCompany(await workApi.companyCreate(name, color))
+    const c = await workApi.companyCreate(name, color)
+    putCompany(c)
+    return c
   } catch (e) {
     fail(e)
+    return null
   }
 }
 export async function companyUpdate(id: string, patch: { name?: string; color?: string; logo?: string | null }) {
@@ -363,6 +498,8 @@ export async function companyDelete(id: string) {
   try {
     await workApi.companyDelete(id)
     patchState((st) => ({ ...st, companies: st.companies.filter((c) => c.id !== id), checklist: st.checklist.filter((c) => c.companyId !== id) }))
+    if (getProfile() === id) setProfile(HYBRID)
+    if (s.scope === id) set({ scope: 'all' })
   } catch (e) {
     fail(e)
   }

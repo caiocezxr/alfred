@@ -1,5 +1,5 @@
 import { createLocal, slugify } from './local.ts'
-import type { ItemChange, Todo, TodoCheck, WorkState } from './types.ts'
+import type { ItemChange, TimerChange, Todo, TodoCheck, WorkState } from './types.ts'
 
 type Assert = {
   equal(actual: unknown, expected: unknown, message?: string): void
@@ -102,6 +102,21 @@ test('to-dos, conversão, importação, segredos indisponíveis e dias', () => {
   x('work_day_set', { date: '2026-11-06', green: true, openCount: 0, handledCount: 2 })
   x('work_day_set', { date: '2026-11-06', green: false, openCount: 1, handledCount: 2 })
   assert.deepEqual(x<WorkState>('work_load').days, [{ date: '2026-11-06', green: false, openCount: 1, handledCount: 2 }])
+})
+
+test('cronômetro: um por vez, para ao entregar e some com o item', () => {
+  const { x } = setup()
+  const a = x<ItemChange>('work_item_create', { input: { companyId: 'statix', title: 'a' } }).item
+  const b = x<ItemChange>('work_item_create', { input: { companyId: 'livelo', title: 'b', kind: 'pendencia' } }).item
+  x('work_timer_start', { itemId: a.id })
+  const sw = x<TimerChange>('work_timer_start', { itemId: b.id })
+  assert.deepEqual(sw.itemIds, [b.id, a.id])
+  assert.equal(sw.sessions.filter((s) => !s.endedAt).length, 1)
+  const mv = x<ItemChange>('work_item_move', { id: b.id, stage: 'delivered', force: false })
+  assert.ok(mv.sessions.every((s) => s.endedAt))
+  assert.equal(x<TimerChange>('work_timer_stop').itemIds.length, 0)
+  x('work_item_delete', { id: a.id })
+  assert.equal(x<WorkState>('work_load').sessions.length, 1)
 })
 
 test('utilitários', () => {
