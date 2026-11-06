@@ -487,3 +487,16 @@
   width: 100%;
   min-width: 0;
 }
+
+.pf-btn {
+  height: 52px;
+}
+
+.pf-name {
+  font-size: 15px;
+}
+
+.pf-btn .pf-mark {
+  width: 32px;
+  height: 32px;
+}

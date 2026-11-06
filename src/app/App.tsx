@@ -49,6 +49,7 @@ export function App() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('ps.sidebar') === 'collapsed')
   const [palette, setPalette] = useState(false)
   const [themePicker, setThemePicker] = useState(false)
+  const [hoverNav, setHoverNav] = useState<number | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [ritualOnHome] = useState(() => route === 'home')
   const error = useSyncExternalStore(errorStore.subscribe, errorStore.get)
@@ -121,10 +122,11 @@ export function App() {
           <span className="side-label">Ir para…</span>
           <kbd className="side-label">⌘K</kbd>
         </button>
-        <nav className="side-nav">
-          <span className="side-indicator" style={{ transform: `translateY(${Math.max(0, ROUTES.findIndex((r) => r.id === route)) * 36}px)` }} />
-          {ROUTES.map((r) => (
-            <NavItem key={r.id} id={r.id} label={r.label} ready={r.ready} active={route === r.id} hotkey={r.key} />
+        <nav className="side-nav" onPointerLeave={() => setHoverNav(null)}>
+          <span className="side-hover" style={{ transform: `translateY(${Math.max(0, hoverNav ?? 0) * 46}px)`, opacity: hoverNav === null ? 0 : 1 }} />
+          <span className="side-indicator" style={{ transform: `translateY(${Math.max(0, ROUTES.findIndex((r) => r.id === route)) * 46}px)` }} />
+          {ROUTES.map((r, i) => (
+            <NavItem key={r.id} id={r.id} label={r.label} ready={r.ready} active={route === r.id} hotkey={r.key} onHover={() => setHoverNav(i)} />
           ))}
         </nav>
         <div className="side-bottom">
@@ -165,9 +167,10 @@ export function App() {
   )
 }
 
-function NavItem({ id, label, ready, active, hotkey }: { id: Route; label: string; ready: boolean; active: boolean; hotkey: string }) {
+function NavItem({ id, label, ready, active, hotkey, onHover }: { id: Route; label: string; ready: boolean; active: boolean; hotkey: string; onHover: () => void }) {
   return (
     <button
+      onPointerEnter={onHover}
       className={`side-item ${active ? 'is-active' : ''} ${ready ? '' : 'is-soon'}`}
       onClick={() => navigate(id)}
       aria-current={active ? 'page' : undefined}
