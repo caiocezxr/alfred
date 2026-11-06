@@ -550,12 +550,12 @@ function Item({ it, n, mark, edition, annex, selected, speaking, down, onListen,
       </dl>
       {it.summary && <p className="dz-sum">{it.summary}</p>}
       <div className="dz-assess">
-        <span className="dz-lbl">Avaliação</span>
+        <span className="dz-lbl">Por que importa</span>
         <p>{it.why}</p>
       </div>
       {it.action && (
         <div className="dz-rec">
-          <span className="dz-lbl">Recomendação</span>
+          <span className="dz-lbl">O que fazer</span>
           <p>{it.action}</p>
         </div>
       )}
@@ -766,7 +766,7 @@ function MarketAside({ edition }: { edition: Edition }) {
       <div className="dz-aside-box">
         <span className="dz-label">Como ler</span>
         <p>
-          <b>Avaliação</b> é por que importa pra você. <b>Recomendação</b> é o que fazer. <b>Confiança</b> sobe com o número de veículos que confirmam o fato.
+          <b>Por que importa</b> liga a notícia ao seu trabalho. <b>O que fazer</b> é a ação sugerida. <b>Confiança</b> sobe com o número de veículos que confirmam o fato.
         </p>
         <p className="dz-fine">0–3 cadernos · J/K itens · Enter abre a fonte · I interessa · X não interessa · P ouvir · Esc fecha</p>
       </div>
