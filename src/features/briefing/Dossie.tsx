@@ -208,7 +208,7 @@ export function Dossie({ edition, st, mode, onExpand, onClose, menu }: Props) {
   const doc =
     view === 'tudo' ? (
       <>
-        <Cover edition={edition} minutes={minutes} numbers={numbers} onJump={(k) => scrollToKey(k)} />
+        <Cover edition={edition} minutes={minutes} numbers={numbers} onJump={(k) => scrollToKey(k)} counts={counts} onView={setView} />
         <section>
           <SecHead label="Ponto principal" desc="O topo de cada caderno" n={(front.lead ? 1 : 0) + front.leads.length} />
           {front.lead && item(front.lead, 'O mais importante pra você hoje')}
@@ -234,7 +234,7 @@ export function Dossie({ edition, st, mode, onExpand, onClose, menu }: Props) {
     )
 
   return (
-    <div className={`dz is-${mode} dz-skin-${look.skin}`} data-scheme={look.scheme} data-style={look.style} data-playing={onAir && player.status !== 'paused'}>
+    <div className={`dz is-${mode} dz-skin-${look.skin}`} data-scheme={look.scheme} data-style={look.style} data-view={view} data-playing={onAir && player.status !== 'paused'}>
       <div className="dz-sheet" ref={sheet} tabIndex={0} onKeyDown={(e) => !full && keyAct(e) && (e.preventDefault(), e.stopPropagation())} aria-label="Dossiê do dia">
         <header className={`dz-strip ${scrolled ? 'is-scrolled' : ''}`} tabIndex={full ? -1 : 0} onKeyDown={(e) => e.key === 'Enter' && !full && e.target === e.currentTarget && (e.preventDefault(), onExpand?.())}>
           <div className="dz-strip-id">
@@ -251,7 +251,7 @@ export function Dossie({ edition, st, mode, onExpand, onClose, menu }: Props) {
           </div>
           <nav className="dz-tabs" role="tablist" aria-label="Cadernos">
             {VIEWS.map((v) => (
-              <button key={v.id} type="button" role="tab" aria-selected={v.id === view} onClick={() => setView(v.id)} title={`${v.long} · tecla ${v.key}`}>
+              <button key={v.id} type="button" role="tab" data-c={v.id} aria-selected={v.id === view} onClick={() => setView(v.id)} title={`${v.long} · tecla ${v.key}`}>
                 <span className="dz-tab-k">{v.key}</span>
                 <span className="dz-tab-l">{full && v.id !== 'tudo' ? v.long.replace('Caderno ', '') : v.tab}</span>
                 <span className="dz-tab-n">{counts[v.id]}</span>
@@ -305,7 +305,7 @@ export function Dossie({ edition, st, mode, onExpand, onClose, menu }: Props) {
               <ol>
                 {list.map((it) => (
                   <li key={it.key}>
-                    <button type="button" className={read.has(it.key) ? 'is-read' : ''} onClick={() => scrollToKey(it.key)}>
+                    <button type="button" data-c={cadernoOf(it.area)} className={read.has(it.key) ? 'is-read' : ''} onClick={() => scrollToKey(it.key)}>
                       <span className="dz-ix-n">{pad(numbers.get(it.key) ?? 0)}</span>
                       <span className="dz-ix-t">
                         <small>{TYPE_LABEL[it.area]}</small>
@@ -346,7 +346,7 @@ export function Dossie({ edition, st, mode, onExpand, onClose, menu }: Props) {
 
 function SecHead({ caderno, label, desc, n }: { caderno?: Caderno; label: string; desc: string; n: number }) {
   return (
-    <h2 className="dz-sec">
+    <h2 className="dz-sec" data-c={caderno}>
       {caderno && <span className="dz-shape" data-shape={SHAPE[caderno]} aria-hidden="true" />}
       <span className="dz-sec-l">{label}</span>
       <span className="dz-sec-d">{desc}</span>
@@ -357,24 +357,40 @@ function SecHead({ caderno, label, desc, n }: { caderno?: Caderno; label: string
   )
 }
 
-function Cover({ edition, minutes, numbers, onJump }: { edition: Edition; minutes: number; numbers: Map<string, number>; onJump: (key: string) => void }) {
+const MIX: Caderno[] = ['politica', 'investimentos', 'ia_dev']
+
+function Cover({ edition, minutes, numbers, onJump, counts, onView }: { edition: Edition; minutes: number; numbers: Map<string, number>; onJump: (key: string) => void; counts: Record<View, number>; onView: (v: View) => void }) {
   const tops = cadernoLeads(edition)
   const pts = timelineOf(edition, edition.items)
   const ticks = timelineTicks(edition)
+  const total = Math.max(1, MIX.reduce((n, c) => n + counts[c], 0))
   return (
     <section className="dz-cover">
-      <div className="dz-cover-k">
-        <span className="dz-label">Síntese</span>
-        <span className="dz-label">
-          {edition.items.length} itens · {edition.stats.sourcesOk} fontes · ≈ {minutes} min
-        </span>
+      <div className="dz-hero" style={{ ['--w-pol' as string]: counts.politica / total, ['--w-inv' as string]: counts.investimentos / total, ['--w-ia' as string]: counts.ia_dev / total }}>
+        <span className="dz-hero-mesh" aria-hidden="true" />
+        <div className="dz-hero-k">
+          <span className="dz-label">Síntese do dia</span>
+          <span className="dz-label">
+            {edition.items.length} itens · {edition.stats.sourcesOk} fontes · ≈ {minutes} min
+          </span>
+        </div>
+        <p className="dz-cover-p">{edition.opening}</p>
+        <div className="dz-mix" role="group" aria-label="Mistura do dia por caderno">
+          {MIX.filter((c) => counts[c] > 0).map((c) => (
+            <button key={c} type="button" data-c={c} style={{ flexGrow: counts[c] }} onClick={() => onView(c)} title={`Abrir ${CADERNO_LABEL[c]}`}>
+              <i aria-hidden="true" />
+              <span>
+                <b>{counts[c]}</b> {VIEWS.find((v) => v.id === c)!.tab}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
-      <p className="dz-cover-p">{edition.opening}</p>
       <div className="dz-points">
         <span className="dz-label">Em 30 segundos</span>
         <ol>
           {tops.map(({ caderno, item }) => (
-            <li key={item.key}>
+            <li key={item.key} data-c={caderno}>
               <span className="dz-pt-n">{pad(numbers.get(item.key) ?? 0)}</span>
               <span className="dz-pt-c">{VIEWS.find((v) => v.id === caderno)!.tab}</span>
               <button type="button" onClick={() => onJump(item.key)}>
