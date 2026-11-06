@@ -9,7 +9,7 @@ import { Cockpit, HojePanel } from './Copilot'
 import { Delivered } from './Delivered'
 import { GitHubView } from './github/GitHub'
 import { PrHost } from './github/PrSheet'
-import { SessionHost, SessionsView } from './sessions/Sessions'
+import { SessionHost } from './sessions/Sessions'
 import { DialogHost } from './Dialogs'
 import { Drawer } from './Drawer'
 import { Icon } from './icons'
@@ -53,7 +53,7 @@ export default function Work() {
   const now = useClock()
   const today = civil(now)
   const nowLocal = localNow(now)
-  const [view, setViewRaw] = useState<'board' | 'delivered' | 'github' | 'sessions'>(() => readUi().view ?? 'board')
+  const [view, setViewRaw] = useState<'board' | 'delivered' | 'github' | 'sessions'>(() => (readUi().view === 'sessions' ? 'board' : (readUi().view ?? 'board')))
   const [hoje, setHoje] = useState(false)
   const capture = useRef<HTMLInputElement>(null)
 
@@ -223,7 +223,6 @@ export default function Work() {
               { id: 'board', label: 'Quadro', count: openCount },
               { id: 'delivered', label: 'Entregues' },
               { id: 'github', label: 'GitHub' },
-              { id: 'sessions', label: 'Sessões' },
             ]}
           />
           <button className="wk-tool" onClick={() => openDialog({ kind: 'search' })} aria-label="Buscar" title="Buscar (⌘F)">
@@ -266,7 +265,7 @@ export default function Work() {
 
       <div className="wk-main">
         <div key={view} className={`wk-view is-${view} reveal`} style={{ ['--i' as string]: 2 }}>
-          {view === 'board' ? <Board state={state} today={today} scope={validScope} /> : view === 'github' ? <GitHubView state={state} scope={validScope} /> : view === 'sessions' ? <SessionsView state={state} scope={validScope} /> : <Delivered state={state} today={today} scope={validScope} health={health} />}
+          {view === 'board' ? <Board state={state} today={today} scope={validScope} /> : view === 'github' ? <GitHubView state={state} scope={validScope} /> :  <Delivered state={state} today={today} scope={validScope} health={health} />}
         </div>
         <HojePanel state={state} today={today} scope={validScope} open={hoje} onClose={() => setHoje(false)} />
       </div>

@@ -8,6 +8,7 @@ mod mood;
 mod notes;
 mod oficina;
 mod radar;
+mod sessao;
 mod sessions;
 mod work;
 
@@ -125,6 +126,14 @@ pub fn run() {
             oficina::oficina_local_cancel,
             oficina::oficina_claude_token,
             oficina::oficina_claude_login,
+            sessao::sessao_skills,
+            sessao::sessao_skill_import,
+            sessao::sessao_skill_remove,
+            sessao::sessao_engines,
+            sessao::sessao_engines_update,
+            sessao::sessao_engines_rollback,
+            sessao::sessao_codex_account,
+            sessao::sessao_codex_login,
             radar::radar_item_set,
             radar::radar_cleanup,
             radar::radar_keywords_list,

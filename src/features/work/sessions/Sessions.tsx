@@ -465,6 +465,22 @@ export function SessionSheet({ s, onClose }: { s: Session; onClose: () => void }
           </button>
           <span className="sx-grow" />
           {note && <span className="sx-note">{note}</span>}
+          <button
+            className="sx-ghost"
+            onClick={() => {
+              const detail = { tool: s.tool, id: s.id, cwd: s.cwd, title: s.title }
+              close()
+              if (location.hash.includes('oficina')) window.dispatchEvent(new CustomEvent('sx:to-desk', { detail }))
+              else {
+                localStorage.setItem('sx.pendingDesk', JSON.stringify(detail))
+                location.hash = '#/oficina'
+              }
+            }}
+            title="Abre esta conversa numa desk da Sessão e continua de onde parou"
+          >
+            <Icon name="board" size={12} />
+            Continuar numa desk
+          </button>
           {s.cwd && (
             <button className="sx-go" onClick={() => void resume()}>
               <Icon name="play" size={11} />

@@ -5,7 +5,7 @@ import { isTauri } from '../../shared/db/api'
 import { Icon } from '../work/icons'
 import { getGh, gh, useGhSettings, type LocalRepo } from '../work/github/api'
 import { initScope, loadWork, useWork } from '../work/store'
-import { ToolMark, Text } from '../work/sessions/Sessions'
+import { SessionHost, SessionsView, ToolMark, Text } from '../work/sessions/Sessions'
 import { sx } from '../work/sessions/api'
 import { PERSONAL_ID, type Company } from '../work/types'
 import {
@@ -29,6 +29,8 @@ import {
   send,
   setOption,
   setRepos,
+  switchAccount,
+  handoff,
   useOficina,
   type AgentId,
   type ConfigOption,
@@ -37,7 +39,11 @@ import {
   type Mesa,
   type Shot,
 } from './store'
+import { Arsenal } from './Arsenal'
+import { Bench } from './Bench'
+import { cofreOf, getSettings, loadSettings, useSettings } from './cofre'
 import './oficina.css'
+import './arsenal.css'
 
 const rel = (iso: string) => {
   const m = Math.round((Date.now() - Date.parse(iso)) / 60000)
@@ -114,6 +120,8 @@ function companyOfRepo(r: LocalRepo, companies: Company[]): string | null {
   return hit?.id ?? null
 }
 
+const cofreFlow = (co: string) => cofreOf(co).flow
+
 const inScope = (companyId: string | null, scope: string) => (scope === 'all' ? true : scope === PERSONAL_ID ? !companyId || companyId === PERSONAL_ID : companyId === scope)
 
 function codexHomeFor(companyId: string): string | null {
@@ -144,6 +152,8 @@ export default function Oficina() {
   const gs = useGhSettings()
   const [current, setCurrent] = useState<string | null>(() => localStorage.getItem('oficina.current'))
   const [rail, setRail] = useState(() => localStorage.getItem('oficina.rail') !== 'closed')
+  const [area, setArea] = useState<'desks' | 'historico' | 'arsenal'>(() => (localStorage.getItem('sessao.area') as 'desks' | 'historico' | 'arsenal') || 'desks')
+  useEffect(() => localStorage.setItem('sessao.area', area), [area])
 
   useEffect(() => {
     initScope()
@@ -151,6 +161,7 @@ export default function Oficina() {
     void loadMesas()
     void listenOficina()
     void loadLocalModels()
+    void loadSettings()
   }, [])
 
   useEffect(() => localStorage.setItem('oficina.rail', rail ? 'open' : 'closed'), [rail])
@@ -185,12 +196,40 @@ export default function Oficina() {
 
   const co = scope === 'all' ? PERSONAL_ID : scope
   const newDesk = () => {
+    setArea('desks')
     setCurrent(null)
     localStorage.removeItem('oficina.current')
     window.setTimeout(() => window.dispatchEvent(new Event('ofc:focus')), 30)
   }
 
   useEffect(() => onIntent((i) => i === 'new-desk' && newDesk()), [])
+
+  useEffect(() => {
+    const open = (e: Event) => {
+      const d = (e as CustomEvent<{ tool: 'claude' | 'codex'; id: string; cwd: string | null; title: string | null }>).detail
+      const existing = mesas.find((m) => m.sessions[d.tool] === d.id)
+      if (existing) {
+        setArea('desks')
+        setCurrent(existing.id)
+        return
+      }
+      const m = createMesa(co, d.cwd ? [d.cwd] : [], d.tool)
+      patchMesa(m.id, { title: d.title ?? '', sessions: { [d.tool]: d.id } })
+      setArea('desks')
+      setCurrent(m.id)
+    }
+    window.addEventListener('sx:to-desk', open)
+    const pending = localStorage.getItem('sx.pendingDesk')
+    if (pending && loaded) {
+      localStorage.removeItem('sx.pendingDesk')
+      try {
+        open(new CustomEvent('sx:to-desk', { detail: JSON.parse(pending) }))
+      } catch {
+        localStorage.removeItem('sx.pendingDesk')
+      }
+    }
+    return () => window.removeEventListener('sx:to-desk', open)
+  }, [mesas, co, loaded])
 
   const start = (agent: AgentId, repos: string[], text: string) => {
     const d = createMesa(co, repos, agent)
@@ -204,9 +243,9 @@ export default function Oficina() {
     <div className={`ofc ${rail ? '' : 'is-railless'}`}>
       <aside className="ofc-rail">
         <header>
-          <button className="ofc-rail-t" onClick={() => setRail((r) => !r)} title={rail ? 'Recolher' : 'Mostrar desks'}>
+          <button className="ofc-rail-t" onClick={() => setRail((r) => !r)} title={rail ? 'Recolher' : 'Expandir'}>
             <Icon name="list" size={14} />
-            {rail && <span>Desks</span>}
+            {rail && <span>Sessão</span>}
           </button>
           {rail && (
             <button className="ofc-plus" onClick={newDesk} title="Nova desk (⌘N)">
@@ -214,7 +253,21 @@ export default function Oficina() {
             </button>
           )}
         </header>
-        {rail && (
+        <nav className={`ofc-areas ${rail ? '' : 'is-icons'}`} aria-label="Áreas da Sessão">
+          {(
+            [
+              ['desks', 'Desks', 'board'],
+              ['historico', 'Histórico', 'clock'],
+              ['arsenal', 'Arsenal', 'gear'],
+            ] as const
+          ).map(([id, label, icon]) => (
+            <button key={id} className={area === id ? 'is-on' : ''} onClick={() => setArea(id)} title={label}>
+              <Icon name={icon} size={13} />
+              {rail && <span>{label}</span>}
+            </button>
+          ))}
+        </nav>
+        {rail && area === 'desks' && (
           <ul>
             {visible.length === 0 && <li className="ofc-muted">Nenhuma desk ainda.</li>}
             {visible.map((m, i) => {
@@ -223,7 +276,7 @@ export default function Oficina() {
               const on = AGENTS.filter((a) => l.agents[a].status !== 'off' || m.sessions[a])
               return (
                 <li key={m.id} style={{ ['--k' as string]: i } as CSSProperties}>
-                  <button className={`ofc-desk ${m.id === desk?.id ? 'is-on' : ''}`} onClick={() => setCurrent(m.id)}>
+                  <button className={`ofc-desk ${m.id === desk?.id ? 'is-on' : ''}`} onClick={() => (setArea('desks'), setCurrent(m.id))}>
                     <span className="ofc-desk-t">{m.title || 'Desk nova'}</span>
                     <span className="ofc-desk-m">
                       {scope === 'all' && co && <em style={{ ['--co' as string]: co.color } as CSSProperties}>{co.name}</em>}
@@ -248,11 +301,16 @@ export default function Oficina() {
         )}
       </aside>
 
-      {desk ? (
+      {area === 'arsenal' ? (
+        <Arsenal companies={companies} scope={scope} />
+      ) : area === 'historico' ? (
+        <section className="ofc-hist">{state && <SessionsView state={state} scope={scope} />}</section>
+      ) : desk ? (
         <DeskView key={desk.id} desk={desk} companies={companies} scope={scope} fallback={fallback} onDelete={() => void removeMesa(desk.id).then(() => setCurrent(null))} />
       ) : (
         <Launch companies={companies} scope={scope} recent={visible.slice(0, 6)} onOpen={setCurrent} onStart={start} />
       )}
+      <SessionHost />
     </div>
   )
 }
@@ -363,55 +421,62 @@ function Launch({ companies, scope, recent, onOpen, onStart }: { companies: Comp
 
 function DeskView({ desk, companies, scope, fallback, onDelete }: { desk: Mesa; companies: Company[]; scope: string; fallback: string; onDelete: () => void }) {
   useOficina()
+  useSettings()
   const l = liveOf(desk.id)
   const [agent, setAgent] = useState<AgentId>(desk.agent)
-  const [pista, setPista] = useState(() => localStorage.getItem('oficina.pista') !== 'closed')
+  const [bench, setBench] = useState(() => localStorage.getItem('sessao.bench') !== 'closed')
   const [wide, setWide] = useState(true)
   const [peek, setPeek] = useState(false)
   const view = useRef<HTMLDivElement>(null)
   const working = AGENTS.filter((a) => WORKING.has(l.agents[a].status))
+  const editing = AGENTS.some((a) => l.agents[a].edits.length > 0)
 
-  useEffect(() => localStorage.setItem('oficina.pista', pista ? 'open' : 'closed'), [pista])
+  useEffect(() => localStorage.setItem('sessao.bench', bench ? 'open' : 'closed'), [bench])
   useLayoutEffect(() => {
     const el = view.current
     if (!el) return
-    const ro = new ResizeObserver(([e]) => setWide(e.contentRect.width >= 1040))
+    const ro = new ResizeObserver(([e]) => setWide(e.contentRect.width >= 960))
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
-  const showPista = wide ? pista : peek
-  const toggle = () => (wide ? setPista((p) => !p) : setPeek((p) => !p))
-
-  const used = AGENTS.filter((a) => desk.sessions[a] || l.agents[a].status !== 'off' || l.items.some((x) => x.agent === a))
+  const show = wide ? bench : peek
+  const toggle = () => (wide ? setBench((p) => !p) : setPeek((p) => !p))
+  const flow = desk.flow ?? cofreFlow(desk.companyId)
 
   return (
-    <div ref={view} className={`ofc-desk-view ${showPista && used.length ? (wide ? 'has-pista' : 'has-peek') : ''}`}>
+    <div ref={view} className={`ofc-desk-view ${show ? (wide ? 'has-bench' : 'has-peek') : ''}`}>
       <section className="ofc-center">
         <header className="ofc-top">
           <input className="ofc-title display" value={desk.title} placeholder="Desk nova" onChange={(e) => patchMesa(desk.id, { title: e.target.value })} />
           <RepoChips repos={desk.repos} onChange={(r) => void setRepos(desk, r)} companies={companies} scope={scope} />
           <span className="ofc-grow" />
-          {used.length > 0 && (
-            <button className={`ofc-stack ${showPista ? 'is-on' : ''}`} onClick={toggle} title={showPista ? 'Esconder a pista' : 'Mostrar a pista dos agentes'}>
-              {used.map((a) => (
+          <div className="ofc-flow" role="radiogroup" aria-label="Fluxo">
+            {(['livre', 'maivado'] as const).map((f) => (
+              <button key={f} role="radio" aria-checked={flow === f} className={flow === f ? 'is-on' : ''} onClick={() => patchMesa(desk.id, { flow: f })} title={f === 'livre' ? 'Conversa direta' : 'O /maivado conduz: rápido ou avançado, com travas'}>
+                {f === 'livre' ? 'Livre' : 'mAIvado'}
+              </button>
+            ))}
+          </div>
+          <button className={`ofc-benchbtn ${show ? 'is-on' : ''}`} onClick={toggle} title={show ? 'Esconder a bancada' : 'Mostrar a bancada: código, arquivos, plano e agentes'}>
+            <span className="ofc-avs">
+              {AGENTS.filter((a) => desk.sessions[a] || l.agents[a].status !== 'off').map((a) => (
                 <span key={a} className={`ofc-av is-${l.agents[a].status}`}>
-                  <ToolMark tool={a} size={12} />
+                  <ToolMark tool={a} size={11} />
                 </span>
               ))}
-              {working.length > 0 && <em>{working.length} trabalhando</em>}
-            </button>
-          )}
+            </span>
+            Bancada
+            {working.length > 0 && editing && <i className="bn-rec" aria-hidden="true" />}
+          </button>
           <Kebab onDelete={onDelete} />
         </header>
-        <Feed desk={desk} agent={agent} />
+        <Feed desk={desk} agent={agent} fallback={fallback} />
         <Deck desk={desk} agent={agent} setAgent={setAgent} fallback={fallback} />
       </section>
-      {showPista && used.length > 0 && (
-        <aside className={`ofc-pista ${wide ? '' : 'is-float'}`} aria-label="Pista dos agentes">
-          {used.map((a) => (
-            <Lane key={a} agent={a} live={l.agents[a]} active={a === agent} onPick={() => setAgent(a)} />
-          ))}
-        </aside>
+      {show && (
+        <div className={`ofc-bench ${wide ? '' : 'is-float'}`}>
+          <Bench desk={desk} agent={agent} setAgent={setAgent} fallback={fallback} onClose={toggle} />
+        </div>
       )}
     </div>
   )
@@ -513,7 +578,7 @@ function group(items: Item[]): Block[] {
   return out
 }
 
-function Feed({ desk, agent }: { desk: Mesa; agent: AgentId }) {
+function Feed({ desk, agent, fallback }: { desk: Mesa; agent: AgentId; fallback: string }) {
   const l = liveOf(desk.id)
   const [show, setShow] = useState(160)
   const ref = useRef<HTMLDivElement>(null)
@@ -552,7 +617,7 @@ function Feed({ desk, agent }: { desk: Mesa; agent: AgentId }) {
             </div>
           </div>
         )}
-        {blocks.map((b) => (b.kind === 'tools' ? <Tools key={b.id} list={b.list} /> : <Row key={b.it.id} it={b.it} desk={desk.id} />))}
+        {blocks.map((b) => (b.kind === 'tools' ? <Tools key={b.id} list={b.list} /> : <Row key={b.it.id} it={b.it} desk={desk.id} mesa={desk} fallback={fallback} />))}
       </div>
     </div>
   )
@@ -588,7 +653,7 @@ function Tools({ list }: { list: Extract<Item, { role: 'tool' }>[] }) {
   )
 }
 
-function Row({ it, desk }: { it: Item; desk: string }) {
+function Row({ it, desk, mesa, fallback }: { it: Item; desk: string; mesa: Mesa; fallback: string }) {
   const [open, setOpen] = useState(false)
   if (it.role === 'user')
     return (
@@ -645,7 +710,39 @@ function Row({ it, desk }: { it: Item; desk: string }) {
     )
   if (it.role === 'note') return <div className={`ofc-note is-${it.tone}`}>{it.text}</div>
   if (it.role === 'auth') return <AuthCard desk={desk} done={it.done} />
+  if (it.role === 'limit') return <LimitCard it={it} mesa={mesa} fallback={fallback} />
   return null
+}
+
+function LimitCard({ it, mesa, fallback }: { it: Extract<Item, { role: 'limit' }>; mesa: Mesa; fallback: string }) {
+  const s = getSettings()
+  const kind = it.agent === 'codex' ? 'codex' : 'claude'
+  const cur = mesa.accounts?.[it.agent] ?? (kind === 'claude' ? cofreOf(mesa.companyId).claudeAccount : cofreOf(mesa.companyId).codexAccount)
+  const others = s.accounts[kind].filter((a) => a.id !== cur)
+  const other = it.agent === 'claude' ? 'codex' : 'claude'
+  if (it.done) return <div className="ofc-note is-info">Conta trocada.</div>
+  return (
+    <div className="ofc-limit">
+      <header>
+        <ToolMark tool={it.agent} size={14} />
+        <b>Limite da conta estourou</b>
+      </header>
+      <p>{it.text}</p>
+      <div className="ofc-limit-o">
+        {others.map((a) => (
+          <button key={a.id} className="is-go" onClick={() => void switchAccount(mesa, it.agent, a.id, it.id, fallback)}>
+            Continuar com {a.label}
+          </button>
+        ))}
+        {it.agent !== 'local' && (
+          <button onClick={() => void handoff(mesa, it.agent, other, 'continue', fallback)}>
+            Passar a tarefa ao {AGENT_NAME[other]}
+          </button>
+        )}
+      </div>
+      {others.length === 0 && <small>Cadastre outra conta em Arsenal › Contas para trocar sem perder a conversa.</small>}
+    </div>
+  )
 }
 
 function AuthCard({ desk, done }: { desk: string; done: boolean }) {
@@ -1006,62 +1103,5 @@ function Deck({ desk, agent, setAgent, fallback }: { desk: Mesa; agent: AgentId;
         )}
       </div>
     </div>
-  )
-}
-
-function Lane({ agent, live, active, onPick }: { agent: AgentId; live: Live; active: boolean; onPick: () => void }) {
-  const [, tick] = useState(0)
-  useEffect(() => {
-    if (!live.since) return
-    const id = window.setInterval(() => tick((n) => n + 1), 1000)
-    return () => window.clearInterval(id)
-  }, [live.since])
-  const secs = live.since ? Math.round((Date.now() - live.since) / 1000) : 0
-  const ctx = live.usage && live.usage.size ? Math.min(1, live.usage.used / live.usage.size) : null
-  const done = live.plan.filter((p) => p.status === 'completed').length
-  const account = live.account && !/not logged/i.test(live.account) ? live.account : null
-  return (
-    <section className={`ofc-lane is-${agent} is-${live.status} ${active ? 'is-active' : ''}`} onClick={onPick}>
-      <header>
-        <ToolMark tool={agent} size={14} />
-        <b>{AGENT_NAME[agent]}</b>
-        <span className="ofc-led" aria-hidden="true" />
-        <em>{STATUS_PT[live.status]}</em>
-        {live.since && <time>{secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m${String(secs % 60).padStart(2, '0')}`}</time>}
-      </header>
-      {live.action && WORKING.has(live.status) && <p className="ofc-lane-a">{live.action}</p>}
-      {live.error && live.status === 'error' && <p className="ofc-lane-e">{live.error}</p>}
-      {ctx !== null && (
-        <div className="ofc-ctx" title={`${live.usage!.used.toLocaleString('pt-BR')} de ${live.usage!.size.toLocaleString('pt-BR')} tokens`}>
-          <span>contexto</span>
-          <i style={{ ['--w' as string]: `${ctx * 100}%` } as CSSProperties} className={ctx > 0.8 ? 'is-hot' : ''} />
-          <b>{Math.round(ctx * 100)}%</b>
-        </div>
-      )}
-      {live.plan.length > 0 && (
-        <div className="ofc-plan">
-          <span>
-            plano · {done}/{live.plan.length}
-          </span>
-          <ol>
-            {live.plan.slice(0, 8).map((p, i) => (
-              <li key={i} className={`is-${p.status}`}>
-                {p.content}
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
-      {live.files.length > 0 && (
-        <div className="ofc-files">
-          {live.files.slice(-6).map((f) => (
-            <code key={f} title={f}>
-              {base(f)}
-            </code>
-          ))}
-        </div>
-      )}
-      {account && <p className="ofc-acct">{account}</p>}
-    </section>
   )
 }

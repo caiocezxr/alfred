@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event'
 import { useSyncExternalStore } from 'react'
 import { track } from '../../shared/activity'
 import { api, isTauri } from '../../shared/db/api'
+import { cofreOf, codexHome, getSettings, mcpFor, skillsFor } from './cofre'
 
 export type AgentId = 'claude' | 'codex' | 'local'
 export const AGENTS: AgentId[] = ['claude', 'codex', 'local']
@@ -16,6 +17,8 @@ export type Mesa = {
   cwd: string
   repos: string[]
   agent: AgentId
+  flow?: 'livre' | 'maivado'
+  accounts?: Partial<Record<AgentId, string>>
   sessions: Partial<Record<AgentId, string>>
   prefs: Partial<Record<AgentId, Record<string, string>>>
   createdAt: string
@@ -43,6 +46,10 @@ export type Item =
   | { id: string; agent: AgentId; role: 'perm'; title: string; options: PermOption[]; rpc: unknown; answered: string | null; at: number }
   | { id: string; agent: AgentId; role: 'note'; text: string; tone: 'error' | 'info'; at: number }
   | { id: string; agent: AgentId; role: 'auth'; at: number; done: boolean }
+  | { id: string; agent: AgentId; role: 'limit'; at: number; text: string; done: boolean }
+
+export type Edit = { id: string; path: string; old: string; neu: string; at: number; status: string }
+export type Output = { id: string; title: string; text: string; at: number }
 
 export type Status = 'off' | 'opening' | 'idle' | 'thinking' | 'writing' | 'tool' | 'waiting' | 'error'
 
@@ -55,6 +62,8 @@ export type Live = {
   usage: { used: number; size: number; cost: number | null } | null
   files: string[]
   commands: Command[]
+  edits: Edit[]
+  outputs: Output[]
   since: number | null
   turns: number
   error: string | null
@@ -74,7 +83,7 @@ const cacheConfig = (agent: AgentId, c: ConfigOption[]) => {
   if (c.length) localStorage.setItem(`oficina.config.${agent}`, JSON.stringify(c))
 }
 
-const blank = (agent: AgentId): Live => ({ status: 'off', action: '', account: null, config: cachedConfig(agent), plan: [], usage: null, files: [], commands: [], since: null, turns: 0, error: null })
+const blank = (agent: AgentId): Live => ({ status: 'off', action: '', account: null, config: cachedConfig(agent), plan: [], usage: null, files: [], commands: [], edits: [], outputs: [], since: null, turns: 0, error: null })
 
 let mesas: Mesa[] = []
 let loaded = false
@@ -203,6 +212,43 @@ const textOf = (c: unknown) => {
   return b && b.type === 'text' ? (b.text ?? '') : ''
 }
 
+const LIMIT = /(usage limit|rate limit|limit reached|hit your limit|reached your|quota|too many requests|5-hour|weekly limit|limite de uso)/i
+
+function capture(mesa: string, agent: AgentId, id: string, u: Record<string, unknown>) {
+  const a = liveOf(mesa).agents[agent]
+  const content = (u.content as { type?: string; path?: string; oldText?: string | null; newText?: string; content?: { type?: string; text?: string } }[] | undefined) ?? []
+  let edits = a.edits
+  let outputs = a.outputs
+  const raw = (u.rawInput ?? {}) as { file_path?: string; old_string?: string; new_string?: string; content?: string }
+  const diffs = content.filter((c) => c.type === 'diff' && c.path)
+  const put = (path: string, old: string, neu: string) => {
+    const e: Edit = { id, path, old, neu, at: Date.now(), status: (u.status as string) || 'in_progress' }
+    const i = edits.findIndex((x) => x.id === id && x.path === path)
+    edits = i >= 0 ? edits.map((x, j) => (j === i ? { ...e, at: x.at } : x)) : [...edits, e].slice(-40)
+  }
+  for (const d of diffs) put(d.path!, d.oldText ?? '', d.newText ?? '')
+  if (!diffs.length && raw.file_path && (raw.new_string !== undefined || raw.content !== undefined)) put(raw.file_path, raw.old_string ?? '', raw.new_string ?? raw.content ?? '')
+  if (u.status && !diffs.length) edits = edits.map((x) => (x.id === id ? { ...x, status: u.status as string } : x))
+  const text = content
+    .filter((c) => c.type === 'content' && c.content?.type === 'text')
+    .map((c) => c.content!.text ?? '')
+    .join('\n')
+  if (text && (u.kind === 'execute' || /^(run|bash|exec)/i.test(String(u.title ?? '')))) {
+    const o: Output = { id, title: String(u.title ?? 'comando'), text: text.slice(-6000), at: Date.now() }
+    const i = outputs.findIndex((x) => x.id === id)
+    outputs = i >= 0 ? outputs.map((x, j) => (j === i ? o : x)) : [...outputs, o].slice(-20)
+  }
+  if (edits !== a.edits || outputs !== a.outputs) setAgent(mesa, agent, { edits, outputs })
+}
+
+function limitCard(mesa: string, agent: AgentId, text: string) {
+  const m = liveOf(mesa)
+  m.items = m.items.filter((x) => !(x.agent === agent && x.role === 'agent' && x.text.length < 400 && LIMIT.test(x.text)))
+  if (m.items.slice(-4).some((x) => x.role === 'limit' && !x.done)) return
+  push(mesa, { id: uid(), agent, role: 'limit', at: Date.now(), text: text.slice(0, 240), done: false })
+  setAgent(mesa, agent, { status: 'error', error: 'limite da conta', action: '' })
+}
+
 const AUTH_FAIL = /failed to authenticate|oauth session expired|authentication required|please run \/login|not logged in|invalid api key/i
 
 function authCard(mesa: string, agent: AgentId) {
@@ -242,6 +288,7 @@ function apply(ev: Out) {
       setAgent(mesa, agent, { status: role === 'agent' ? 'writing' : 'thinking', action: role === 'agent' ? 'escrevendo a resposta' : 'pensando' })
       const cur = m.items[m.items.length - 1]
       if (agent === 'claude' && cur.role === 'agent' && AUTH_FAIL.test(cur.text)) authCard(mesa, agent)
+      else if (cur.role === 'agent' && cur.text.length < 400 && LIMIT.test(cur.text)) limitCard(mesa, agent, cur.text)
       return
     }
     if (kind === 'user_message_chunk') {
@@ -252,6 +299,7 @@ function apply(ev: Out) {
     }
     if (kind === 'tool_call' || kind === 'tool_call_update') {
       const id = u.toolCallId as string
+      capture(mesa, agent, id, u)
       const locs = ((u.locations as { path?: string }[] | undefined) ?? []).map((l) => l.path).filter(Boolean) as string[]
       const i = m.items.findIndex((x) => x.role === 'tool' && x.id === id)
       if (i >= 0) {
@@ -322,6 +370,12 @@ function apply(ev: Out) {
       busy(mesa, agent, false)
       return
     }
+    if (err && LIMIT.test(err.message ?? '')) {
+      limitCard(mesa, agent, err.message ?? '')
+      setAgent(mesa, agent, { since: null })
+      busy(mesa, agent, false)
+      return
+    }
     if (err) push(mesa, { id: uid(), agent, role: 'note', text: err.message ?? 'o agente falhou nesta mensagem', tone: 'error', at: Date.now() })
     if (m.agents[agent].status === 'error' && m.items.some((x) => x.role === 'auth' && !x.done)) {
       setAgent(mesa, agent, { since: null })
@@ -388,8 +442,8 @@ function saveLocal(mesa: string) {
 
 export const oficinaApi = {
   status: () => invoke<{ claude: boolean; codex: boolean; open: string[] }>('oficina_status'),
-  start: (mesa: string, agent: AgentId, cwd: string, dirs: string[], persona: string, resume: string | null, codexHome: string | null) =>
-    invoke<{ agent: unknown; session: { sessionId: string; configOptions?: ConfigOption[] } }>('oficina_start', { mesa, agent, cwd, dirs, persona, resume, codexHome }),
+  start: (a: { mesa: string; agent: AgentId; cwd: string; dirs: string[]; persona: string; resume: string | null; codexHome: string | null; skills: string[] | null; mcp: unknown[]; claudeAccount: string | null }) =>
+    invoke<{ agent: unknown; session: { sessionId: string; configOptions?: ConfigOption[] } }>('oficina_start', a),
   prompt: (mesa: string, agent: AgentId, text: string, images: Shot[]) => invoke<number>('oficina_prompt', { mesa, agent, text, images }),
   cancel: (mesa: string, agent: AgentId) => invoke<void>('oficina_cancel', { mesa, agent }),
   config: (mesa: string, agent: AgentId, option: string, value: string) => invoke<unknown>('oficina_config', { mesa, agent, option, value }),
@@ -404,11 +458,16 @@ export function deskPlace(mesa: Mesa, fallback: string) {
   return { cwd: repos[0] ?? fallback, dirs: repos.slice(1) }
 }
 
-export function personaText() {
-  return localStorage.getItem('oficina.persona') ?? PERSONA
+export function personaText(companyId?: string) {
+  return (companyId ? cofreOf(companyId).persona : null) ?? PERSONA
 }
 
-export function ensureAgent(mesa: Mesa, agent: AgentId, codexHome: string | null, fallback: string): Promise<void> {
+export function accountOf(mesa: Mesa, agent: AgentId) {
+  const c = cofreOf(mesa.companyId)
+  return mesa.accounts?.[agent] ?? (agent === 'claude' ? c.claudeAccount : agent === 'codex' ? c.codexAccount : 'default')
+}
+
+export function ensureAgent(mesa: Mesa, agent: AgentId, codexHome_: string | null, fallback: string): Promise<void> {
   if (agent === 'local') {
     return loadLocalModels().then((l) => {
       setAgent(mesa.id, agent, l.length ? { status: 'idle', config: localConfig(), account: 'Ollama · nesta máquina' } : { status: 'error', error: 'o Ollama não está rodando ou não tem modelos' })
@@ -423,7 +482,20 @@ export function ensureAgent(mesa: Mesa, agent: AgentId, codexHome: string | null
     emit()
     try {
       const place = deskPlace(mesa, fallback)
-      const r = await oficinaApi.start(mesa.id, agent, place.cwd, place.dirs, personaText(), mesa.sessions[agent] ?? null, agent === 'codex' ? codexHome : null)
+      const acct = accountOf(mesa, agent)
+      const home = agent === 'codex' ? ((await codexHome(acct)) ?? codexHome_) : null
+      const r = await oficinaApi.start({
+        mesa: mesa.id,
+        agent,
+        cwd: place.cwd,
+        dirs: place.dirs,
+        persona: personaText(mesa.companyId),
+        resume: mesa.sessions[agent] ?? null,
+        codexHome: home,
+        skills: agent === 'claude' ? skillsFor(mesa.companyId) : null,
+        mcp: mcpFor(mesa.companyId),
+        claudeAccount: agent === 'claude' ? acct : null,
+      })
       const sid = r.session.sessionId
       if (mesa.sessions[agent] !== sid) patchMesa(mesa.id, { sessions: { ...mesas.find((x) => x.id === mesa.id)?.sessions, [agent]: sid } })
       const cfg = r.session.configOptions ?? liveOf(mesa.id).agents[agent].config
@@ -463,7 +535,9 @@ export function route(agent: AgentId, text: string, repos: number): Route {
   return pick('sonnet', 'gpt-6.1-sol', 'medium', 'tarefa do dia a dia')
 }
 
-export async function send(mesa: Mesa, agent: AgentId, text: string, images: Shot[], codexHome: string | null, fallback: string) {
+export async function send(mesa: Mesa, agent: AgentId, text0: string, images: Shot[], codexHome: string | null, fallback: string) {
+  const flow = mesa.flow ?? cofreOf(mesa.companyId).flow
+  const text = flow === 'maivado' && agent === 'claude' && !mesa.sessions.claude && text0 && !text0.startsWith('/') ? `/maivado ${text0}` : text0
   push(mesa.id, { id: uid(), agent, role: 'user', text: images.length ? `${text}${text ? '\n' : ''}[${images.length} imagem${images.length > 1 ? 's' : ''}]` : text, at: Date.now() })
   if (!mesa.title && text) patchMesa(mesa.id, { title: text.split('\n')[0].slice(0, 70) })
   emit()
@@ -531,6 +605,42 @@ export async function setOption(mesa: Mesa, agent: AgentId, option: string, valu
   if (value && value !== 'auto') setAgent(mesa.id, agent, { config: a.config.map((c) => (c.id === option ? { ...c, currentValue: value } : c)) })
   emit()
   if (agent !== 'local' && value && value !== 'auto' && a.status !== 'off' && a.status !== 'error' && a.status !== 'opening') await oficinaApi.config(mesa.id, agent, option, value).catch(() => {})
+}
+
+export async function switchAccount(mesa: Mesa, agent: AgentId, account: string, itemId: string, fallback: string) {
+  const m = liveOf(mesa.id)
+  m.items = m.items.map((x) => (x.id === itemId && x.role === 'limit' ? { ...x, done: true } : x))
+  patchMesa(mesa.id, { accounts: { ...(mesa.accounts ?? {}), [agent]: account } })
+  await closeAgent(mesa.id, agent)
+  const last = [...m.items].reverse().find((x) => x.agent === agent && x.role === 'user') as { text: string } | undefined
+  const label = getSettings().accounts[agent === 'codex' ? 'codex' : 'claude'].find((a) => a.id === account)?.label ?? account
+  push(mesa.id, { id: uid(), agent, role: 'note', text: `Trocou para ${label}. Continuando a mesma conversa.`, tone: 'info', at: Date.now() })
+  emit()
+  const fresh = mesas.find((x) => x.id === mesa.id) ?? mesa
+  if (last) await send(fresh, agent, 'Continua de onde parou. O limite da conta anterior estourou no meio da tarefa.', [], null, fallback)
+}
+
+function recap(mesa: string, from: AgentId) {
+  const m = liveOf(mesa)
+  const talk = m.items
+    .filter((x) => (x.role === 'user' || x.role === 'agent') && x.agent === from)
+    .slice(-8)
+    .map((x) => `${x.role === 'user' ? 'Caio' : AGENT_NAME[from]}: ${(x as { text: string }).text.slice(0, 1500)}`)
+    .join('\n\n')
+  const a = m.agents[from]
+  const files = [...new Set([...a.files, ...a.edits.map((e) => e.path)])]
+  const plan = a.plan.map((p) => `- [${p.status === 'completed' ? 'x' : ' '}] ${p.content}`).join('\n')
+  return { talk, files, plan }
+}
+
+export async function handoff(mesa: Mesa, from: AgentId, to: AgentId, kind: 'review' | 'continue', fallback: string) {
+  const r = recap(mesa.id, from)
+  const head =
+    kind === 'review'
+      ? `Revisão cruzada. O ${AGENT_NAME[from]} trabalhou nesta tarefa. Revise criticamente o que ele fez: bugs, escopo além do pedido, nomes inventados, riscos de segurança e testes que não provam nada. Leia os arquivos antes de opinar. Não edite nada, só aponte com caminho:linha.`
+      : `Passagem de bastão. O ${AGENT_NAME[from]} estava nesta tarefa e você continua daqui, sem refazer o que já está pronto. Confira o estado dos arquivos antes de mexer.`
+  const body = [head, r.plan && `Plano:\n${r.plan}`, r.files.length && `Arquivos mexidos:\n${r.files.map((f) => `- ${f}`).join('\n')}`, r.talk && `Conversa recente:\n${r.talk}`].filter(Boolean).join('\n\n')
+  await send(mesa, to, body, [], null, fallback)
 }
 
 export async function setRepos(mesa: Mesa, repos: string[]) {

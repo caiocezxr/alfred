@@ -131,7 +131,7 @@ fn stop(k: &str) {
     }
 }
 
-fn spawn(app: &AppHandle, state: &State<AppState>, mesa: &str, agent: &str, cwd: &PathBuf, codex_home: Option<String>) -> R<Shared> {
+fn spawn(app: &AppHandle, state: &State<AppState>, mesa: &str, agent: &str, cwd: &PathBuf, codex_home: Option<String>, claude_account: Option<&str>) -> R<Shared> {
     let bin = adapter(state, agent)?;
     let mut cmd = Command::new(bin);
     cmd.current_dir(cwd).env("PATH", path_env()).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -142,7 +142,7 @@ fn spawn(app: &AppHandle, state: &State<AppState>, mesa: &str, agent: &str, cwd:
         cmd.env("CODEX_HOME", h);
     }
     if agent == "claude" {
-        if let Some(t) = claude_token() {
+        if let Some(t) = claude_token(claude_account) {
             cmd.env("CLAUDE_CODE_OAUTH_TOKEN", t);
         }
         if let Ok(h) = home() {
@@ -222,27 +222,107 @@ fn spawn(app: &AppHandle, state: &State<AppState>, mesa: &str, agent: &str, cwd:
 }
 
 #[tauri::command]
+pub(crate) fn close_all() {
+    let keys: Vec<String> = conns(|m| m.keys().cloned().collect());
+    for k in keys {
+        stop(&k);
+    }
+}
+
+pub(crate) fn mcp_ok(v: &Value) -> bool {
+    let name_ok = v.get("name").and_then(Value::as_str).is_some_and(|n| !n.is_empty() && n.len() <= 60 && n.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+    if !name_ok {
+        return false;
+    }
+    match v.get("type").and_then(Value::as_str) {
+        Some("http") | Some("sse") => v.get("url").and_then(Value::as_str).is_some_and(|u| u.starts_with("https://") || u.starts_with("http://127.0.0.1") || u.starts_with("http://localhost")),
+        None | Some("stdio") => v.get("command").and_then(Value::as_str).is_some_and(|c| !c.is_empty() && !c.contains(char::is_whitespace)) && v.get("args").map(|a| a.as_array().is_some_and(|a| a.iter().all(Value::is_string))).unwrap_or(true),
+        _ => false,
+    }
+}
+
+fn mcp_normal(v: &Value) -> Value {
+    match v.get("type").and_then(Value::as_str) {
+        Some(t @ ("http" | "sse")) => json!({ "type": t, "name": v["name"], "url": v["url"], "headers": v.get("headers").cloned().unwrap_or(json!([])) }),
+        _ => json!({ "name": v["name"], "command": v["command"], "args": v.get("args").cloned().unwrap_or(json!([])), "env": v.get("env").cloned().unwrap_or(json!([])) }),
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct Extras {
+    pub skills: Option<Vec<String>>,
+    pub plugins: Vec<String>,
+    pub mcp: Vec<Value>,
+}
+
+#[cfg(test)]
 pub(crate) fn session_params(agent: &str, cwd: &str, dirs: &[String], persona: Option<&str>, resume: Option<&str>) -> Value {
-    let mut p = json!({ "cwd": cwd, "mcpServers": [] });
+    session_params_with(agent, cwd, dirs, persona, resume, &Extras::default())
+}
+
+pub(crate) fn session_params_with(agent: &str, cwd: &str, dirs: &[String], persona: Option<&str>, resume: Option<&str>, x: &Extras) -> Value {
+    let servers: Vec<Value> = x.mcp.iter().filter(|m| mcp_ok(m)).map(mcp_normal).collect();
+    let mut p = json!({ "cwd": cwd, "mcpServers": servers });
     if !dirs.is_empty() {
         p["additionalDirectories"] = json!(dirs);
     }
     if let Some(id) = resume {
         p["sessionId"] = json!(id);
     }
+    let mut meta = json!({});
     if let Some(text) = persona.filter(|t| !t.trim().is_empty()) {
         if agent == "claude" {
-            p["_meta"] = json!({ "systemPrompt": { "append": text } });
+            meta["systemPrompt"] = json!({ "append": text });
         } else {
             p["systemPrompt"] = json!({ "mode": "append", "content": [{ "type": "text", "text": text }] });
         }
+    }
+    if agent == "claude" {
+        let mut opts = json!({});
+        if let Some(sk) = &x.skills {
+            opts["skills"] = json!(sk);
+        }
+        if !x.plugins.is_empty() {
+            opts["plugins"] = Value::Array(x.plugins.iter().map(|p| json!({ "type": "local", "path": p })).collect());
+        }
+        if opts.as_object().is_some_and(|o| !o.is_empty()) {
+            meta["claudeCode"] = json!({ "options": opts });
+        }
+    }
+    if meta.as_object().is_some_and(|o| !o.is_empty()) {
+        p["_meta"] = meta;
     }
     p
 }
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub async fn oficina_start(app: AppHandle, state: State<'_, AppState>, mesa: String, agent: String, cwd: String, dirs: Option<Vec<String>>, persona: Option<String>, resume: Option<String>, codex_home: Option<String>) -> R<Value> {
+pub async fn oficina_start(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    mesa: String,
+    agent: String,
+    cwd: String,
+    dirs: Option<Vec<String>>,
+    persona: Option<String>,
+    resume: Option<String>,
+    codex_home: Option<String>,
+    skills: Option<Vec<String>>,
+    plugins: Option<bool>,
+    mcp: Option<Vec<Value>>,
+    claude_account: Option<String>,
+) -> R<Value> {
+    if let Some(a) = &claude_account {
+        if !crate::sessao::valid_account(a) {
+            return Err("conta inválida".into());
+        }
+    }
+    let lib = crate::sessao::library(&state);
+    let extras = Extras {
+        skills: skills.map(|v| v.into_iter().filter(|s| s.len() <= 120 && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_:.".contains(c))).collect()),
+        plugins: if plugins.unwrap_or(true) && lib.join(".claude-plugin/plugin.json").exists() { vec![lib.to_string_lossy().to_string()] } else { vec![] },
+        mcp: mcp.unwrap_or_default().into_iter().take(20).collect(),
+    };
     if !valid_id(&mesa) || !valid_id(&agent) {
         return Err("mesa ou agente inválido".into());
     }
@@ -269,12 +349,12 @@ pub async fn oficina_start(app: AppHandle, state: State<'_, AppState>, mesa: Str
     };
     let k = key(&mesa, &agent);
     stop(&k);
-    let conn = spawn(&app, &state, &mesa, &agent, &dir, codex_home)?;
+    let conn = spawn(&app, &state, &mesa, &agent, &dir, codex_home, claude_account.as_deref())?;
     let cwd_s = dir.to_string_lossy().to_string();
     let agent = agent.clone();
     tauri::async_runtime::spawn_blocking(move || -> R<Value> {
         let init = call(&conn, "initialize", json!({ "protocolVersion": 1, "clientCapabilities": { "fs": { "readTextFile": false, "writeTextFile": false }, "terminal": false } }), Duration::from_secs(40))?;
-        let params = session_params(&agent, &cwd_s, &extra, persona.as_deref(), resume.as_deref());
+        let params = session_params_with(&agent, &cwd_s, &extra, persona.as_deref(), resume.as_deref(), &extras);
         let opened = match &resume {
             Some(id) => {
                 let r = call(&conn, "session/resume", params, Duration::from_secs(90))?;
@@ -379,8 +459,15 @@ pub fn oficina_status(state: State<AppState>) -> Value {
 const VAULT: &str = "app.personalspace.oficina";
 const CLAUDE_TOKEN: &str = "claude-oauth-token";
 
-fn claude_token() -> Option<String> {
-    keyring::Entry::new(VAULT, CLAUDE_TOKEN).and_then(|e| e.get_password()).ok().filter(|t| !t.is_empty())
+fn token_key(account: Option<&str>) -> String {
+    match account {
+        Some(a) if a != "default" => format!("{CLAUDE_TOKEN}:{a}"),
+        _ => CLAUDE_TOKEN.to_string(),
+    }
+}
+
+fn claude_token(account: Option<&str>) -> Option<String> {
+    keyring::Entry::new(VAULT, &token_key(account)).and_then(|e| e.get_password()).ok().filter(|t| !t.is_empty())
 }
 
 pub(crate) fn token_ok(t: &str) -> bool {
@@ -388,8 +475,13 @@ pub(crate) fn token_ok(t: &str) -> bool {
 }
 
 #[tauri::command]
-pub fn oficina_claude_token(token: Option<String>) -> R<bool> {
-    let entry = keyring::Entry::new(VAULT, CLAUDE_TOKEN).map_err(|_| "Keychain indisponível".to_string())?;
+pub fn oficina_claude_token(token: Option<String>, account: Option<String>) -> R<bool> {
+    if let Some(a) = &account {
+        if !crate::sessao::valid_account(a) {
+            return Err("conta inválida".into());
+        }
+    }
+    let entry = keyring::Entry::new(VAULT, &token_key(account.as_deref())).map_err(|_| "Keychain indisponível".to_string())?;
     match token.map(|t| t.trim().to_string()) {
         Some(t) if t.is_empty() => {
             let _ = entry.delete_credential();
@@ -402,7 +494,7 @@ pub fn oficina_claude_token(token: Option<String>) -> R<bool> {
             entry.set_password(&t).map_err(|_| "não deu para gravar no Keychain".to_string())?;
             Ok(true)
         }
-        None => Ok(claude_token().is_some()),
+        None => Ok(claude_token(account.as_deref()).is_some()),
     }
 }
 
@@ -582,6 +674,21 @@ mod tests {
         assert!(token_ok(&format!("sk-ant-oat01-{}", "a".repeat(80))));
         assert!(!token_ok("sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"));
         assert!(!token_ok("sk-ant-oat01-\"; rm -rf ~"));
+    }
+
+    #[test]
+    fn extras_reach_the_adapters() {
+        let x = Extras { skills: Some(vec!["maivado".into(), "superpowers:brainstorming".into()]), plugins: vec!["/lib".into()], mcp: vec![json!({"name":"pw","command":"npx","args":["@playwright/mcp@latest"]}), json!({"name":"bad name","command":"x"}), json!({"type":"http","name":"ctx","url":"https://mcp.example.com"})] };
+        let c = session_params_with("claude", "/x", &[], Some("p"), None, &x);
+        assert_eq!(c["_meta"]["claudeCode"]["options"]["skills"][1], "superpowers:brainstorming");
+        assert_eq!(c["_meta"]["claudeCode"]["options"]["plugins"][0]["path"], "/lib");
+        assert_eq!(c["_meta"]["systemPrompt"]["append"], "p");
+        assert_eq!(c["mcpServers"].as_array().unwrap().len(), 2);
+        let k = session_params_with("codex", "/x", &[], None, None, &x);
+        assert!(k.get("_meta").is_none());
+        assert_eq!(k["mcpServers"][1]["type"], "http");
+        assert!(!mcp_ok(&json!({"name":"x","command":"rm -rf"})));
+        assert!(!mcp_ok(&json!({"type":"http","name":"x","url":"http://evil.com"})));
     }
 
     #[test]
