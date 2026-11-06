@@ -1,8 +1,7 @@
 .home {
   position: relative;
   height: 100%;
-  min-height: 640px;
-  overflow: hidden;
+  min-height: 100%;
 }
 
 .home-wrap {
@@ -416,9 +415,10 @@
 
 .home-micro {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin: 16px 0 0;
+  gap: 10px;
+  margin: 14px 0 0;
   color: var(--text-2);
   font-size: 14px;
 }
@@ -1152,5 +1152,75 @@
   .dc-digit-in,
   .dc-colon {
     animation: none;
+  }
+}
+
+.home-micro .mchip {
+  margin-top: 0;
+}
+
+.home-habits-note {
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.home-left > .h-hero {
+  flex: none;
+}
+
+.home-left > .home-main {
+  flex: 1;
+  min-height: 0;
+}
+
+.home-left > .home-main > .brf-card {
+  min-height: 0;
+}
+
+.home-left .bx {
+  flex: 1;
+  min-height: 0;
+}
+
+.home-left .bx-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.home-left .bx-rail {
+  height: auto;
+  min-height: 210px;
+  max-height: 400px;
+}
+
+@media (max-height: 700px), (max-width: 1100px) {
+  .home {
+    height: auto;
+  }
+
+  .shell[data-route='home'] .home-wrap {
+    height: auto;
+    min-height: 100%;
+  }
+
+  .home-left .bx-rail {
+    height: 300px;
+  }
+}
+
+.home .sky {
+  position: fixed;
+  left: var(--side-w, 226px);
+}
+
+@media (max-width: 1240px) {
+  .bx-head {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .bx-segs {
+    order: 3;
+    flex-basis: 100%;
   }
 }

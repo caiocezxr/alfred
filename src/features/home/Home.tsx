@@ -56,18 +56,15 @@ export default function Home() {
           <PeriodIcon period={period} />
         </span>
       </h1>
-      <p className="home-micro">
+      <div className="home-micro">
         <DayClock city={home} />
+        <MoodChip onOpen={openRitual} onOpenYear={() => setYear(true)} />
         {todays.length > 0 && (
-          <>
-            <span className="sep" aria-hidden="true" />
-            <span>
-              {doneHabits} de {todays.length} hábitos feitos
-            </span>
-          </>
+          <span className="home-habits-note">
+            {doneHabits} de {todays.length} hábitos feitos
+          </span>
         )}
-      </p>
-      <MoodChip onOpen={openRitual} onOpenYear={() => setYear(true)} />
+      </div>
     </header>
   )
 

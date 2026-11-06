@@ -3,9 +3,9 @@ import { navigate } from '../../app/router'
 import { civil } from '../../shared/dates'
 import { profileScope, useProfile } from '../../shared/profile'
 import { Gauge } from '../work/Gauge'
-import { Odometer } from '../work/Odometer'
 import { Roll } from '../work/Roll'
-import { weekScore } from '../work/logic'
+import { weekScore, type WeekScore as Score } from '../work/logic'
+import { WeekScore } from '../work/WeekScore'
 import { useWork } from '../work/store'
 import { useWorkToday } from '../work/today'
 import '../work/work.css'
@@ -16,14 +16,17 @@ export function WorkCockpit() {
   const { state } = useWork()
   const today = useWorkToday(scope)
   const day = civil()
-  const score = useMemo(() => (state ? weekScore(state, day, scope) : { delivered: 0, validated: 0, done: 0, byCompany: {} }), [state, day, scope])
+  const score = useMemo<Score>(
+    () => (state ? weekScore(state, day, scope) : { delivered: 0, validated: 0, done: 0, byCompany: {}, split: {}, last: null, lastAt: null }),
+    [state, day, scope],
+  )
   const h = today.health
   const red = h.total ? Math.min(1, (today.counts.late + today.counts.forget) / h.total) : 0
   const doing = today.counts.doing
 
   return (
     <section className={`panel hc reveal is-${h.level}`} style={{ ['--i' as string]: 2 }} aria-label="Workstation">
-      <button className="hc-gauge" onClick={() => navigate('work')} title="Abrir a Workstation">
+      <div className="hc-gauge">
         <Gauge progress={h.total ? h.progress : 1} red={red} level={h.level}>
           {h.total ? (
             <span className="wk-gauge-num">
@@ -35,22 +38,13 @@ export function WorkCockpit() {
           )}
           <span className="wk-gauge-cap">hoje</span>
         </Gauge>
-      </button>
+      </div>
       <div className="hc-side">
         <div className="hc-head">
           <span className="hc-k">Workstation</span>
           <span className={`hc-state is-${h.level}`}>{h.label || (today.loaded ? 'Tudo em dia' : ' ')}</span>
         </div>
-        <div className="hc-odo">
-          <span title="Entregas na semana">
-            <Odometer value={score.delivered} digits={2} label="Entregas na semana" />
-            <em>entregas</em>
-          </span>
-          <span title="Validadas na semana">
-            <Odometer value={score.validated} digits={2} label="Validadas na semana" />
-            <em>validadas</em>
-          </span>
-        </div>
+        <WeekScore score={score} companies={state?.companies ?? []} className="is-compact" />
         <div className="hc-stats">
           <button onClick={() => navigate('work')}>
             <b>{doing}</b> fazendo
