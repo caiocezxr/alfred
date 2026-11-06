@@ -10,8 +10,7 @@ import { BookController, FONT_SCALES, type Selection } from './controller'
 import { formatRef, loadBible, type Bible, type VerseRef } from './data/bible'
 import { takeBibleTarget } from '../../app/router'
 import { BookStage } from './book/BookStage'
-import { BACKGROUNDS, COVERS, backgroundCss, backgroundImage, backgroundOf, backgroundThumb, normalizeBackground, type BackgroundIcon, type BackgroundId } from './ambience'
-import { startAmbient, stopAmbient } from './ambientSound'
+import { BACKGROUNDS, COVERS, backgroundCss, backgroundImage, backgroundThumb, normalizeBackground, type BackgroundIcon, type BackgroundId } from './ambience'
 import { preloadSounds } from './sound'
 import { NoteCard } from './ui/NoteCard'
 import { NotesPanel } from './ui/NotesPanel'
@@ -67,7 +66,6 @@ function savedBackground() {
   }
 }
 
-let resumeOpen = false
 
 type Panel = null | 'notes' | 'today' | 'settings' | 'ambience'
 
@@ -81,47 +79,6 @@ function Reader({ bible }: { bible: Bible }) {
   const [panel, setPanel] = useState<Panel>(null)
   const [cardAnchor, setCardAnchor] = useState<{ x: number; y: number } | null>(null)
   const [used, setUsed] = useState(0)
-  const [ritual, setRitual] = useState(false)
-  const [breath, setBreath] = useState(0)
-
-  const enterRitual = useCallback(() => {
-    const wasOpen = controller.getSnapshot().phase === 'open'
-    if (!controller.isOpen) controller.open()
-    setPanel(null)
-    setRitual(true)
-    setBreath(1)
-    setTimeout(() => controller.focusAnchor(), wasOpen ? 400 : 1700)
-  }, [controller])
-  const exitRitual = useCallback(() => {
-    setRitual(false)
-    setBreath(0)
-    stopAmbient()
-    controller.resetView()
-  }, [controller])
-
-  useEffect(() => {
-    if (!breath) return
-    const t1 = setTimeout(() => setBreath(2), 2600)
-    const t2 = setTimeout(() => setBreath(0), 5600)
-    return () => {
-      clearTimeout(t1)
-      clearTimeout(t2)
-    }
-  }, [breath === 1])
-
-  useEffect(() => {
-    if (ritual && snap.ambientSound) startAmbient(backgroundOf(snap.background).sound)
-    else stopAmbient()
-  }, [ritual, snap.ambientSound, snap.background])
-  useEffect(() => () => stopAmbient(0.4), [])
-  useEffect(() => {
-    const root = document.documentElement
-    if (ritual) root.dataset.ritual = '1'
-    else delete root.dataset.ritual
-    return () => {
-      delete root.dataset.ritual
-    }
-  }, [ritual])
 
   const openNote = useCallback(
     (sel: Selection, at: { x: number; y: number }) => {
@@ -165,7 +122,6 @@ function Reader({ bible }: { bible: Bible }) {
     return () => mq.removeEventListener('change', apply)
   }, [controller])
 
-  const [fromVerse, setFromVerse] = useState(false)
   useEffect(() => {
     const target = takeBibleTarget()
     let unmark = 0
@@ -176,12 +132,10 @@ function Reader({ bible }: { bible: Bible }) {
         const s = controller.selection
         if (s && s.book === target.book && s.chapter === target.chapter && s.verse === target.verse) controller.select(null)
       }, 7000)
-      setFromVerse(true)
     }
-    if (resumeOpen) controller.snapOpen(true)
+    controller.snapOpen(true)
     return () => {
       clearTimeout(unmark)
-      resumeOpen = controller.isOpen
     }
   }, [controller])
 
@@ -190,10 +144,6 @@ function Reader({ bible }: { bible: Bible }) {
       const typing = (e.target as HTMLElement)?.closest?.('input, textarea, [contenteditable]')
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return
       if (e.key === 'Escape') {
-        if (ritual && !indexOpen && !cardAnchor) {
-          exitRitual()
-          return
-        }
         if (indexOpen) setIndexOpen(false)
         else if (cardAnchor) closeNote()
         else if (panel) setPanel(null)
@@ -253,16 +203,9 @@ function Reader({ bible }: { bible: Bible }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [controller, indexOpen, cardAnchor, panel, closeNote, ritual, exitRitual])
+  }, [controller, indexOpen, cardAnchor, panel, closeNote])
 
   const showMeter = snap.isOpen && (snap.resumed || used > 3)
-  useEffect(() => {
-    if (!import.meta.env.DEV || snap.phase !== 'open') return
-    const id = requestAnimationFrame(() => {
-      if (document.querySelector('.bible .bible-invite')) console.error('[bíblia] o convite continua montado com o livro aberto')
-    })
-    return () => cancelAnimationFrame(id)
-  }, [snap.phase])
   useEffect(() => {
     if (snap.phase !== 'open' || used > 3) return
     const t = window.setTimeout(() => setUsed(4), 9000)
@@ -275,22 +218,11 @@ function Reader({ bible }: { bible: Bible }) {
   }
 
   return (
-    <div className={`bible ${ritual ? 'is-ritual' : ''}`} data-bg={snap.background}>
+    <div className="bible" data-bg={snap.background}>
       <BibleBackdrop id={snap.background} />
       <div className="bible-stage">
         <BookStage controller={controller} cover={snap.cover} />
       </div>
-
-      {!snap.isOpen && (
-        <div className="bible-invite">
-        <span className="invite-kicker">{fromVerse ? 'Versículo do dia' : snap.resumed ? 'Continuar em' : 'Comece por'}</span>
-        <span className="invite-ref">
-          {bible.books[snap.ref.book]?.name ?? 'Gênesis'} {snap.ref.chapter + 1}
-          {fromVerse || (snap.resumed && snap.ref.verse > 0) ? `:${snap.ref.verse + 1}` : ''}
-        </span>
-        <span className="invite-hint">Clique na capa ou tecle Enter para abrir</span>
-        </div>
-      )}
 
       <header className="bible-bar">
         <button className="bible-ref" onClick={() => setIndexOpen(true)} aria-haspopup="dialog" title="Índice (I)">
@@ -359,14 +291,6 @@ function Reader({ bible }: { bible: Bible }) {
             >
               <SunIcon />
             </button>
-            <button
-              className="icon-btn"
-              onClick={() => (snap.isOpen ? controller.close() : controller.open())}
-              aria-label={snap.isOpen ? 'Fechar o livro' : 'Abrir o livro'}
-              title={snap.isOpen ? 'Fechar o livro' : 'Abrir o livro'}
-            >
-              <BookIcon open={snap.isOpen} />
-            </button>
           </div>
         </div>
       </header>
@@ -391,17 +315,6 @@ function Reader({ bible }: { bible: Bible }) {
               <button aria-selected={snap.style.verseMode === 'lines'} onClick={() => controller.setVerseMode('lines')}>Um por linha</button>
               <button aria-selected={snap.style.verseMode === 'flow'} onClick={() => controller.setVerseMode('flow')}>Corrido</button>
             </div>
-          </div>
-          <div className="settings-row">
-            <span>Som ambiente no momento de leitura</span>
-            <button
-              role="switch"
-              aria-checked={snap.ambientSound}
-              className={`switch ${snap.ambientSound ? 'is-on' : ''}`}
-              onClick={() => controller.setAmbientSound(!snap.ambientSound)}
-            >
-              <span />
-            </button>
           </div>
           <div className="settings-row">
             <span>Som da página</span>
@@ -440,10 +353,6 @@ function Reader({ bible }: { bible: Bible }) {
         <button className="nav-btn" disabled={!snap.canPrev || !snap.isOpen} onClick={() => controller.backward()} aria-label="Página anterior">
           <Arrow dir={-1} />
         </button>
-        <button className="ritual-btn" onClick={enterRitual} disabled={ritual}>
-          <CandleIcon />
-          Momento de leitura
-        </button>
         <div className="nav-center">
           {showMeter ? (
             <ReadingMeter bible={bible} first={snap.first} last={snap.last} visible />
@@ -458,17 +367,6 @@ function Reader({ bible }: { bible: Bible }) {
         </button>
       </nav>
 
-      {ritual && (
-        <button className="ritual-exit" onClick={exitRitual}>
-          Sair do momento <kbd>Esc</kbd>
-        </button>
-      )}
-      {breath > 0 && (
-        <div className="breath" aria-live="polite">
-          <span className="breath-ring" />
-          <p key={breath} className="breath-text">{breath === 1 ? 'Respire fundo.' : 'Leia devagar.'}</p>
-        </div>
-      )}
 
       {snap.selection && cardAnchor && (
         <NoteCard
@@ -627,13 +525,6 @@ function BookIndex({ bible, current, onClose, onPick }: {
   )
 }
 
-const CandleIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M8 1.8c1.3 1.6 1.6 2.6 1 3.5-.4.6-1.6.6-2 0-.6-.9-.3-1.9 1-3.5z" fill="currentColor" stroke="none" />
-    <rect x="5.6" y="6.6" width="4.8" height="7.6" rx="1" />
-  </svg>
-)
-
 function BibleBackdrop({ id }: { id: BackgroundId }) {
   const wrap = useRef<HTMLDivElement>(null)
   const layers = useRef<(HTMLCanvasElement | null)[]>([null, null])
@@ -789,14 +680,3 @@ const SunIcon = () => (
     <path d="M9 2v1.6M9 14.4V16M2 9h1.6M14.4 9H16M4 4l1.1 1.1M12.9 12.9 14 14M4 14l1.1-1.1M12.9 5.1 14 4" />
   </svg>
 )
-const BookIcon = ({ open }: { open: boolean }) =>
-  open ? (
-    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round">
-      <path d="M9 5.2C7.6 4.2 5.4 3.8 3 4v9.4c2.4-.2 4.6.2 6 1.2 1.4-1 3.6-1.4 6-1.2V4c-2.4-.2-4.6.2-6 1.2zM9 5.2v9.4" />
-    </svg>
-  ) : (
-    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.2">
-      <rect x="4" y="3" width="10" height="12" rx="1.5" />
-      <path d="M7 3v12" />
-    </svg>
-  )

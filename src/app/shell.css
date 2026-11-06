@@ -942,16 +942,6 @@ textarea.field {
   overflow: hidden auto;
 }
 
-:root[data-ritual] .shell {
-  --side-w: 0px;
-}
-
-:root[data-ritual] .sidebar {
-  opacity: 0;
-  transform: translateX(-24px);
-  pointer-events: none;
-}
-
 .sidebar {
   transition: opacity 600ms var(--ease-out), transform 600ms var(--ease-out);
 }
