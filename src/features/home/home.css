@@ -41,8 +41,8 @@
 
 .hc {
   display: grid;
-  gap: 10px;
-  padding: 14px 16px 14px;
+  gap: 14px;
+  padding: 16px 18px 18px;
 }
 
 .hc-head {
@@ -91,7 +91,7 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
+  gap: 16px;
 }
 
 .hc-gauge {
@@ -103,8 +103,8 @@
 }
 
 .hc .wk-gauge {
-  width: 112px;
-  height: 98px;
+  width: 104px;
+  height: 92px;
 }
 
 .hc-side {
@@ -1461,4 +1461,56 @@
     animation: none;
     transform: none;
   }
+}
+
+.hc-line {
+  display: grid;
+  gap: 4px;
+}
+
+.hc-line button {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--t-fast), transform 200ms var(--ease-out);
+}
+
+.hc-line button:hover {
+  color: var(--text);
+  transform: translateX(2px);
+}
+
+.hc-line b {
+  min-width: 1.4em;
+  color: var(--text);
+  font-family: var(--wk-mono);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.hc-line button.is-late b {
+  color: var(--wk-red);
+}
+
+.home-wrap {
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+.hc .hc-score {
+  display: grid;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.hc .hc-score .wk-ws-row {
+  justify-content: space-between;
 }

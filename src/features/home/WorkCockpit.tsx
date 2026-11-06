@@ -48,23 +48,20 @@ export function WorkCockpit() {
         </button>
         <div className="hc-side">
           <span className={`hc-state is-${h.level}`}>{h.label || (today.loaded ? 'Tudo em dia por aqui' : ' ')}</span>
-          <div className="hc-stats">
+          <div className="hc-line">
             <button onClick={() => navigate('work')}>
-              <b>{doing}</b>
-              <span>fazendo</span>
+              <b>{doing}</b> fazendo
             </button>
             <button className={today.counts.late ? 'is-late' : ''} onClick={() => navigate('work')}>
-              <b>{today.counts.late}</b>
-              <span>{today.counts.late === 1 ? 'atrasado' : 'atrasados'}</span>
+              <b>{today.counts.late}</b> {today.counts.late === 1 ? 'atrasado' : 'atrasados'}
             </button>
             <button onClick={() => navigate('work')}>
-              <b>{today.counts.todosLeft}</b>
-              <span>to-dos</span>
+              <b>{today.counts.todosLeft}</b> {today.counts.todosLeft === 1 ? 'to-do' : 'to-dos'}
             </button>
           </div>
         </div>
       </div>
-      <WeekScore score={score} companies={state?.companies ?? []} className="is-compact hc-score" />
+      <WeekScore score={score} companies={state?.companies ?? []} variant="compact" className="hc-score" />
     </section>
   )
 }
