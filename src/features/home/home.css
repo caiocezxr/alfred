@@ -988,3 +988,169 @@
     animation: none;
   }
 }
+
+.dc {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 14px 6px 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-solid) 55%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.dc-watch {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  overflow: visible;
+}
+
+.dc-bezel {
+  fill: none;
+  stroke: color-mix(in srgb, var(--text) 30%, transparent);
+  stroke-width: 1.4;
+}
+
+.dc-face {
+  fill: color-mix(in srgb, var(--text) 4%, transparent);
+}
+
+.dc-watch line {
+  stroke: color-mix(in srgb, var(--text) 45%, transparent);
+  stroke-width: 0.7;
+  stroke-linecap: round;
+}
+
+.dc-watch line.is-major {
+  stroke: var(--text);
+  stroke-width: 1.3;
+}
+
+.dc-watch .dc-h {
+  stroke: var(--text);
+  stroke-width: 2.2;
+}
+
+.dc-watch .dc-m {
+  stroke: var(--text);
+  stroke-width: 1.5;
+}
+
+.dc-watch .dc-s {
+  stroke: var(--accent-2, #e0574d);
+  stroke-width: 0.7;
+}
+
+.dc-pin {
+  fill: var(--accent-2, #e0574d);
+}
+
+.dc-read {
+  display: grid;
+  line-height: 1.05;
+}
+
+.dc-time {
+  display: inline-flex;
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.dc-digit {
+  display: inline-block;
+  overflow: hidden;
+  height: 1.1em;
+  line-height: 1.1em;
+}
+
+.dc-digit-in {
+  display: inline-block;
+  animation: dc-roll 420ms cubic-bezier(0.3, 1.2, 0.4, 1) both;
+}
+
+@keyframes dc-roll {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+}
+
+.dc-colon {
+  padding: 0 1px;
+  animation: dc-blink 2s steps(1) infinite;
+}
+
+@keyframes dc-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.dc-city {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.dc-sun {
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  padding-left: 14px;
+  border-left: 1px solid var(--hairline);
+}
+
+.dc-sun svg {
+  width: 96px;
+  height: 24px;
+  overflow: visible;
+}
+
+.dc-arc {
+  fill: none;
+  stroke: color-mix(in srgb, var(--text) 18%, transparent);
+  stroke-width: 1.2;
+  stroke-dasharray: 2 3;
+}
+
+.dc-arc-done {
+  fill: none;
+  stroke: #f2a43a;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1s var(--ease-out);
+}
+
+.dc-horizon {
+  stroke: color-mix(in srgb, var(--text) 25%, transparent);
+  stroke-width: 0.8;
+}
+
+.dc-sun-dot {
+  fill: #ffcf6e;
+  filter: drop-shadow(0 0 4px rgba(255, 190, 90, 0.9));
+}
+
+.dc.is-night .dc-arc-done {
+  stroke: color-mix(in srgb, var(--text) 25%, transparent);
+}
+
+.dc-sun-label {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dc-digit-in,
+  .dc-colon {
+    animation: none;
+  }
+}

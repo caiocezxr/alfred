@@ -4,7 +4,7 @@ import { navigate, requestIntent } from '../../app/router'
 import { civil, fmtLong } from '../../shared/dates'
 import { isScheduled, setCheckin, useHabits } from '../../shared/db/stores'
 import { openWorkItem, toggleTodo, useWorkToday, type TodayEntry } from '../work/today'
-import { homeCity, localTime } from './geo'
+import { homeCity } from './geo'
 import { describe, useWeather, type Weather } from './weather'
 import BriefingCard from '../briefing/BriefingCard'
 import { MoodChip } from '../mood/CheckIn'
@@ -14,6 +14,7 @@ import { greetingFor, loadNicks, saveNicks, type Period } from '../../shared/gre
 import { SplitFlap } from './SplitFlap'
 import { WorkCockpit } from './WorkCockpit'
 import { LiveSky } from './LiveSky'
+import { DayClock } from './DayClock'
 import './home.css'
 
 function useClock(ms = 15000) {
@@ -56,8 +57,7 @@ export default function Home() {
         </span>
       </h1>
       <p className="home-micro">
-        <span className="home-clock">{localTime(home.tz, now)}</span>
-        <span>em {home.name}</span>
+        <DayClock city={home} />
         {todays.length > 0 && (
           <>
             <span className="sep" aria-hidden="true" />
