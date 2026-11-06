@@ -48,8 +48,8 @@ export default function Ideas() {
     <section className={`page lab ${loaded && !current ? 'is-empty' : ''}`}>
       <header className="lab-head reveal" style={{ ['--i' as string]: 0 }}>
         <div>
-          <div className="kicker">Laboratório de ideias</div>
-          <h1 className="display">Laboratório</h1>
+          <div className="kicker">Suas ideias</div>
+          <h1 className="display">Ideias</h1>
           {current ? (
             <Pulse ideas={ideas} steps={steps} selectedId={current.id} onOpen={open} />
           ) : (

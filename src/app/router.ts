@@ -6,7 +6,7 @@ export type Route = 'home' | 'work' | 'ideas' | 'radar' | 'bible' | 'habits' | '
 export const ROUTES: { id: Route; label: string; ready: boolean; key: string }[] = [
   { id: 'home', label: 'Início', ready: true, key: '1' },
   { id: 'work', label: 'Workstation', ready: true, key: '2' },
-  { id: 'ideas', label: 'Laboratório', ready: true, key: '7' },
+  { id: 'ideas', label: 'Ideias', ready: true, key: '7' },
   { id: 'radar', label: 'Radar', ready: true, key: '3' },
   { id: 'bible', label: 'Bíblia', ready: true, key: '4' },
   { id: 'habits', label: 'Hábitos', ready: true, key: '5' },

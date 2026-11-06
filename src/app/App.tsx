@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { errorStore } from '../shared/db/stores'
 import { Wallpaper } from '../shared/themes/Wallpaper'
 import {
@@ -50,6 +50,9 @@ export function App() {
   const [palette, setPalette] = useState(false)
   const [themePicker, setThemePicker] = useState(false)
   const [hoverNav, setHoverNav] = useState<number | null>(null)
+  const [pillAt, setPillAt] = useState<{ y: number; h: number; snap: boolean } | null>(null)
+  const [activeAt, setActiveAt] = useState<{ y: number; h: number } | null>(null)
+  const navRef = useRef<HTMLElement>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [ritualOnHome] = useState(() => route === 'home')
   const error = useSyncExternalStore(errorStore.subscribe, errorStore.get)
@@ -101,6 +104,22 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [route])
 
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = navRef.current?.querySelector<HTMLElement>(`[data-route="${route}"]`)
+      setActiveAt(el ? { y: el.offsetTop, h: el.offsetHeight } : null)
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [route, collapsed])
+
+  useEffect(() => {
+    if (!pillAt?.snap) return
+    const id = requestAnimationFrame(() => setPillAt((p) => (p ? { ...p, snap: false } : p)))
+    return () => cancelAnimationFrame(id)
+  }, [pillAt?.snap])
+
   const onToast = useCallback((s: string) => setToast(s), [])
   const immersive = route === 'bible'
 
@@ -122,11 +141,25 @@ export function App() {
           <span className="side-label">Ir para…</span>
           <kbd className="side-label">⌘K</kbd>
         </button>
-        <nav className="side-nav" onPointerLeave={() => setHoverNav(null)}>
-          <span className="side-hover" style={{ transform: `translateY(${Math.max(0, hoverNav ?? 0) * 46}px)`, opacity: hoverNav === null ? 0 : 1 }} />
-          <span className="side-indicator" style={{ transform: `translateY(${Math.max(0, ROUTES.findIndex((r) => r.id === route)) * 46}px)` }} />
+        <nav className="side-nav" ref={navRef} onPointerLeave={() => setHoverNav(null)}>
+          <span
+            className={`side-hover ${pillAt?.snap ? 'is-snap' : ''}`}
+            style={{ transform: `translateY(${pillAt?.y ?? 0}px)`, height: pillAt?.h ?? 42, opacity: hoverNav === null || !pillAt ? 0 : 1 }}
+          />
+          <span className="side-indicator" style={{ transform: `translateY(${activeAt?.y ?? 0}px)`, height: activeAt?.h ?? 42, opacity: activeAt ? 1 : 0 }} />
           {ROUTES.map((r, i) => (
-            <NavItem key={r.id} id={r.id} label={r.label} ready={r.ready} active={route === r.id} hotkey={r.key} onHover={() => setHoverNav(i)} />
+            <NavItem
+              key={r.id}
+              id={r.id}
+              label={r.label}
+              ready={r.ready}
+              active={route === r.id}
+              hotkey={r.key}
+              onHover={(el) => {
+                setPillAt({ y: el.offsetTop, h: el.offsetHeight, snap: hoverNav === null })
+                setHoverNav(i)
+              }}
+            />
           ))}
         </nav>
         <div className="side-bottom">
@@ -167,10 +200,11 @@ export function App() {
   )
 }
 
-function NavItem({ id, label, ready, active, hotkey, onHover }: { id: Route; label: string; ready: boolean; active: boolean; hotkey: string; onHover: () => void }) {
+function NavItem({ id, label, ready, active, hotkey, onHover }: { id: Route; label: string; ready: boolean; active: boolean; hotkey: string; onHover: (el: HTMLElement) => void }) {
   return (
     <button
-      onPointerEnter={onHover}
+      data-route={id}
+      onPointerEnter={(e) => onHover(e.currentTarget)}
       className={`side-item ${active ? 'is-active' : ''} ${ready ? '' : 'is-soon'}`}
       onClick={() => navigate(id)}
       aria-current={active ? 'page' : undefined}

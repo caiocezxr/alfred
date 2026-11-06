@@ -16,7 +16,7 @@ export function CommandPalette({ onClose, onToast }: { onClose: () => void; onTo
     () => [
       { id: 'new-task', label: 'Novo to-do', hint: '⌘N na Workstation', group: 'Ações', run: () => { navigate('work'); setTimeout(() => requestIntent('new-task'), 60) } },
       { id: 'new-habit', label: 'Novo hábito', hint: '⌘N em Hábitos', group: 'Ações', run: () => { navigate('habits'); setTimeout(() => requestIntent('new-habit'), 60) } },
-      { id: 'new-idea', label: 'Nova ideia', hint: '⌘N no Laboratório', group: 'Ações', run: () => { navigate('ideas'); setTimeout(() => requestIntent('new-idea'), 120) } },
+      { id: 'new-idea', label: 'Nova ideia', hint: '⌘N em Ideias', group: 'Ações', run: () => { navigate('ideas'); setTimeout(() => requestIntent('new-idea'), 120) } },
       { id: 'new-note', label: 'Nova nota', hint: '⌘N em Notas', group: 'Ações', run: () => { navigate('notes'); setTimeout(() => requestIntent('new-note'), 160) } },
       { id: 'refresh-radar', label: 'Atualizar o Radar', group: 'Ações', run: () => { navigate('radar'); setTimeout(() => requestIntent('refresh-radar'), 160) } },
       { id: 'open-bible', label: 'Abrir a Bíblia', group: 'Ações', run: () => navigate('bible') },
