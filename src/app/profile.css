@@ -451,3 +451,39 @@
 .pf-menu {
   background: var(--surface-solid);
 }
+
+.pf-lock {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.pf-lock-field {
+  min-width: 0;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.pf-lock-field input {
+  width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+
+.pf-lock-field button {
+  flex: none;
+  border-radius: 50%;
+  background: var(--pc);
+  color: #fff;
+  transition: transform var(--t-fast) var(--ease-out), opacity var(--t-fast);
+}
+
+.pf-lock-field button:hover:not(:disabled) {
+  transform: translateX(2px);
+}
+
+.pf-lock-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
