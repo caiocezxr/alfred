@@ -16,7 +16,7 @@ export type DisplayFontId = 'cormorant' | 'garamond' | 'fraunces' | 'bodoni' | '
 export type TextFontId = 'sistema' | 'arredondada' | 'serifada'
 export type Tone = 'neutro' | 'quente' | 'frio'
 export type Texture = 'liso' | 'grao' | 'papel' | 'linho' | 'pontos' | 'carbono' | 'couro' | 'grade'
-export type StyleId = 'classico' | 'papel' | 'tecnologico' | 'carbono' | 'couro'
+export type StyleId = 'classico' | 'grafite' | 'papel' | 'tecnologico' | 'carbono' | 'couro'
 
 export const DISPLAY_FONTS: Record<DisplayFontId, { label: string; note: string; family: string; weight: string; tracking: string; adjust?: string }> = {
   cormorant: { label: 'Cormorant', note: 'clássica, acento alto', family: "'Cormorant Garamond', 'EB Garamond', Georgia, serif", weight: '500', tracking: '0.005em' },
@@ -174,6 +174,13 @@ export const STYLES: StyleDef[] = [
     escuro: L({ accent: '#d6c19c', display: 'instrument', glass: 0.72, depth: 1, tone: 'neutro', radius: 20 }),
   },
   {
+    id: 'grafite',
+    name: 'Grafite',
+    tagline: 'Cinza, branco e grafite, sem cor sobrando',
+    claro: L({ accent: '#2b2d31', display: 'sistema', glass: 0.84, depth: 0.55, tone: 'neutro', contrast: 0.6, radius: 14, texture: 'grao', grain: 0.22, grainSize: 0.2 }),
+    escuro: L({ accent: '#e4e5e7', display: 'sistema', glass: 0.74, depth: 0.45, tone: 'neutro', contrast: 0.6, radius: 14, texture: 'grao', grain: 0.25, grainSize: 0.2 }),
+  },
+  {
     id: 'papel',
     name: 'Papel',
     tagline: 'Fibra, tinta e tipografia de livro',
@@ -239,6 +246,10 @@ const PALETTES: Record<StyleId, Pal> = {
   classico: {
     dark: { soft: t3('#161618', '#18140f', '#11151b'), deep: t3('#000000', '#050302', '#020407'), text: t3('#f4f2ee', '#f6efe4', '#edf2f8') },
     light: { soft: t3('#ececea', '#f1eadf', '#e7edf3'), bright: t3('#ffffff', '#fffdf8', '#fbfdff'), text: t3('#18181a', '#1b1814', '#141a22') },
+  },
+  grafite: {
+    dark: { soft: t3('#2a2b2e', '#2c2a28', '#272a2e'), deep: t3('#141517', '#161514', '#121417'), text: t3('#eceef0', '#efece8', '#e9edf1') },
+    light: { soft: t3('#d9dadc', '#dddad6', '#d6d9dd'), bright: t3('#f5f5f6', '#f6f5f3', '#f3f5f7'), text: t3('#1c1d20', '#1f1d1b', '#1a1d21') },
   },
   papel: {
     dark: { soft: t3('#1d1b18', '#211b14', '#1a1c1f'), deep: t3('#100f0d', '#120e0a', '#0d0f12'), text: t3('#ece6da', '#efe3cc', '#e2e6ea') },
