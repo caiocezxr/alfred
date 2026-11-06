@@ -895,3 +895,50 @@
   text-transform: none;
   color: #f3e2c2;
 }
+
+.lx-sheen {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: 50%;
+  pointer-events: none;
+  background: conic-gradient(from var(--la, 0deg), rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.06) 7%, transparent 16%, transparent 84%, rgba(255, 255, 255, 0.06) 93%, rgba(255, 255, 255, 0.34));
+  -webkit-mask: radial-gradient(closest-side, transparent 88%, #000 89.5%, #000 99%, transparent 100%);
+  mask: radial-gradient(closest-side, transparent 88%, #000 89.5%, #000 99%, transparent 100%);
+  mix-blend-mode: screen;
+  opacity: 0.75;
+  transition: opacity 400ms ease;
+}
+
+.lx-tilt {
+  --la: 0deg;
+}
+
+.lx-top-r {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.lx-snd {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease;
+}
+
+.lx-snd:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.lx-snd.is-on {
+  color: var(--ink-2);
+}

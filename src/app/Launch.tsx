@@ -5,6 +5,7 @@ import { companyCreate, getWork, loadWork, useWork } from '../features/work/stor
 import { CompanyMark } from '../features/work/brand'
 import { isUnlocked, markUnlocked, setPassword, verifyPassword, warmLocks } from '../shared/lock'
 import '@fontsource/bodoni-moda/700.css'
+import { setSound, sfx, soundOn, wakeAudio } from './sound'
 import './launch.css'
 
 const NEW_COLORS = ['#1F8A5B', '#E07A2E', '#7A4FE0', '#D4373F', '#1A9BB0', '#C9A227']
@@ -61,6 +62,9 @@ export function Launch({ onDone, intoRitual }: { onDone: () => void; intoRitual:
   const tilt = useRef<HTMLDivElement>(null)
   const dragged = useRef(false)
   const synced = useRef(false)
+  const [sound, setSoundState] = useState(soundOn)
+  const firstTurn = useRef(true)
+  const coast = useRef<number[]>([])
 
   const live = useRef({ phase, idx, turn, n, options, status })
   live.current = { phase, idx, turn, n, options, status }
@@ -98,6 +102,40 @@ export function Launch({ onDone, intoRitual }: { onDone: () => void; intoRitual:
 
   const nudge = (dir: number) => setTurn((t) => t + dir)
 
+  const stopCoast = () => {
+    coast.current.forEach(clearTimeout)
+    coast.current = []
+  }
+
+  const glide = (dir: number, steps: number) => {
+    stopCoast()
+    let at = 0
+    for (let k = 0; k < steps; k++) {
+      at += 55 + k * k * 9
+      coast.current.push(window.setTimeout(() => live.current.phase === 'pick' && nudge(dir), at))
+    }
+  }
+
+  useEffect(() => {
+    if (firstTurn.current) {
+      firstTurn.current = false
+      return
+    }
+    if (drag === null) sfx.tick()
+  }, [turn])
+
+  const prevLen = useRef(0)
+  useEffect(() => {
+    if (pw.length > prevLen.current) sfx.key()
+    prevLen.current = pw.length
+  }, [pw])
+
+  useEffect(() => {
+    if (phase !== 'lock') return
+    const id = window.setTimeout(() => sfx.bolts(), 60)
+    return () => window.clearTimeout(id)
+  }, [phase])
+
   const back = () => {
     if (live.current.status === 'checking' || live.current.status === 'ok') return
     setPhase('pick')
@@ -121,6 +159,7 @@ export function Launch({ onDone, intoRitual }: { onDone: () => void; intoRitual:
   }
 
   const finish = (id: Profile) => {
+    sfx.unlock()
     setProfile(id, getWork().state?.companies.find((c) => c.id === id)?.color ?? null)
     setStatus('ok')
     setPhase('open')
@@ -144,6 +183,7 @@ export function Launch({ onDone, intoRitual }: { onDone: () => void; intoRitual:
     if (ok) finish(cur.id)
     else {
       setStatus('bad')
+      sfx.deny()
       window.setTimeout(() => {
         setPw('')
         setStatus('idle')
@@ -201,18 +241,36 @@ export function Launch({ onDone, intoRitual }: { onDone: () => void; intoRitual:
     }
     let acc = 0
     let last = 0
+    let peak = 0
+    let idle = 0
     const onWheel = (e: WheelEvent) => {
       if (live.current.phase !== 'pick') return
       e.preventDefault()
+      stopCoast()
       const t = performance.now()
-      if (t - last > 220) acc = 0
+      if (t - last > 220) {
+        acc = 0
+        peak = 0
+      }
+      const dt = Math.max(8, t - last)
       last = t
-      acc += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY
+      const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY
+      peak = Math.max(peak, Math.abs(delta) / dt)
+      acc += delta
       if (Math.abs(acc) >= 36) {
         nudge(acc > 0 ? 1 : -1)
         acc = 0
       }
+      const dir = delta > 0 ? 1 : -1
+      window.clearTimeout(idle)
+      idle = window.setTimeout(() => {
+        if (peak > 2.2 && !calm()) glide(dir, Math.min(live.current.n, Math.floor(peak / 1.4)))
+        peak = 0
+      }, 90)
     }
+    const wake = () => wakeAudio()
+    window.addEventListener('pointerdown', wake)
+    window.addEventListener('keydown', wake)
     let raf = 0
     let mx = 0
     let my = 0
@@ -226,6 +284,7 @@ export function Launch({ onDone, intoRitual }: { onDone: () => void; intoRitual:
         if (!el) return
         el.style.setProperty('--rx', `${(mx * 10).toFixed(2)}deg`)
         el.style.setProperty('--ry', `${(-my * 8).toFixed(2)}deg`)
+        el.style.setProperty('--la', `${(Math.atan2(my, mx) * 180) / Math.PI + 90}deg`)
       })
     }
     window.addEventListener('keydown', onKey)
@@ -235,6 +294,10 @@ export function Launch({ onDone, intoRitual }: { onDone: () => void; intoRitual:
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('wheel', onWheel)
       window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerdown', wake)
+      window.removeEventListener('keydown', wake)
+      window.clearTimeout(idle)
+      stopCoast()
       cancelAnimationFrame(raf)
     }
   }, [])
@@ -249,6 +312,9 @@ export function Launch({ onDone, intoRitual }: { onDone: () => void; intoRitual:
     let total = 0
     let moved = false
     let raf = 0
+    let lastStep = 0
+    const samples: { t: number; a: number }[] = []
+    stopCoast()
     dragged.current = false
     const move = (ev: PointerEvent) => {
       const a = angleAt(ev.clientX, ev.clientY, cx, cy)
@@ -257,6 +323,13 @@ export function Launch({ onDone, intoRitual }: { onDone: () => void; intoRitual:
       if (d < -180) d += 360
       prev = a
       total += d
+      samples.push({ t: performance.now(), a: total })
+      if (samples.length > 8) samples.shift()
+      const stepNow = Math.round(total / (360 / live.current.n))
+      if (stepNow !== lastStep) {
+        lastStep = stepNow
+        sfx.tick()
+      }
       if (!moved && Math.abs(total) > 4) {
         moved = true
         dragged.current = true
@@ -272,7 +345,13 @@ export function Launch({ onDone, intoRitual }: { onDone: () => void; intoRitual:
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', up)
       cancelAnimationFrame(raf)
-      if (moved) setTurn((t) => t - Math.round(total / (360 / live.current.n)))
+      if (moved) {
+        const st = 360 / live.current.n
+        const recent = samples.filter((x) => performance.now() - x.t < 90)
+        const v = recent.length > 1 ? (recent[recent.length - 1].a - recent[0].a) / Math.max(16, recent[recent.length - 1].t - recent[0].t) : 0
+        setTurn((t) => t - Math.round(total / st))
+        if (Math.abs(v) > 0.35 && !calm()) glide(v > 0 ? -1 : 1, Math.min(live.current.n, Math.round((Math.abs(v) * 260) / st)))
+      }
       setDrag(null)
     }
     window.addEventListener('pointermove', move)
@@ -324,13 +403,32 @@ export function Launch({ onDone, intoRitual }: { onDone: () => void; intoRitual:
 
       <header className="lx-top">
         <span className="lx-word">Alfred</span>
-        <span className="lx-now">{fmtNow(now)}</span>
+        <span className="lx-top-r">
+          <button
+            type="button"
+            className={`lx-snd ${sound ? 'is-on' : ''}`}
+            onClick={() => {
+              wakeAudio()
+              setSound(!sound)
+              setSoundState(!sound)
+            }}
+            aria-label={sound ? 'Desligar o som' : 'Ligar o som'}
+            title={sound ? 'Som ligado' : 'Som desligado'}
+          >
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+              <path d="M2.5 6v4h2.6L8.5 13V3L5.1 6z" fill="currentColor" />
+              {sound ? <path d="M10.5 5.5a3.5 3.5 0 0 1 0 5M12.4 3.8a6 6 0 0 1 0 8.4" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /> : <path d="M11 6l3.5 4M14.5 6 11 10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />}
+            </svg>
+          </button>
+          <span className="lx-now">{fmtNow(now)}</span>
+        </span>
       </header>
 
       <div className="lx-stage">
         <div className="lx-tilt" ref={tilt}>
           <div className="lx-dial" ref={dial} onPointerDown={startDrag}>
             <span className="lx-sector" aria-hidden="true" />
+            <span className="lx-sheen" aria-hidden="true" />
             <span className="lx-notch" aria-hidden="true" />
             <div className="lx-ring" style={{ transform: `rotate(${ring}deg)` }}>
               <svg className="lx-ticks" viewBox="0 0 400 400" aria-hidden="true">
