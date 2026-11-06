@@ -236,3 +236,46 @@
 .side-profile {
   margin: 2px 0 8px;
 }
+
+.pf-mark {
+  position: relative;
+}
+
+.pf-alert {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f0a92c;
+  box-shadow: 0 0 0 2px var(--surface-solid);
+  animation: pf-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes pf-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px var(--surface-solid), 0 0 0 2px rgba(240, 169, 44, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 2px var(--surface-solid), 0 0 0 6px rgba(240, 169, 44, 0);
+  }
+}
+
+.pf-item-name {
+  display: grid;
+  line-height: 1.2;
+}
+
+.pf-item-alert {
+  font-style: normal;
+  font-size: 11px;
+  color: #c9861a;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-alert {
+    animation: none;
+  }
+}

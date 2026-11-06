@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { HYBRID, setProfile, useProfile } from '../shared/profile'
 import { companyCreate, getWork, loadWork, useWork } from '../features/work/store'
 import { CompanyMark } from '../features/work/brand'
+import { useNeglect } from '../features/work/today'
 import './profile.css'
 
 const NEW_COLORS = ['#1F8A5B', '#E07A2E', '#7A4FE0', '#D4373F', '#1A9BB0', '#C9A227']
@@ -9,6 +10,8 @@ const NEW_COLORS = ['#1F8A5B', '#E07A2E', '#7A4FE0', '#D4373F', '#1A9BB0', '#C9A
 export function ProfileSwitch({ compact = false }: { compact?: boolean }) {
   const profile = useProfile()
   const companies = useWork().state?.companies ?? []
+  const neglect = useNeglect()
+  const anyAttention = companies.some((c) => neglect.byCompany[c.id]?.attention)
   const [open, setOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
@@ -79,7 +82,10 @@ export function ProfileSwitch({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`pf ${compact ? 'is-compact' : ''}`} ref={box}>
       <button className="pf-btn" onClick={() => setOpen((v) => !v)} aria-haspopup="menu" aria-expanded={open} style={{ ['--pc' as string]: current?.color ?? 'var(--accent)' }}>
-        <span className="pf-mark">{current ? <CompanyMark company={current} size={20} /> : <HybridMark companies={companies} />}</span>
+        <span className="pf-mark">
+          {current ? <CompanyMark company={current} size={20} /> : <HybridMark companies={companies} />}
+          {anyAttention && <i className="pf-alert" title="Tem empresa pedindo atenção" />}
+        </span>
         {!compact && (
           <>
             <span className="pf-text">
@@ -97,7 +103,10 @@ export function ProfileSwitch({ compact = false }: { compact?: boolean }) {
           {[...companies.map((c) => ({ id: c.id, label: c.name, color: c.color, company: c })), { id: HYBRID, label: 'Híbrido', color: 'var(--text-2)', company: null }].map((o, i) => (
             <button key={o.id} role="menuitemradio" aria-checked={profile === o.id} className={`pf-item ${profile === o.id ? 'is-on' : ''}`} style={{ ['--pc' as string]: o.color, ['--k' as string]: i }} onClick={() => pick(o.id)}>
               <span className="pf-mark">{o.company ? <CompanyMark company={o.company} size={20} /> : <HybridMark companies={companies} />}</span>
-              <span className="pf-item-name">{o.label}</span>
+              <span className="pf-item-name">
+                {o.label}
+                {o.company && neglect.byCompany[o.id]?.attention && <em className="pf-item-alert">{neglect.byCompany[o.id]?.label}</em>}
+              </span>
               <kbd>⌘⇧{i + 1}</kbd>
             </button>
           ))}
