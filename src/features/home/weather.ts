@@ -16,7 +16,7 @@ export type Weather = {
 
 type Cache = { at: number; data: Weather[] }
 
-const KEY = 'ps.weather.v1'
+const KEY = 'ps.weather.v2'
 const TTL = 30 * 60 * 1000
 
 function readCache(): Cache | null {

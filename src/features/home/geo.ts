@@ -3,6 +3,7 @@ export type City = { name: string; lat: number; lon: number; tz: string }
 export const CITIES: City[] = [
   { name: 'Fortaleza', lat: -3.73, lon: -38.52, tz: 'America/Fortaleza' },
   { name: 'Recife', lat: -8.05, lon: -34.88, tz: 'America/Recife' },
+  { name: 'Frankfurt', lat: 50.11, lon: 8.68, tz: 'Europe/Berlin' },
 ]
 
 export function homeCity(): City {

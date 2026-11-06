@@ -4,7 +4,7 @@ import { navigate, requestIntent } from '../../app/router'
 import { civil, fmtLong } from '../../shared/dates'
 import { isScheduled, setCheckin, useHabits } from '../../shared/db/stores'
 import { openWorkItem, toggleTodo, useWorkToday, type TodayEntry } from '../work/today'
-import { homeCity } from './geo'
+import { CITIES, homeCity, localTime } from './geo'
 import { describe, useWeather, type Weather } from './weather'
 import BriefingCard from '../briefing/BriefingCard'
 import { MoodChip } from '../mood/CheckIn'
@@ -279,13 +279,18 @@ function WeatherCard({ compact = false }: { compact?: boolean }) {
   const ago = at ? Math.round((Date.now() - at) / 60000) : null
   const when = ago === null ? '' : ago < 1 ? 'atualizado agora' : ago < 60 ? `atualizado há ${ago} min` : `atualizado há ${Math.round(ago / 60)} h`
   return (
-    <section className={`panel wx reveal ${compact ? 'is-compact' : ''}`} style={{ ['--i' as string]: 1 }} aria-label="Clima em Fortaleza e Recife">
+    <section className={`panel wx reveal ${compact ? 'is-compact' : ''}`} style={{ ['--i' as string]: 1 }} aria-label="Clima em Fortaleza, Recife e Frankfurt">
       {data ? (
-        <div className="wx-cities">
-          {data.map((w) => (
-            <WeatherCity key={w.city} w={w} compact={compact} />
+        <>
+          <div className="wx-cities">
+            {data.slice(0, 2).map((w) => (
+              <WeatherCity key={w.city} w={w} compact={compact} />
+            ))}
+          </div>
+          {data.slice(2).map((w) => (
+            <WeatherRow key={w.city} w={w} />
           ))}
-        </div>
+        </>
       ) : (
         <p className="wx-empty">{loading || !error ? 'Buscando o clima…' : 'Sem conexão para buscar o clima agora.'}</p>
       )}
@@ -329,6 +334,42 @@ function WeatherCity({ w, compact }: { w: Weather; compact: boolean }) {
       )}
     </div>
   )
+}
+
+function WeatherRow({ w }: { w: Weather }) {
+  const d = describe(w.code)
+  const city = CITIES.find((c) => c.name === w.city)
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30_000)
+    return () => clearInterval(id)
+  }, [])
+  const time = city ? localTime(city.tz, now) : ''
+  const diff = city ? Math.round((tzOffset(city.tz, now) - tzOffset(CITIES[0].tz, now)) / 60) : 0
+  return (
+    <div className="wx-row">
+      <span className="wx-row-icon">
+        <WeatherIcon kind={d.icon} night={!w.isDay} />
+      </span>
+      <span className="wx-row-name">
+        {w.city}
+        <small>
+          {time} · {diff >= 0 ? `+${diff}h` : `${diff}h`}
+        </small>
+      </span>
+      <span className="wx-row-desc">{d.label}</span>
+      <span className="wx-row-temp">
+        {Math.round(w.temp)}°<small>{Math.round(w.max)}° / {Math.round(w.min)}°</small>
+      </span>
+    </div>
+  )
+}
+
+function tzOffset(tz: string, d: Date) {
+  const p = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(d)
+  const g = (t: string) => Number(p.find((x) => x.type === t)?.value)
+  const asUtc = Date.UTC(g('year'), g('month') - 1, g('day'), g('hour') % 24, g('minute'))
+  return Math.round((asUtc - d.getTime()) / 60000)
 }
 
 function WeatherIcon({ kind, night }: { kind: ReturnType<typeof describe>['icon']; night: boolean }) {

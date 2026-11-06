@@ -42,8 +42,8 @@
 .hc {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 10px 14px 10px 6px;
+  gap: 8px;
+  padding: 10px 12px 10px 6px;
 }
 
 .hc-gauge {
@@ -55,8 +55,8 @@
 }
 
 .hc .wk-gauge {
-  width: 128px;
-  height: 110px;
+  width: 112px;
+  height: 96px;
 }
 
 .hc-side {
@@ -1223,4 +1223,56 @@
     order: 3;
     flex-basis: 100%;
   }
+}
+
+.wx-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+
+.wx-row-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.wx-row-name {
+  display: grid;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.wx-row-name small {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.wx-row-desc {
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.wx-row-temp {
+  display: grid;
+  justify-items: end;
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.wx-row-temp small {
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-2);
+  margin-top: 2px;
 }
