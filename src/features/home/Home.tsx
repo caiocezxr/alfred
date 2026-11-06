@@ -11,6 +11,7 @@ import { MoodChip } from '../mood/CheckIn'
 import { openRitual } from '../../app/Ritual'
 import { MoodYear } from '../mood/MoodYear'
 import { greetingFor, loadNicks, saveNicks, type Period } from '../../shared/greeting'
+import { SplitFlap } from './SplitFlap'
 import './home.css'
 
 function useClock(ms = 15000) {
@@ -46,7 +47,7 @@ export default function Home() {
         <span className="hello-main">{g.hello},</span>
         <span className="hello-nick">
           <button className="hello-nick-btn" onClick={() => setEditNicks(true)} title="Editar apelidos">
-            {g.nick}
+            <SplitFlap text={g.nick} replay={nickTick} />
           </button>
           <PeriodIcon period={period} />
         </span>

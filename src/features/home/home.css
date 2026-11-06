@@ -29,7 +29,7 @@
 .home-hello {
   display: block;
   margin: 10px 0 0;
-  font-size: clamp(56px, 6vw, 100px);
+  font-size: clamp(50px, 5.2vw, 88px);
   line-height: 0.95;
   white-space: nowrap;
 }
@@ -41,11 +41,97 @@
 .hello-nick {
   display: flex;
   align-items: center;
-  gap: 0.3em;
-  margin-top: 0.1em;
-  font-size: 0.56em;
-  font-style: italic;
-  color: var(--accent);
+  gap: 0.22em;
+  margin-top: 0.02em;
+}
+
+.hello-nick .period-icon {
+  font-size: 0.62em;
+}
+
+.sf {
+  display: inline-flex;
+  perspective: 600px;
+}
+
+.sf-cell {
+  position: relative;
+  display: inline-block;
+}
+
+.sf-ghost {
+  visibility: hidden;
+}
+
+.sf-half {
+  position: absolute;
+  inset: 0;
+  text-align: center;
+  backface-visibility: hidden;
+  transform-origin: 50% 54%;
+}
+
+.sf-top {
+  clip-path: inset(-20% -10% 46% -10%);
+}
+
+.sf-bot {
+  clip-path: inset(54% -10% -30% -10%);
+}
+
+.sf-flip {
+  position: absolute;
+  inset: 0;
+}
+
+.sf-in {
+  animation: sf-in 58ms step-end both;
+}
+
+.sf-out {
+  animation: sf-out 58ms step-end both;
+}
+
+@keyframes sf-in {
+  0% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes sf-out {
+  0% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.sf-fall {
+  animation: sf-fall 58ms cubic-bezier(0.55, 0, 1, 0.45) both;
+  opacity: 0.8;
+}
+
+.sf-rise {
+  animation: sf-rise 58ms cubic-bezier(0, 0.55, 0.45, 1) 50ms both;
+}
+
+@keyframes sf-fall {
+  to {
+    transform: rotateX(-90deg);
+  }
+}
+
+@keyframes sf-rise {
+  from {
+    transform: rotateX(90deg);
+  }
 }
 
 .hello-nick-btn {
