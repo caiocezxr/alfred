@@ -489,14 +489,16 @@
   }
 }
 
-.btn.primary {
+.bible .btn.primary,
+.index-panel .btn.primary {
   background: var(--accent);
   border-color: transparent;
   color: #1b1712;
   font-weight: 500;
 }
 
-.btn.primary:hover {
+.bible .btn.primary:hover,
+.index-panel .btn.primary:hover {
   background: #cfb994;
 }
 
