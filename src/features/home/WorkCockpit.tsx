@@ -5,7 +5,7 @@ import { Gauge, GaugeCenter } from '../work/Gauge'
 import { useWorkToday } from '../work/today'
 import '../work/work.css'
 
-export function WorkCockpit({ children }: { children?: ReactNode }) {
+export function WorkCockpit({ children, gauge = true }: { children?: ReactNode; gauge?: boolean }) {
   const profile = useProfile()
   const scope = profileScope(profile)
   const today = useWorkToday(scope)
@@ -20,7 +20,7 @@ export function WorkCockpit({ children }: { children?: ReactNode }) {
   const left = Math.max(0, h.total - h.handled)
 
   return (
-    <section className={`panel hc reveal is-${h.level}`} style={{ ['--i' as string]: 2 }} aria-label="Workstation">
+    <section className={`panel hc reveal is-${h.level} ${gauge ? '' : 'no-gauge'}`} style={{ ['--i' as string]: 2 }} aria-label="Workstation">
       <header className="hc-head">
         <span className="hc-k">Seu dia</span>
         <button className="hc-open" onClick={() => navigate('work')}>

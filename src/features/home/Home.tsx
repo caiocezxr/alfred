@@ -15,6 +15,8 @@ import { SplitFlap } from './SplitFlap'
 import { WorkCockpit } from './WorkCockpit'
 import { LiveSky } from './LiveSky'
 import { DayClock } from './DayClock'
+import { Customize } from './Customize'
+import { useHomeLayout } from './layout'
 import './home.css'
 
 function useClock(ms = 15000) {
@@ -39,6 +41,9 @@ export default function Home() {
   const period = g.period
   const [year, setYear] = useState(false)
   const [editNicks, setEditNicks] = useState(false)
+  const [custom, setCustom] = useState(false)
+  const { layout, image } = useHomeLayout()
+  const show = layout.show
 
   const top = work.items.slice(0, 6)
   const todays = habits.filter((h) => isScheduled(h, today))
@@ -47,7 +52,18 @@ export default function Home() {
 
   const hero = (
     <header className="h-hero reveal" style={{ ['--i' as string]: 0 }}>
-      <div className="kicker">{fmtLong.format(now)}</div>
+      <div className="home-top">
+        <div className="kicker">{fmtLong.format(now)}</div>
+        <button className="home-custom" onClick={() => setCustom(true)} title="Personalizar o início">
+          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+            <path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            <circle cx="10.5" cy="4.5" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.4" />
+            <circle cx="5.5" cy="11.5" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.4" />
+          </svg>
+          Personalizar
+        </button>
+      </div>
+      {show.greeting && (
       <h1 className="display home-hello">
         <span className="hello-main">{g.hello},</span>
         <span className="hello-nick">
@@ -68,11 +84,14 @@ export default function Home() {
           <PeriodIcon period={period} />
         </span>
       </h1>
-      <div className="home-micro">
-        <DayClock city={home} />
-        <WeatherStrip />
-        <MoodChip onOpen={openRitual} onOpenYear={() => setYear(true)} />
-      </div>
+      )}
+      {(show.clock || show.weather || show.mood) && (
+        <div className="home-micro">
+          {show.clock && <DayClock city={home} />}
+          {show.weather && <WeatherStrip />}
+          {show.mood && <MoodChip onOpen={openRitual} onOpenYear={() => setYear(true)} />}
+        </div>
+      )}
     </header>
   )
 
@@ -85,7 +104,7 @@ export default function Home() {
     <div className={`home-today is-${work.health.level}`}>
       <div className="panel-head">
         <h2>Hoje</h2>
-        {todays.length > 0 && (
+        {show.habits && todays.length > 0 && (
           <span className="home-habits-note">
             {doneHabits}/{todays.length} hábitos
           </span>
@@ -100,7 +119,7 @@ export default function Home() {
           + To-do
         </button>
       </div>
-      {top.length === 0 && todays.length === 0 ? (
+      {!show.todos ? null : top.length === 0 && todays.length === 0 ? (
         <p className="home-empty">{work.loaded ? 'Nada pendente. Os to-dos do dia e os prazos aparecem aqui.' : ' '}</p>
       ) : (
         top.length > 0 && (
@@ -124,7 +143,7 @@ export default function Home() {
           </ul>
         )
       )}
-      {todays.length > 0 && (
+      {show.habits && todays.length > 0 && (
         <div className="home-habits">
           {todays.map((h) => {
             const st = statusOf(h.id)
@@ -147,8 +166,16 @@ export default function Home() {
   )
 
   return (
-    <div className="home">
-      <LiveSky weather={sky.data?.[0] ?? null} />
+    <div className={`home ${['grafite', 'noite', 'oceano', 'imagem'].includes(layout.wall) && (layout.wall !== 'imagem' || image) ? 'wall-dark' : layout.wall === 'areia' ? 'wall-light' : ''}`}>
+      {layout.wall === 'ceu' && <LiveSky weather={sky.data?.[0] ?? null} />}
+      {layout.wall !== 'ceu' && layout.wall !== 'tema' && (layout.wall !== 'imagem' || image) && (
+        <div
+          className={`home-wall is-${layout.wall}`}
+          style={layout.wall === 'imagem' && image ? { backgroundImage: `url(${image})`, ['--dim' as string]: layout.dim } : undefined}
+          aria-hidden="true"
+        />
+      )}
+      {custom && <Customize onClose={() => setCustom(false)} />}
       {year && <MoodYear onClose={() => setYear(false)} />}
       {editNicks && (
         <NickEditor
@@ -158,14 +185,18 @@ export default function Home() {
           }}
         />
       )}
-      <div className="home-wrap">
+      <div className={`home-wrap ${show.briefing ? '' : 'no-main'} ${show.day || show.todos || show.habits ? '' : 'no-side'}`}>
         <div className="home-hero-cell">{hero}</div>
-        <div className="home-main">
-          <BriefingCard />
-        </div>
-        <aside className="home-right">
-          <WorkCockpit>{todayCard}</WorkCockpit>
-        </aside>
+        {show.briefing && (
+          <div className="home-main">
+            <BriefingCard />
+          </div>
+        )}
+        {(show.day || show.todos || show.habits) && (
+          <aside className="home-right">
+            <WorkCockpit gauge={show.day}>{(show.todos || show.habits) && todayCard}</WorkCockpit>
+          </aside>
+        )}
       </div>
     </div>
   )
