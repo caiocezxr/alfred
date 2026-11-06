@@ -1,0 +1,520 @@
+.habits {
+  max-width: 980px;
+  padding-top: 56px;
+}
+
+.h-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.h-head-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.ring-track {
+  fill: none;
+  stroke: color-mix(in srgb, var(--text) 10%, transparent);
+  stroke-width: 3.5;
+}
+
+.ring-fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: center;
+  transition: stroke-dashoffset 700ms var(--ease-out);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 45%, transparent));
+}
+
+.day-ring {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+}
+
+.day-ring svg {
+  position: absolute;
+  inset: 0;
+}
+
+.day-ring span {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.h-today {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.h-card-today {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 14px 14px 12px;
+}
+
+.h-card-today.is-done {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--hairline));
+}
+
+.h-ring {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--accent-ink);
+  cursor: pointer;
+  transition: transform 200ms var(--ease-out);
+}
+
+.h-ring:hover {
+  transform: scale(1.05);
+}
+
+.h-ring:active {
+  transform: scale(0.94);
+}
+
+.h-ring svg:first-child {
+  position: absolute;
+  inset: 0;
+}
+
+.h-ring::before {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: scale(0);
+  transition: transform 380ms var(--ease-out);
+}
+
+.is-done .h-ring::before {
+  transform: scale(1);
+}
+
+.h-ring-tick {
+  position: relative;
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 260ms var(--ease-out) 120ms, transform 380ms var(--ease-out) 120ms;
+}
+
+.is-done .h-ring-tick {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.h-today-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.h-today-text h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.h-today-text p {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.h-min {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all var(--t-fast) var(--ease-out);
+}
+
+.h-min:hover {
+  color: var(--text);
+}
+
+.h-min.is-on {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.h-list {
+  display: grid;
+  gap: 14px;
+}
+
+.h-card {
+  padding: 20px 22px 12px;
+}
+
+.h-card.is-paused {
+  opacity: 0.7;
+}
+
+.h-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 16px;
+}
+
+.h-card-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  letter-spacing: var(--display-tracking);
+  text-transform: var(--display-case);
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.h-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.h-paused {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface-hover);
+  font-size: 11px;
+}
+
+.h-stats {
+  display: flex;
+  gap: 22px;
+  margin: 0;
+}
+
+.h-stats div {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+}
+
+.h-stats dt {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.h-stats dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 28px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.h-stats dd.up {
+  color: var(--accent);
+}
+
+.heat {
+  display: flex;
+  gap: 8px;
+}
+
+.heat-days {
+  display: grid;
+  grid-template-rows: 14px repeat(7, 12px);
+  gap: 3px;
+  font-size: 9.5px;
+  color: var(--text-2);
+  line-height: 12px;
+}
+
+.heat-days span:first-child {
+  grid-row: 2;
+}
+
+.heat-body {
+  display: grid;
+  gap: 3px;
+  padding-right: 14px;
+}
+
+.heat-months {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 12px;
+  gap: 3px;
+  height: 14px;
+  font-size: 9.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: visible;
+}
+
+.heat-months span {
+  overflow: visible;
+}
+
+.heat-cols {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 12px;
+  gap: 3px;
+}
+
+.heat-col {
+  display: grid;
+  grid-template-rows: repeat(7, 12px);
+  gap: 3px;
+}
+
+.heat-col i {
+  border-radius: 3.5px;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.heat-col i:hover {
+  transform: scale(1.35);
+}
+
+.heat-col i.is-off {
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+
+.heat-col i.is-miss {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-2) 30%, transparent);
+}
+
+.heat-col i.is-done {
+  background: var(--accent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.heat-col i.is-min {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.heat-col i.is-today {
+  outline: 1.5px solid var(--text);
+  outline-offset: 1.5px;
+}
+
+.h-body {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 28px;
+  align-items: start;
+}
+
+.h-notes {
+  display: grid;
+  gap: 14px;
+  margin: 18px 0 0;
+  padding-left: 24px;
+  border-left: 1px solid var(--border);
+}
+
+@media (max-width: 1100px) {
+  .h-body {
+    grid-template-columns: 1fr;
+  }
+  .h-notes {
+    padding-left: 0;
+    border-left: 0;
+    margin-top: 6px;
+  }
+}
+
+.h-notes dt {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.h-notes dd {
+  margin: 3px 0 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.h-actions {
+  display: flex;
+  gap: 4px;
+  margin: 10px -8px 0;
+  opacity: 0;
+  transition: opacity var(--t-med) var(--ease-out);
+}
+
+.h-card:hover .h-actions,
+.h-card:focus-within .h-actions {
+  opacity: 1;
+}
+
+.btn.sm {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+
+.btn.is-danger {
+  color: #ef8f80;
+}
+
+.btn.quiet.is-on {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.h-empty {
+  padding: 30px 32px;
+}
+
+.h-empty h2 {
+  font-size: 38px;
+}
+
+.h-empty p {
+  max-width: 580px;
+  margin: 12px 0 20px;
+  color: var(--text-2);
+  line-height: 1.65;
+}
+
+.h-empty em {
+  color: var(--text);
+  font-style: normal;
+}
+
+.h-form {
+  display: grid;
+  gap: 16px;
+  padding: 24px 26px;
+  margin-bottom: 18px;
+  animation: reveal var(--t-slow) var(--ease-out) both;
+}
+
+.h-form-head h2 {
+  font-size: 32px;
+}
+
+.h-sentence {
+  margin: 8px 0 0;
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 19px;
+  color: var(--text-2);
+}
+
+.h-sentence b {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.h-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 16px;
+}
+
+.f {
+  display: grid;
+  gap: 6px;
+}
+
+.f > span {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.days-sep {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
+.days .start {
+  margin-left: auto;
+  grid-auto-flow: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.days .start .field {
+  height: 34px;
+  width: auto;
+}
+
+.day {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--t-fast) var(--ease-out);
+}
+
+.day:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.day.is-on {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
