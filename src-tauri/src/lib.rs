@@ -6,6 +6,7 @@ mod ideas;
 mod mood;
 mod notes;
 mod radar;
+mod sessions;
 mod work;
 
 use commands::AppState;
@@ -106,6 +107,9 @@ pub fn run() {
             github::github_pr_review,
             github::github_local_scan,
             github::github_identity_apply,
+            sessions::sessions_list,
+            sessions::sessions_read,
+            sessions::sessions_resume,
             radar::radar_item_set,
             radar::radar_cleanup,
             radar::radar_keywords_list,

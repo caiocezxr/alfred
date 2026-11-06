@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 
 const P = {
   check: <path d="M3.5 8.4l2.9 2.9 6.1-6.6" />,
+  chat: <path d="M3 3.5h10a1 1 0 011 1v5.6a1 1 0 01-1 1H7.2L4.3 13.4v-2.3H3a1 1 0 01-1-1V4.5a1 1 0 011-1z" />,
   plus: <path d="M8 3v10M3 8h10" />,
   x: <path d="M4 4l8 8M12 4l-8 8" />,
   pin: <path d="M9.8 2.5l3.7 3.7-2.1.7-2.2 2.2.3 2.7-1 1-2.4-2.4L3 13.5l-.5-.5 3-3.1L3.1 7.5l1-1 2.7.3 2.2-2.2z" />,

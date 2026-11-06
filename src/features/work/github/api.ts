@@ -19,6 +19,8 @@ export type Pr = {
   repository: { nameWithOwner: string }
   author: { login: string } | null
   commits: { nodes: { commit: { statusCheckRollup: { state: Check } | null } }[] }
+  comments?: { totalCount: number; nodes: { author: { login: string; avatarUrl: string } | null; bodyText: string; createdAt: string }[] }
+  reviews?: { nodes: { author: { login: string; avatarUrl: string } | null; state: string; bodyText: string; submittedAt: string | null; comments: { totalCount: number } }[] }
 }
 export type Issue = { number: number; title: string; url: string; updatedAt: string; repository: { nameWithOwner: string }; labels: { nodes: { name: string; color: string }[] } }
 export type Dashboard = {
@@ -251,3 +253,64 @@ export function openPr(p: OpenPr) {
 export const prOpen = (l: LivePr): OpenPr => ({ login: l.login, repo: l.pr.repository.nameWithOwner, number: l.pr.number, review: l.review })
 
 export const CHECK_SHORT: Record<string, string> = { SUCCESS: 'checks ok', FAILURE: 'checks falhando', ERROR: 'checks com erro', PENDING: 'checks rodando', EXPECTED: 'checks esperando' }
+
+export type Talk = { who: string; avatar: string | null; text: string; at: string; kind: 'comment' | 'changes' | 'review' | 'approved' }
+
+const SEEN_KEY = 'gh.seen.v1'
+const SINCE_KEY = 'gh.seen.since'
+let seenVer = 0
+const seenSubs = new Set<() => void>()
+
+function seenMap(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(SEEN_KEY) ?? '{}') as Record<string, string>
+  } catch {
+    return {}
+  }
+}
+
+function seenSince(): string {
+  let v = localStorage.getItem(SINCE_KEY)
+  if (!v) {
+    v = new Date(Date.now() - 3 * 86400_000).toISOString()
+    localStorage.setItem(SINCE_KEY, v)
+  }
+  return v
+}
+
+export function markSeen(repo: string, number: number) {
+  const m = seenMap()
+  m[`${repo}#${number}`] = new Date().toISOString()
+  const keys = Object.keys(m)
+  if (keys.length > 400) keys.sort((a, b) => m[a].localeCompare(m[b])).slice(0, keys.length - 400).forEach((k) => delete m[k])
+  localStorage.setItem(SEEN_KEY, JSON.stringify(m))
+  seenVer++
+  seenSubs.forEach((f) => f())
+}
+
+export function useSeen() {
+  return useSyncExternalStore(
+    (fn) => {
+      seenSubs.add(fn)
+      return () => seenSubs.delete(fn)
+    },
+    () => seenVer,
+  )
+}
+
+export function talkOf(pr: Pr, me: string): Talk[] {
+  const since = seenMap()[`${pr.repository.nameWithOwner}#${pr.number}`] ?? seenSince()
+  const out: Talk[] = []
+  for (const c of pr.comments?.nodes ?? []) {
+    if (!c.author || c.author.login === me || c.author.login.endsWith('[bot]') || c.createdAt <= since) continue
+    out.push({ who: c.author.login, avatar: c.author.avatarUrl, text: c.bodyText, at: c.createdAt, kind: 'comment' })
+  }
+  for (const r of pr.reviews?.nodes ?? []) {
+    if (!r.author || !r.submittedAt || r.author.login === me || r.author.login.endsWith('[bot]') || r.submittedAt <= since) continue
+    const kind = r.state === 'CHANGES_REQUESTED' ? 'changes' : r.state === 'APPROVED' ? 'approved' : 'review'
+    if (kind === 'review' && !r.bodyText.trim() && !r.comments.totalCount) continue
+    const text = r.bodyText.trim() || (r.comments.totalCount ? `${r.comments.totalCount} comentário${r.comments.totalCount > 1 ? 's' : ''} no código` : kind === 'approved' ? 'aprovou' : 'pediu ajustes')
+    out.push({ who: r.author.login, avatar: r.author.avatarUrl, text, at: r.submittedAt, kind })
+  }
+  return out.sort((a, b) => b.at.localeCompare(a.at))
+}

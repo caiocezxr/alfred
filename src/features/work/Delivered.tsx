@@ -159,7 +159,16 @@ export function Delivered({ state, today, scope, health }: { state: WorkState; t
                       {c.pending > 0 && <span className="wk-tk-note is-quiet">entregue com {c.pending} pendência{c.pending > 1 ? 's' : ''} no checklist</span>}
                     </button>
                     <div className="wk-tk-stub" aria-label={`Situação: ${stamp}`}>
-                      <span className="wk-tk-stamp">{stamp}</span>
+                      {tone === 'done' ? (
+                        <span className="wk-tk-check" title="Concluído">
+                          <svg viewBox="0 0 36 36" aria-hidden="true">
+                            <circle cx="18" cy="18" r="15" />
+                            <path d="M11.5 18.5l4.6 4.6 8.6-9.4" />
+                          </svg>
+                        </span>
+                      ) : (
+                        <span className="wk-tk-stamp">{stamp}</span>
+                      )}
                       <span className="wk-tk-date">{stampAt ? shortDay(stampAt, today) : 'reabrir'}</span>
                     </div>
                   </li>

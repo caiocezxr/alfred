@@ -9,6 +9,7 @@ import { Cockpit, HojePanel } from './Copilot'
 import { Delivered } from './Delivered'
 import { GitHubView } from './github/GitHub'
 import { PrHost } from './github/PrSheet'
+import { SessionHost, SessionsView } from './sessions/Sessions'
 import { DialogHost } from './Dialogs'
 import { Drawer } from './Drawer'
 import { Icon } from './icons'
@@ -52,7 +53,7 @@ export default function Work() {
   const now = useClock()
   const today = civil(now)
   const nowLocal = localNow(now)
-  const [view, setViewRaw] = useState<'board' | 'delivered' | 'github'>(() => readUi().view ?? 'board')
+  const [view, setViewRaw] = useState<'board' | 'delivered' | 'github' | 'sessions'>(() => readUi().view ?? 'board')
   const [hoje, setHoje] = useState(false)
   const capture = useRef<HTMLInputElement>(null)
 
@@ -63,7 +64,7 @@ export default function Work() {
   useEffect(() => onIntent((i) => i === 'new-task' && capture.current?.focus()), [])
 
   const validScope = state && scope !== 'all' && !state.companies.some((c) => c.id === scope) ? 'all' : scope
-  const setView = (v: 'board' | 'delivered' | 'github') => {
+  const setView = (v: 'board' | 'delivered' | 'github' | 'sessions') => {
     setViewRaw(v)
     writeUi({ view: v })
   }
@@ -222,6 +223,7 @@ export default function Work() {
               { id: 'board', label: 'Quadro', count: openCount },
               { id: 'delivered', label: 'Entregues' },
               { id: 'github', label: 'GitHub' },
+              { id: 'sessions', label: 'Sessões' },
             ]}
           />
           <button className="wk-tool" onClick={() => openDialog({ kind: 'search' })} aria-label="Buscar" title="Buscar (⌘F)">
@@ -256,7 +258,7 @@ export default function Work() {
       />
 
       <div className="wk-section-label reveal" style={{ ['--i' as string]: 2 }}>
-        <span>{view === 'board' ? 'Quadro' : view === 'github' ? 'GitHub' : 'Entregues'}</span>
+        <span>{view === 'board' ? 'Quadro' : view === 'github' ? 'GitHub' : view === 'sessions' ? 'Sessões de código' : 'Entregues'}</span>
         {view === 'board' && <em>{openCount} {openCount === 1 ? 'aberto' : 'abertos'}</em>}
         <span className="wk-grow" />
         {view === 'board' && <em className="wk-section-hint">J/K para navegar · E avança · ? atalhos</em>}
@@ -264,13 +266,14 @@ export default function Work() {
 
       <div className="wk-main">
         <div key={view} className={`wk-view is-${view} reveal`} style={{ ['--i' as string]: 2 }}>
-          {view === 'board' ? <Board state={state} today={today} scope={validScope} /> : view === 'github' ? <GitHubView state={state} scope={validScope} /> : <Delivered state={state} today={today} scope={validScope} health={health} />}
+          {view === 'board' ? <Board state={state} today={today} scope={validScope} /> : view === 'github' ? <GitHubView state={state} scope={validScope} /> : view === 'sessions' ? <SessionsView state={state} scope={validScope} /> : <Delivered state={state} today={today} scope={validScope} health={health} />}
         </div>
         <HojePanel state={state} today={today} scope={validScope} open={hoje} onClose={() => setHoje(false)} />
       </div>
 
       <Drawer state={state} today={today} />
       <PrHost />
+      <SessionHost />
       <DialogHost state={state} scope={validScope} />
       {toast &&
         createPortal(

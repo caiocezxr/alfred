@@ -7106,6 +7106,67 @@
   --st: var(--wk-red, #d4483f);
 }
 
+.wk-tk-check {
+  --st: var(--wk-green, #2f9e6b);
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--st) 14%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--st) 30%, transparent), 0 6px 16px -8px color-mix(in srgb, var(--st) 70%, transparent);
+  animation: wk-check-pop 520ms cubic-bezier(0.2, 1.4, 0.4, 1) backwards;
+  animation-delay: calc(var(--k, 0) * 90ms + 380ms);
+}
+
+.wk-tk-check svg {
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: var(--st);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.wk-tk-check circle {
+  stroke-width: 1.4;
+  opacity: 0.45;
+}
+
+.wk-tk-check path {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  animation: wk-check-draw 420ms cubic-bezier(0.65, 0, 0.35, 1) forwards;
+  animation-delay: calc(var(--k, 0) * 90ms + 620ms);
+}
+
+.wk-tk:hover .wk-tk-check {
+  transform: scale(1.06);
+  transition: transform 260ms cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+@keyframes wk-check-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+@keyframes wk-check-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wk-tk-check,
+  .wk-tk-check path {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+
 .wk-tk-date {
   font: 500 10.5px/1 var(--wk-mono, 'SF Mono', ui-monospace, monospace);
   color: var(--text-2);

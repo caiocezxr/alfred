@@ -2,7 +2,9 @@ import { useEffect, useState, type CSSProperties, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { openExternal } from '../../../shared/openExternal'
 import { Icon } from '../icons'
-import { dropBoard, gh, type CheckCtx, type OpenPr, type PrDetail } from './api'
+import { ToolMark } from '../sessions/Sessions'
+import { openSession, sessionsOfPr, useSessions } from '../sessions/api'
+import { dropBoard, gh, markSeen, type CheckCtx, type OpenPr, type PrDetail } from './api'
 
 const rel = (iso: string) => {
   const m = Math.round((Date.now() - Date.parse(iso)) / 60000)
@@ -44,6 +46,7 @@ export function PrSheet({ login, repo, number, review, onClose, onChanged }: { l
   const [note, setNote] = useState<string | null>(null)
   const [arm, setArm] = useState(false)
   const [leaving, setLeaving] = useState(false)
+  const { sessions } = useSessions()
 
   const close = () => {
     setLeaving(true)
@@ -51,6 +54,7 @@ export function PrSheet({ login, repo, number, review, onClose, onChanged }: { l
   }
 
   useEffect(() => {
+    markSeen(repo, number)
     gh.prDetail(login, repo, number)
       .then((x) => {
         setD(x)
@@ -170,6 +174,25 @@ export function PrSheet({ login, repo, number, review, onClose, onChanged }: { l
                   </ul>
                 )}
               </section>
+              {(() => {
+                const linked = sessionsOfPr(sessions ?? [], repo, number, pr!.headRefName)
+                return linked.length > 0 ? (
+                  <section className="prs-sec">
+                    <h3>Sessões ligadas</h3>
+                    <ul className="prs-sessions">
+                      {linked.slice(0, 6).map((s) => (
+                        <li key={`${s.tool}-${s.id}`}>
+                          <button onClick={() => openSession(s)}>
+                            <ToolMark tool={s.tool} size={13} />
+                            <span className="sx-rail-t">{s.title}</span>
+                            <span className="sx-when">{rel(s.updated)}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : null
+              })()}
               <section className="prs-sec">
                 <h3>Descrição</h3>
                 {pr!.bodyHTML ? <div className="prs-md" onClick={links} dangerouslySetInnerHTML={{ __html: pr!.bodyHTML }} /> : <p className="prs-muted">Sem descrição.</p>}

@@ -6,7 +6,7 @@ import { Icon } from '../icons'
 import type { Scope } from '../logic'
 import { createItem } from '../store'
 import { PERSONAL_ID, type Company, type WorkState } from '../types'
-import { checkOf, dropBoard, getGh, gh, loadBoard, noreply, openPr, setGh, useBoards, useGhSettings, type Branches, type GhAccount, type Issue, type LocalRepo, type Pr, type Repo } from './api'
+import { checkOf, dropBoard, getGh, gh, loadBoard, noreply, openPr, setGh, talkOf, useBoards, useGhSettings, useSeen, type Branches, type GhAccount, type Issue, type LocalRepo, type Pr, type Repo } from './api'
 import './github.css'
 
 const rel = (iso: string) => {
@@ -387,6 +387,9 @@ function PrCard({ pr, login, review, onDone, onOpen }: { pr: Pr; login: string; 
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const canMerge = !review && !pr.isDraft && pr.mergeable === 'MERGEABLE' && (check === 'SUCCESS' || check === null) && pr.reviewDecision !== 'CHANGES_REQUESTED' && pr.reviewDecision !== 'REVIEW_REQUIRED'
+  useSeen()
+  const talk = talkOf(pr, login)
+  const head = talk[0]
   const merge = async () => {
     if (!arm) return setArm(true)
     setBusy(true)
@@ -402,8 +405,14 @@ function PrCard({ pr, login, review, onDone, onOpen }: { pr: Pr; login: string; 
     }
   }
   return (
-    <li className={`gh-pr is-${(check ?? 'none').toLowerCase()}`}>
-      <button className="gh-pr-main" onClick={onOpen} title="Ver o PR">
+    <li className={`gh-pr is-${(check ?? 'none').toLowerCase()} ${head ? `has-talk is-talk-${head.kind}` : ''}`}>
+      {head && (
+        <span className="gh-talk-badge" aria-label={`${talk.length} ${talk.length === 1 ? 'novidade' : 'novidades'} para ver`}>
+          <Icon name="chat" size={11} />
+          {talk.length}
+        </span>
+      )}
+      <button className="gh-pr-main" onClick={onOpen} title={head ? 'Tem comentário novo: abrir o PR' : 'Ver o PR'}>
         <span className="gh-pr-top">
           <span className="gh-repo">{pr.repository.nameWithOwner.split('/')[1]}</span>
           <span className="gh-num">#{pr.number}</span>
@@ -419,6 +428,18 @@ function PrCard({ pr, login, review, onDone, onOpen }: { pr: Pr; login: string; 
             <i>+{pr.additions}</i> <s>−{pr.deletions}</s>
           </span>
         </span>
+        {head && (
+          <span className="gh-talk">
+            {head.avatar ? <img src={head.avatar} alt="" /> : <i aria-hidden="true" />}
+            <span className="gh-talk-body">
+              <b>
+                @{head.who} {head.kind === 'changes' ? 'pediu ajustes' : head.kind === 'approved' ? 'aprovou' : head.kind === 'review' ? 'revisou' : 'comentou'}
+                <em>{rel(head.at)}</em>
+              </b>
+              {head.text && <span className="gh-talk-text">{head.text.replace(/\s+/g, ' ')}</span>}
+            </span>
+          </span>
+        )}
       </button>
       <div className="gh-pr-foot">
         <span className={`gh-check is-${(check ?? 'none').toLowerCase()}`}>

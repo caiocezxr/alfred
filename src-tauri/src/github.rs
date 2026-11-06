@@ -177,7 +177,9 @@ pub async fn github_switch(login: String) -> R<Vec<GhAccount>> {
 
 const PR_FIELDS: &str = "... on PullRequest { number title url isDraft updatedAt headRefName baseRefName mergeable reviewDecision additions deletions \
     repository { nameWithOwner } author { login } \
-    commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } }";
+    commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } \
+    comments(last: 5) { totalCount nodes { author { login avatarUrl } bodyText createdAt } } \
+    reviews(last: 5) { nodes { author { login avatarUrl } state bodyText submittedAt comments { totalCount } } } }";
 
 #[tauri::command]
 pub async fn github_dashboard(login: String) -> R<Value> {
@@ -326,7 +328,7 @@ pub struct LocalRepo {
     account: Option<String>,
 }
 
-fn git(dir: &Path, args: &[&str]) -> Option<String> {
+pub(crate) fn git(dir: &Path, args: &[&str]) -> Option<String> {
     let out = Command::new(git_bin().ok()?).arg("-C").arg(dir).args(args).output().ok()?;
     if !out.status.success() {
         return None;
@@ -335,7 +337,7 @@ fn git(dir: &Path, args: &[&str]) -> Option<String> {
     (!s.is_empty()).then_some(s)
 }
 
-fn parse_remote(url: &str) -> (Option<String>, bool) {
+pub(crate) fn parse_remote(url: &str) -> (Option<String>, bool) {
     let u = url.trim();
     let ssh = u.starts_with("git@") || u.starts_with("ssh://");
     let rest = u
@@ -389,11 +391,11 @@ fn scan_dirs(base: &Path, depth: u32, out: &mut Vec<PathBuf>) {
     }
 }
 
-fn home() -> R<PathBuf> {
+pub(crate) fn home() -> R<PathBuf> {
     std::env::var("HOME").map(PathBuf::from).map_err(|_| "pasta pessoal não encontrada".to_string())
 }
 
-fn safe_dir(p: &str) -> R<PathBuf> {
+pub(crate) fn safe_dir(p: &str) -> R<PathBuf> {
     let h = home()?;
     let raw = if let Some(rest) = p.strip_prefix("~/") { h.join(rest) } else { PathBuf::from(p) };
     let real = std::fs::canonicalize(&raw).map_err(|_| format!("a pasta {p} não existe"))?;
