@@ -2577,3 +2577,128 @@
 .dz[class] .dz-tl-dot {
   box-shadow: none;
 }
+
+.dz[class] .dz-tabs {
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, auto);
+  gap: 2px;
+  align-self: center;
+  margin: 0 0 0 auto;
+  padding: 3px;
+  border: 1px solid var(--dz-rule);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--dz-ink) 4%, transparent);
+  overflow: visible;
+}
+
+.dz[class] .dz-tabs button,
+.dz[class].dz-skin-papel .dz-tabs button,
+.dz[class].dz-skin-tech .dz-tabs button {
+  justify-content: center;
+  height: 28px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dz-ink-2);
+  font: 550 12px/1 var(--font-ui);
+  letter-spacing: 0;
+  text-transform: none;
+  transform: none;
+  box-shadow: none;
+}
+
+.dz[class] .dz-tabs button:hover {
+  background: color-mix(in srgb, var(--dz-ink) 6%, transparent);
+  color: var(--dz-ink);
+  transform: none;
+}
+
+.dz[class] .dz-tabs button[aria-selected='true'],
+.dz[class].dz-skin-tech .dz-tabs button[aria-selected='true'] {
+  height: 28px;
+  border: 0;
+  border-top: 0;
+  background: var(--dz-paper);
+  color: var(--dz-ink);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18), inset 0 0 0 1px var(--dz-rule);
+}
+
+.dz[class][data-scheme='dark'] .dz-tabs button[aria-selected='true'] {
+  background: color-mix(in srgb, var(--dz-ink) 12%, var(--dz-paper));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.dz[class] .dz-tabs button[aria-selected='true'] .dz-tab-n {
+  background: none;
+  color: var(--dz-ink-2);
+}
+
+.dz[class] .dz-tab-k {
+  display: none;
+}
+
+.dz[class].is-card {
+  --dz-strip: 94px;
+}
+
+.dz[class].is-card .dz-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'id act' 'tabs tabs';
+  align-content: center;
+  row-gap: 12px;
+  column-gap: 12px;
+  box-sizing: border-box;
+  height: var(--dz-strip);
+  padding: 12px 14px 12px var(--dz-pad);
+}
+
+.dz[class].is-card .dz-strip-id {
+  grid-area: id;
+  max-width: none;
+  overflow: visible;
+}
+
+.dz[class].is-card .dz-class {
+  display: none;
+}
+
+.dz[class].is-card .dz-strip-t {
+  font-size: 12.5px;
+}
+
+.dz[class].is-card .dz-strip-d {
+  display: inline;
+}
+
+.dz[class].is-card .dz-strip-act {
+  grid-area: act;
+  gap: 4px;
+}
+
+.dz[class].is-card .dz-tabs {
+  grid-area: tabs;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+}
+
+.dz[class].is-card .dz-tabs button {
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.dz[class].is-card .dz-tab-l {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dz[class].is-card .dz-tab-n {
+  display: inline;
+}
+
+.dz[class].is-card .dz-play {
+  max-width: none;
+}

@@ -3,7 +3,10 @@ import { createPortal } from 'react-dom'
 import { openExternal } from '../../shared/openExternal'
 import { Dossie } from './Dossie.tsx'
 import { useCardPresence } from './MiniPlayer.tsx'
-import { briefingPlayer, speedOfRate, useBriefingPlayer, type PlayerState } from './player.ts'
+import { briefingPlayer, rateOfSpeed, speedOfRate, useBriefingPlayer, type PlayerState } from './player.ts'
+import { ensureFloatingMiniPlayer } from './MiniPlayer.tsx'
+import { estimateSeconds } from './assemble.ts'
+import { cadernoLeads } from './dossie.ts'
 import { localModelLabel } from './profile.ts'
 import { ensureToday, prepare, retryToday, useBriefing, type BriefState } from './store.ts'
 import { AREA_LABEL, type BriefItem, type Edition } from './types.ts'
@@ -183,14 +186,16 @@ function Ready({ edition, st, open }: { edition: Edition; st: BriefState; open: 
   useCardPresence(card)
   const on = listening(player, edition)
 
-  return (
-    <div className="brf-dossie" ref={setCard}>
-      <Dossie
-        edition={edition}
-        st={st}
-        mode="card"
-        onExpand={() => open({ kind: 'dossie' })}
-        menu={
+  const speed = speedOfRate(st.profile?.voice.rate ?? 185)
+  const minutes = Math.max(1, Math.round(estimateSeconds(edition, rateOfSpeed(speed)) / 60))
+  const tops = cadernoLeads(edition)
+  const playing = on && player.status !== 'paused'
+  const listen = () => {
+    ensureFloatingMiniPlayer()
+    if (on) briefingPlayer.toggle()
+    else briefingPlayer.play(edition, { resume: player.resume?.date === edition.date, voice: st.profile?.voice.voice ?? 'pf_dora', speed })
+  }
+  const menuEl = (
           <div className="brf-menu-wrap" ref={menuRef}>
             <button className="dz-icon" onClick={() => setMenu((v) => !v)} aria-haspopup="menu" aria-expanded={menu} aria-label="Mais opções">
               <IconMore />
@@ -229,8 +234,48 @@ function Ready({ edition, st, open }: { edition: Edition; st: BriefState; open: 
               </div>
             )}
           </div>
-        }
-      />
+  )
+
+  return (
+    <div className="bc" ref={setCard}>
+      <header className="bc-head">
+        <span className="bc-k">Briefing do dia</span>
+        <span className="bc-meta">
+          {edition.items.length} notícias · {minutes} min
+        </span>
+        {menuEl}
+      </header>
+      <p className="bc-open">{edition.opening}</p>
+      <ol className="bc-tops">
+        {tops.map(({ caderno, item }) => (
+          <li key={item.key} data-c={caderno}>
+            <button onClick={() => open({ kind: 'dossie' })}>
+              <i aria-hidden="true" />
+              <span>{item.title}</span>
+            </button>
+          </li>
+        ))}
+      </ol>
+      <footer className="bc-foot">
+        <button className={`bc-play ${playing ? 'is-on' : ''}`} onClick={listen}>
+          {playing ? (
+            <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
+              <path d="M3 2h2v8H3zM7 2h2v8H7z" fill="currentColor" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
+              <path d="M3 2v8l7-4z" fill="currentColor" />
+            </svg>
+          )}
+          {playing ? 'Pausar' : on || player.resume?.date === edition.date ? 'Continuar' : `Ouvir · ${minutes} min`}
+        </button>
+        <button className="bc-read" onClick={() => open({ kind: 'dossie' })}>
+          Ler o dossiê
+          <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+            <path d="M2 6h7.5M6.5 3 9.5 6 6.5 9" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </footer>
     </div>
   )
 }
