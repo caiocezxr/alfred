@@ -345,12 +345,35 @@ function Station({ company, login, index, state, onNewPr, onOpen }: { company: C
 }
 
 function Col({ title, n, empty, children }: { title: string; n: number; empty: string; children: ReactNode }) {
+  const [all, setAll] = useState(false)
+  const list = Array.isArray(children) ? (children as ReactNode[]) : [children]
+  const first = list.slice(0, 3)
+  const rest = list.slice(3)
   return (
     <div className="gh-col">
       <h4>
         {title} <em>{n}</em>
       </h4>
-      {n === 0 ? <p className="gh-muted">{empty}</p> : <ul>{children}</ul>}
+      {n === 0 ? (
+        <p className="gh-muted">{empty}</p>
+      ) : (
+        <>
+          <ul>{first}</ul>
+          {rest.length > 0 && (
+            <>
+              <div className={`gh-more-wrap ${all ? 'is-open' : ''}`}>
+                <div>
+                  <ul>{all && rest}</ul>
+                </div>
+              </div>
+              <button className={`gh-more ${all ? 'is-open' : ''}`} onClick={() => setAll((v) => !v)}>
+                <Icon name="chevron" size={11} />
+                {all ? 'Recolher' : `Ver todos (${n})`}
+              </button>
+            </>
+          )}
+        </>
+      )}
     </div>
   )
 }
