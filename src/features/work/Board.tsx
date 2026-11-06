@@ -383,7 +383,6 @@ export function Board({ state, today, scope }: { state: WorkState; today: string
                   />,
                 ])}
                 {over && hint!.index >= list.length && placeholder}
-                {list.length === 0 && !over && <p className="wk-col-empty">{c.stage === 'done' ? 'Concluídos dos últimos 7 dias' : 'Arraste para cá'}</p>}
                 {(c.stage === 'todo' || c.stage === 'doing') && !dragId && <QuickAdd stage={c.stage} state={state} scope={scope} today={today} />}
               </div>
             )}

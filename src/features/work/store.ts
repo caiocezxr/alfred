@@ -68,7 +68,7 @@ export const dismissToast = () => set({ toast: null })
 const fail = (e: unknown) => toast(e instanceof Error ? e.message : String(e), { tone: 'error' })
 
 const UI_KEY = 'ps.work.ui.v1'
-export type UiPrefs = { scope?: string; view?: 'board' | 'delivered'; sound?: boolean; lastCompany?: string; asked?: boolean; captureTarget?: 'todo' | 'work'; todoTab?: 'today' | 'fixed' | 'upcoming' | 'done'; slimDone?: boolean }
+export type UiPrefs = { scope?: string; view?: 'board' | 'delivered'; sound?: boolean; lastCompany?: string; asked?: boolean; captureTarget?: 'todo' | 'work'; todoTab?: 'today' | 'fixed' | 'upcoming' | 'done'; slimDone?: boolean; hojeTab?: string }
 export function readUi(): UiPrefs {
   try {
     return JSON.parse(localStorage.getItem(UI_KEY) ?? '{}') as UiPrefs

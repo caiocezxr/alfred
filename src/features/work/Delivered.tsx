@@ -2,14 +2,15 @@ import { useMemo } from 'react'
 import { addDays, parseCivil } from '../../shared/dates'
 import { CompanyMark, coStyle } from './brand'
 import { Icon } from './icons'
-import { computeMetrics, deliveryWeeks, fmtDur, itemTimeMs, rangeTimeMs, shortDay, sumTime, weekStart, type Scope } from './logic'
+import { DayMap } from './Copilot'
+import { computeMetrics, deliveryWeeks, fmtDur, itemTimeMs, rangeTimeMs, shortDay, sumTime, weekStart, type Health, type Scope } from './logic'
 import { openItem } from './store'
 import type { WorkState } from './types'
 
 const fmtWeek = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'short' })
 const wk = (d: string) => fmtWeek.format(parseCivil(d)).replace(/\./g, '')
 
-export function Delivered({ state, today, scope }: { state: WorkState; today: string; scope: Scope }) {
+export function Delivered({ state, today, scope, health }: { state: WorkState; today: string; scope: Scope; health: Health }) {
   const m = useMemo(() => computeMetrics(state, today, scope), [state, today, scope])
   const weeks = useMemo(() => deliveryWeeks(state, scope), [state, scope])
   const companies = new Map(state.companies.map((c) => [c.id, c]))
@@ -72,6 +73,10 @@ export function Delivered({ state, today, scope }: { state: WorkState; today: st
             </dd>
           </div>
         </dl>
+        <div className="wk-metrics-days">
+          <span className="wk-tips-title">Constância</span>
+          <DayMap state={state} today={today} health={health} weeks={18} />
+        </div>
         {m.systems.length > 0 && (
           <div className="wk-systems">
             <span className="wk-tips-title">Onde seu tempo foi (30 dias)</span>

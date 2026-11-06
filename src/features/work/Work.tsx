@@ -1,25 +1,23 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { onIntent } from '../../app/router'
 import { civil, fmtLong } from '../../shared/dates'
 import { Segmented } from '../../shared/ui/Segmented'
 import { Board } from './Board'
-import { CompanyMark } from './brand'
 import { Capture } from './Capture'
-import { FocusTile, ForgetTile, HealthTile, Scoreboard, TodosTile } from './Copilot'
+import { Cockpit, HojePanel } from './Copilot'
 import { Delivered } from './Delivered'
 import { DialogHost } from './Dialogs'
 import { Drawer } from './Drawer'
 import { Icon } from './icons'
-import { boardColumns, computeAlerts, computeHealth, forgetList, healthLabel, isPost, localNow, moveSelection, nudges, rulerModel, weekScore } from './logic'
+import { boardColumns, computeAlerts, computeHealth, forgetList, isPost, localNow, moveSelection, nudges, rulerModel, weekScore } from './logic'
 import { startNotifier } from './notify'
-import { Nudges } from './Nudges'
 import { Ruler } from './Ruler'
 import {
   dismissToast, getWork, initScope, loadWork, openDialog, openItemFrom, readUi, requestMove, select, setFocus, setScope, toggleTimer, useWork,
   writeUi,
 } from './store'
-import { NEXT_ACTION, type WorkState } from './types'
+import { NEXT_ACTION } from './types'
 import './work.css'
 
 startNotifier()
@@ -42,30 +40,6 @@ function inkFor(hex: string) {
   return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2] > 0.4 ? '#14100a' : '#ffffff'
 }
 
-function ScopeFilter({ state, value }: { state: WorkState; value: string }) {
-  const box = useRef<HTMLDivElement>(null)
-  const [pill, setPill] = useState<{ x: number; w: number } | null>(null)
-  const opts = [{ id: 'all', name: 'Todos' }, ...state.companies]
-  useLayoutEffect(() => {
-    const el = box.current?.querySelector<HTMLButtonElement>(`[data-id="${value}"]`)
-    if (el) setPill({ x: el.offsetLeft, w: el.offsetWidth })
-  }, [value, state.companies])
-  return (
-    <div className="seg wk-scope" role="tablist" aria-label="Espaço" ref={box}>
-      {pill && <span className="seg-pill" style={{ transform: `translateX(${pill.x}px)`, width: pill.w }} />}
-      {opts.map((o, i) => {
-        const c = state.companies.find((x) => x.id === o.id)
-        return (
-          <button key={o.id} data-id={o.id} role="tab" aria-selected={value === o.id} className="seg-btn" onClick={() => setScope(o.id)} title={`${o.name} (${i})`}>
-            {c && <CompanyMark company={c} size={15} />}
-            <span className="wk-scope-name">{o.name}</span>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
 function rootAccent() {
   if (typeof document === 'undefined') return '#c2ab88'
   return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#c2ab88'
@@ -77,6 +51,7 @@ export default function Work() {
   const today = civil(now)
   const nowLocal = localNow(now)
   const [view, setViewRaw] = useState<'board' | 'delivered'>(() => readUi().view ?? 'board')
+  const [hoje, setHoje] = useState(false)
   const capture = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -113,6 +88,11 @@ export default function Work() {
       if (e.key === '/' || e.key === 'n') {
         e.preventDefault()
         capture.current?.focus()
+        return
+      }
+      if (e.key === 'y') {
+        e.preventDefault()
+        setHoje((v) => !v)
         return
       }
       if (e.key === '?') {
@@ -171,7 +151,6 @@ export default function Work() {
       <section className="page wk" style={style}>
         <header className="wk-head">
           <div className="wk-title">
-            <div className="kicker">{fmtLong.format(now)}</div>
             <h1 className="display">Workstation</h1>
           </div>
         </header>
@@ -181,9 +160,10 @@ export default function Work() {
   }
 
   const { health, perCompany, forget } = derived
+  const openCount = state.items.filter((i) => i.stage !== 'done' && (validScope === 'all' || i.companyId === validScope)).length
 
   return (
-    <section className={`page wk is-${health.level} ${forget.length ? 'has-forget' : ''}`} style={style} data-scope={validScope}>
+    <section className={`page wk is-${health.level}`} style={style} data-scope={validScope}>
       <div className="wk-ambient" aria-hidden="true">
         {[{ id: 'all', color: 'var(--accent)' }, ...state.companies].map((c) => (
           <span key={c.id} className={`wk-amb ${validScope === c.id ? 'is-on' : ''}`} style={{ ['--amb' as string]: 'color' in c ? c.color : undefined }} />
@@ -192,56 +172,55 @@ export default function Work() {
 
       <header className="wk-head reveal" style={{ ['--i' as string]: 0 }}>
         <div className="wk-title">
-          <div className="kicker">{fmtLong.format(now)}</div>
           <h1 className="display">Workstation</h1>
-          <p className="wk-sub">
-            <span className={`wk-dot is-${health.level}`} aria-hidden="true" />
-            <span className="wk-sub-text">{healthLabel(health)}</span>
-          </p>
+          <span className="wk-date">
+            {fmtLong.format(now)}
+            {company && ` · ${company.name}`}
+          </span>
         </div>
-        <Scoreboard score={derived.score} companies={state.companies} />
+        <div className="wk-input">
+          <Capture ref={capture} state={state} today={today} scope={validScope} />
+          <Ruler model={derived.ruler} companies={state.companies} />
+        </div>
         <div className="wk-head-tools">
-          <ScopeFilter state={state} value={validScope} />
-          <button className="btn quiet wk-tool" onClick={() => openDialog({ kind: 'standup' })} title="Gerar o texto da daily">
-            <Icon name="text" size={14} />
-            <span>Daily</span>
+          <Segmented
+            label="Visão"
+            value={view}
+            onChange={setView}
+            options={[
+              { id: 'board', label: 'Quadro', count: openCount },
+              { id: 'delivered', label: 'Entregues' },
+            ]}
+          />
+          <button className="wk-tool" onClick={() => openDialog({ kind: 'standup' })} aria-label="Daily" title="Gerar a daily">
+            <Icon name="text" size={15} />
           </button>
-          <button className="btn quiet wk-tool" onClick={() => openDialog({ kind: 'keys' })} aria-label="Atalhos de teclado" title="Atalhos (?)">
-            <kbd>?</kbd>
+          <button className="wk-tool" onClick={() => openDialog({ kind: 'keys' })} aria-label="Atalhos de teclado" title="Atalhos (?)">
+            <Icon name="key" size={15} />
           </button>
-          <button className="btn quiet wk-tool" onClick={() => openDialog({ kind: 'settings' })} aria-label="Ajustes" title="Ajustes">
+          <button className="wk-tool" onClick={() => openDialog({ kind: 'settings' })} aria-label="Ajustes" title="Ajustes">
             <Icon name="gear" size={15} />
           </button>
         </div>
       </header>
 
-      <div className="wk-strip reveal" style={{ ['--i' as string]: 1 }}>
-        <Capture ref={capture} state={state} today={today} scope={validScope} />
-        <Ruler model={derived.ruler} companies={state.companies} />
-      </div>
+      <Cockpit
+        state={state}
+        health={health}
+        perCompany={perCompany}
+        today={today}
+        scope={validScope}
+        score={derived.score}
+        nudges={derived.nudges}
+        forget={forget}
+        onOpenHoje={() => setHoje(true)}
+      />
 
-      <div className="wk-bento">
-        <HealthTile state={state} health={health} perCompany={perCompany} today={today} scope={validScope} />
-        <ForgetTile entries={forget} companies={state.companies} />
-        <FocusTile state={state} today={today} scope={validScope} />
-        <TodosTile state={state} today={today} scope={validScope} />
-      </div>
-
-      <div className="wk-toolbar reveal" style={{ ['--i' as string]: 6 }}>
-        <Segmented
-          label="Visão"
-          value={view}
-          onChange={setView}
-          options={[
-            { id: 'board', label: 'Quadro', count: state.items.filter((i) => i.stage !== 'done' && (validScope === 'all' || i.companyId === validScope)).length },
-            { id: 'delivered', label: 'Entregues' },
-          ]}
-        />
-        <Nudges list={derived.nudges} />
-      </div>
-
-      <div key={view} className={`wk-view is-${view} reveal`} style={{ ['--i' as string]: 7 }}>
-        {view === 'board' ? <Board state={state} today={today} scope={validScope} /> : <Delivered state={state} today={today} scope={validScope} />}
+      <div className="wk-main">
+        <div key={view} className={`wk-view is-${view} reveal`} style={{ ['--i' as string]: 2 }}>
+          {view === 'board' ? <Board state={state} today={today} scope={validScope} /> : <Delivered state={state} today={today} scope={validScope} health={health} />}
+        </div>
+        <HojePanel state={state} today={today} scope={validScope} open={hoje} onClose={() => setHoje(false)} />
       </div>
 
       <Drawer state={state} today={today} />

@@ -481,6 +481,7 @@ const KEYS: [string[], string][] = [
   [['/', 'N'], 'Capturar algo novo'],
   [['0', '1', '2', '3'], 'Todos, Statix, Livelo, Pessoal'],
   [['Esc'], 'Limpar seleção ou fechar'],
+  [['Y'], 'Abrir ou fechar Hoje (foco e to-dos)'],
   [['?'], 'Esta lista'],
 ]
 
