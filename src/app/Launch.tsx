@@ -402,7 +402,7 @@ export function Launch({ onDone, intoRitual }: { onDone: () => void; intoRitual:
       </div>
 
       <header className="lx-top">
-        <span className="lx-word">Alfred</span>
+        <span className="lx-word">Shed</span>
         <span className="lx-top-r">
           <button
             type="button"

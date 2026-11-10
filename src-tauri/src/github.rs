@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 const API: &str = "https://api.github.com";
-const USER_AGENT: &str = "Alfred-GitHub/1.0";
+const USER_AGENT: &str = "Shed-GitHub/1.0";
 const TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_BYTES: u64 = 4 * 1024 * 1024;
 const GH_PATHS: [&str; 3] = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"];

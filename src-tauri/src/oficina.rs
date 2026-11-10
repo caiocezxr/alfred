@@ -422,7 +422,7 @@ pub(crate) fn tree_dir(name: &str, full: &str) -> String {
 }
 
 pub(crate) fn worktree_branch(mesa: &str, agent: &str) -> String {
-    format!("alfred/{}-{agent}", &mesa[..mesa.len().min(8)])
+    format!("shed/{}-{agent}", &mesa[..mesa.len().min(8)])
 }
 
 #[derive(Serialize)]
@@ -845,8 +845,8 @@ mod tests {
 
     #[test]
     fn worktree_branch_is_short_and_per_agent() {
-        assert_eq!(worktree_branch("1f2e3d4c-aaaa-bbbb", "codex"), "alfred/1f2e3d4c-codex");
-        assert_eq!(worktree_branch("abc", "claude"), "alfred/abc-claude");
+        assert_eq!(worktree_branch("1f2e3d4c-aaaa-bbbb", "codex"), "shed/1f2e3d4c-codex");
+        assert_eq!(worktree_branch("abc", "claude"), "shed/abc-claude");
         assert_ne!(tree_dir("front", "/Users/x/a/front"), tree_dir("front", "/Users/x/b/front"));
         assert_eq!(tree_dir("front", "/Users/x/a/front"), tree_dir("front", "/Users/x/a/front"));
     }

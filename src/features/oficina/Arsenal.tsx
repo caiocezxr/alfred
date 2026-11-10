@@ -49,7 +49,7 @@ export function Arsenal({ companies, scope }: { companies: Company[]; scope: str
             {company?.name ?? 'Pessoal'}
             {scope === 'all' && <em> · configurando o Pessoal</em>}
           </h2>
-          <p>Tudo aqui vale só para as sessões deste perfil. Nada muda na configuração do Claude ou do Codex fora do Alfred.</p>
+          <p>Tudo aqui vale só para as sessões deste perfil. Nada muda na configuração do Claude ou do Codex fora do Shed.</p>
         </div>
       </header>
       <nav className="ars-tabs" role="tablist">
@@ -165,7 +165,7 @@ function Contas({ co }: { co: string }) {
             <ToolMark tool="codex" size={14} />
             <div>
               <b>{a.label}</b>
-              <small>{a.id === 'default' ? 'a conta já logada no Codex desta máquina' : 'pasta própria do Alfred'}</small>
+              <small>{a.id === 'default' ? 'a conta já logada no Codex desta máquina' : 'pasta própria do Shed'}</small>
             </div>
             <span className="ofc-grow" />
             {c.codexAccount === a.id ? (
@@ -261,7 +261,7 @@ function Skills({ co }: { co: string }) {
     const out = new Map<string, SkillInfo[]>()
     for (const sk of list ?? []) {
       if (q && !`${sk.id} ${sk.description}`.toLowerCase().includes(q.toLowerCase())) continue
-      const g = sk.source === 'user' ? 'Suas skills' : sk.source === 'alfred' ? 'Carregadas no Alfred' : sk.origin
+      const g = sk.source === 'user' ? 'Suas skills' : sk.source === 'alfred' ? 'Carregadas no Shed' : sk.origin
       out.set(g, [...(out.get(g) ?? []), sk])
     }
     return [...out.entries()].sort((a, b) => (a[0] === 'Suas skills' ? -1 : b[0] === 'Suas skills' ? 1 : a[0].localeCompare(b[0])))
@@ -293,7 +293,7 @@ function Skills({ co }: { co: string }) {
 
   return (
     <div className="ars-grid">
-      <Section title="Carregar skill" sub="Cole o link de um repositório do GitHub ou o caminho de uma pasta. O Alfred acha todo SKILL.md lá dentro e guarda na biblioteca dele.">
+      <Section title="Carregar skill" sub="Cole o link de um repositório do GitHub ou o caminho de uma pasta. O Shed acha todo SKILL.md lá dentro e guarda na biblioteca dele.">
         <div className="ars-load">
           <input value={src} onChange={(e) => setSrc(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && src.trim() && void load()} placeholder="https://github.com/autor/repo  ou  ~/Projetos/minhas-skills" />
           <button className="ars-btn is-go" disabled={!src.trim() || busy} onClick={() => void load()}>
@@ -305,7 +305,7 @@ function Skills({ co }: { co: string }) {
 
       <Section
         title="Escolha automática"
-        sub="Enquanto você escreve, o Alfred cruza o pedido e os repositórios da desk com a descrição de cada skill ligada aqui e já manda junto as que combinam. Usa o modelo de embeddings do Ollama; sem ele, compara por palavras."
+        sub="Enquanto você escreve, o Shed cruza o pedido e os repositórios da desk com a descrição de cada skill ligada aqui e já manda junto as que combinam. Usa o modelo de embeddings do Ollama; sem ele, compara por palavras."
         aside={
           <button role="switch" aria-checked={s.autoSkills !== false} className={`ars-switch ${s.autoSkills !== false ? 'is-on' : ''}`} onClick={() => patchSettings({ autoSkills: s.autoSkills === false })}>
             <span />
@@ -362,7 +362,7 @@ function Skills({ co }: { co: string }) {
                             .then(() => listSkills(true))
                             .then(setList)
                         }
-                        title="Tirar da biblioteca do Alfred"
+                        title="Tirar da biblioteca do Shed"
                       >
                         <Icon name="x" size={10} />
                       </button>
@@ -499,7 +499,7 @@ function Motores() {
     <div className="ars-grid">
       <Section
         title="Motores"
-        sub="Os adaptadores que ligam o Alfred ao Claude e ao Codex. Ficam com versão fixa; atualizar baixa a nova numa pasta separada, testa o aperto de mão com cada um e só troca se passar. Se der ruim, volta com um clique."
+        sub="Os adaptadores que ligam o Shed ao Claude e ao Codex. Ficam com versão fixa; atualizar baixa a nova numa pasta separada, testa o aperto de mão com cada um e só troca se passar. Se der ruim, volta com um clique."
         aside={
           <span className="ars-row">
             <button className="ars-link" onClick={() => void load(true)} disabled={!!busy}>

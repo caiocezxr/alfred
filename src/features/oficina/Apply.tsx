@@ -86,14 +86,14 @@ export function ApplyAlfred({ repo }: { repo: string }) {
 
   return (
     <div className="apl">
-      <button className={`apl-btn is-${state}`} onClick={() => (state === 'idle' ? void build() : setOpen((o) => !o))} title="Compila o Alfred com as mudanças desta desk e reinstala">
+      <button className={`apl-btn is-${state}`} onClick={() => (state === 'idle' ? void build() : setOpen((o) => !o))} title="Compila o Shed com as mudanças desta desk e reinstala">
         <Icon name={state === 'ready' ? 'check' : 'spark'} size={12} />
-        {state === 'building' ? `Compilando · ${step}` : state === 'ready' ? 'Pronto para aplicar' : state === 'fail' ? 'Falhou' : 'Aplicar no Alfred'}
+        {state === 'building' ? `Compilando · ${step}` : state === 'ready' ? 'Pronto para aplicar' : state === 'fail' ? 'Falhou' : 'Aplicar no Shed'}
       </button>
       {open && (
-        <div className="apl-pop" role="dialog" aria-label="Aplicar no Alfred">
+        <div className="apl-pop" role="dialog" aria-label="Aplicar no Shed">
           <header>
-            <b>Aplicar no Alfred</b>
+            <b>Aplicar no Shed</b>
             <button className="apl-x" onClick={() => setOpen(false)} aria-label="Fechar">
               <Icon name="x" size={10} />
             </button>
@@ -116,7 +116,7 @@ export function ApplyAlfred({ repo }: { repo: string }) {
           <footer>
             {state === 'ready' && (
               <button className={`apl-go ${arm ? 'is-arm' : ''}`} onClick={() => void install()}>
-                {arm ? 'Confirmar: fechar e reabrir o Alfred' : 'Reiniciar com a versão nova'}
+                {arm ? 'Confirmar: fechar e reabrir o Shed' : 'Reiniciar com a versão nova'}
               </button>
             )}
             {(state === 'fail' || state === 'ready') && (
@@ -124,7 +124,7 @@ export function ApplyAlfred({ repo }: { repo: string }) {
                 Compilar de novo
               </button>
             )}
-            {state === 'building' && <span className="apl-note">Leva uns minutos. Pode continuar usando o Alfred enquanto isso.</span>}
+            {state === 'building' && <span className="apl-note">Leva uns minutos. Pode continuar usando o Shed enquanto isso.</span>}
           </footer>
         </div>
       )}

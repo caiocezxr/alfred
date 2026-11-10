@@ -1207,7 +1207,7 @@ function Deck({ desk, agent, setAgent, fallback }: { desk: Mesa; agent: AgentId;
             <button key={o.key} className={i === sel ? 'is-on' : ''} onMouseEnter={() => setSlash(i)} onClick={o.pick}>
               <b>{o.label}</b>
               <span>{o.desc}</span>
-              {o.alfred && <em>Alfred</em>}
+              {o.alfred && <em>Shed</em>}
             </button>
           ))}
         </div>

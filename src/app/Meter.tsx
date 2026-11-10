@@ -48,7 +48,7 @@ function attribute(s: MeterSample, worked: Map<string, number>, screen: string):
 
   const cores = acts.filter((x) => x.engine === 'core')
   if (cores.length) for (const a of cores) out.push({ key: a.id, label: a.label, detail: a.detail, cpu: core.cpu / cores.length, gpu: 0 })
-  else out.push({ key: 'core', label: 'Núcleo do Alfred', detail: 'banco de dados e serviços em segundo plano', cpu: core.cpu, gpu: core.gpu })
+  else out.push({ key: 'core', label: 'Núcleo do Shed', detail: 'banco de dados e serviços em segundo plano', cpu: core.cpu, gpu: core.gpu })
 
   const n = loops()
   const webgl = !!document.querySelector('canvas.curl, .bible canvas')
@@ -150,9 +150,9 @@ export function ResourceMeter({ compact }: { compact: boolean }) {
       {open &&
         at &&
         createPortal(
-          <div className={`mt-pop is-${tone(cpu)}`} ref={pop} role="dialog" aria-label="Consumo do Alfred" style={{ left: at.left, bottom: at.bottom } as CSSProperties}>
+          <div className={`mt-pop is-${tone(cpu)}`} ref={pop} role="dialog" aria-label="Consumo do Shed" style={{ left: at.left, bottom: at.bottom } as CSSProperties}>
             <div className="mt-pop-head">
-              <span>Consumo do Alfred</span>
+              <span>Consumo do Shed</span>
               <em>ao vivo</em>
             </div>
             <Spark data={hist} max={50} />
@@ -186,7 +186,7 @@ export function ResourceMeter({ compact }: { compact: boolean }) {
             </ul>
             <p className="mt-help">
               CPU medida por processo, como no Monitor de Atividade: 100% é um núcleo inteiro (este Mac tem {s.cores}). GPU do topo é o uso total da placa de vídeo do Mac.
-              {busyLocal ? ` CPU e memória incluem o modelo local enquanto ele trabalha para o Alfred.` : ''}
+              {busyLocal ? ` CPU e memória incluem o modelo local enquanto ele trabalha para o Shed.` : ''}
             </p>
           </div>,
           document.body,

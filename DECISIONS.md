@@ -125,3 +125,10 @@
 - **Claude e Codex ao mesmo tempo:** a conversa junta cada pedaço de texto na última mensagem do mesmo agente. O botão **Isolar** põe cada agente numa git worktree própria (branch `alfred/<desk>-<agente>`, pasta em `worktrees/` do Alfred); juntar as branches fica com o dono. Ligar ou mudar a pasta principal abre sessões novas.
 - **Robustez:** evento de processo encerrado de propósito é ignorado; abertura antiga não derruba a nova; sessão que não retoma abre uma nova com aviso; limite e login só são lidos no fim do turno, com frases exatas; não dá para mandar enquanto o agente trabalha; permissões pendentes são canceladas no Esc e no fechamento; o adaptador recebe SIGTERM no grupo de processos antes do SIGKILL.
 - **Dossiê:** saíram Em 30 segundos (no modo tela cheia), Linha do dia, linha de Confiança, cotações duplicadas, Como ler, rótulo "Topo" e changelog que repetia o resumo. A faixa do topo respeita os botões da janela; abaixo de 1180 px some o mercado lateral e abaixo de 860 px o sumário.
+
+## O app passa a se chamar Shed (10/11/2026)
+
+- Nome visível trocado para **Shed**: `Shed.app`, título da janela, abertura, medidor, Sessão, "Aplicar no Shed" e branches do Isolar (`shed/<desk>-<agente>`). O "Aplicar" instala o `Shed.app` e apaga o `Alfred.app` antigo da mesma pasta.
+- Ícone: saiu a gravata-borboleta do Alfred. O provisório é só o contorno de um galpão de uma água, em bronze chapado sobre preto, sem brilho, até a marca definitiva (briefing em `docs/MARCA.md`).
+- O README virou a visão geral do app (módulos, IA, integrações e APIs).
+- Ficam iguais de propósito: o identificador `app.personalspace.desktop` (a pasta de dados, o banco e o armazenamento da janela dependem dele), o id das skills da biblioteca (`alfred:…`), os nomes internos de funções e comandos, a pasta local `assistent-app` e o repositório `caiocezxr/alfred`.

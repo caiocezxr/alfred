@@ -662,8 +662,8 @@ export function route(agent: AgentId, text: string, repos: number): Route {
 
 function withSkills(agent: AgentId, text: string, picks: Pick[]) {
   if (!picks.length || agent === 'local' || text.startsWith('/')) return text
-  if (agent === 'claude') return `[Alfred: para este pedido, use as skills ${picks.map((p) => p.id).join(', ')} com a ferramenta Skill antes de começar.]\n\n${text}`
-  return `[Alfred: antes de começar, leia e siga estas instruções: ${picks.map((p) => `${p.path}/SKILL.md`).join(', ')}]\n\n${text}`
+  if (agent === 'claude') return `[Shed: para este pedido, use as skills ${picks.map((p) => p.id).join(', ')} com a ferramenta Skill antes de começar.]\n\n${text}`
+  return `[Shed: antes de começar, leia e siga estas instruções: ${picks.map((p) => `${p.path}/SKILL.md`).join(', ')}]\n\n${text}`
 }
 
 const BUSY = new Set<Status>(['opening', 'thinking', 'writing', 'tool', 'waiting'])

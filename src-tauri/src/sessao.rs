@@ -76,7 +76,7 @@ fn ensure_library(root: &Path) -> R<()> {
     std::fs::create_dir_all(root.join("skills")).map_err(|e| e.to_string())?;
     let manifest = root.join(".claude-plugin/plugin.json");
     if !manifest.exists() {
-        std::fs::write(&manifest, json!({ "name": "alfred", "version": "1.0.0", "description": "Skills carregadas pela Sessão do Alfred" }).to_string()).map_err(|e| e.to_string())?;
+        std::fs::write(&manifest, json!({ "name": "alfred", "version": "1.0.0", "description": "Skills carregadas pela Sessão do Shed" }).to_string()).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -103,7 +103,7 @@ pub fn sessao_skills(state: State<AppState>) -> R<Vec<Skill>> {
     }
     let lib = library(&state);
     for d in subdirs(&lib.join("skills")) {
-        if let Some(s) = read_skill(&d, "alfred", Some("alfred"), "Alfred") {
+        if let Some(s) = read_skill(&d, "alfred", Some("alfred"), "Shed") {
             out.push(s);
         }
     }
@@ -501,12 +501,14 @@ mod tests {
     }
 }
 
+const APP_NAME: &str = "Shed";
+
 fn alfred_repo(path: &str) -> R<PathBuf> {
     let dir = safe_dir(path)?;
-    let conf = std::fs::read_to_string(dir.join("src-tauri/tauri.conf.json")).map_err(|_| "essa pasta não é o repositório do Alfred".to_string())?;
+    let conf = std::fs::read_to_string(dir.join("src-tauri/tauri.conf.json")).map_err(|_| "essa pasta não é o repositório do Shed".to_string())?;
     let v: Value = serde_json::from_str(&conf).map_err(|_| "tauri.conf.json inválido".to_string())?;
-    if v.get("productName").and_then(Value::as_str) != Some("Alfred") {
-        return Err("essa pasta não é o repositório do Alfred".into());
+    if v.get("productName").and_then(Value::as_str) != Some(APP_NAME) {
+        return Err("essa pasta não é o repositório do Shed".into());
     }
     Ok(dir)
 }
@@ -576,11 +578,11 @@ pub fn sessao_alfred_build(app: tauri::AppHandle, path: String) -> R<()> {
                 return;
             }
         }
-        let bundle = dir.join("src-tauri/target/release/bundle/macos/Alfred.app");
+        let bundle = dir.join(format!("src-tauri/target/release/bundle/macos/{APP_NAME}.app"));
         if bundle.exists() {
             say("done", bundle.to_string_lossy().to_string());
         } else {
-            say("fail", "a compilação terminou mas o Alfred.app não apareceu".into());
+            say("fail", "a compilação terminou mas o Shed.app não apareceu".into());
         }
         BUILDING.store(false, Ordering::SeqCst);
     });
@@ -590,22 +592,23 @@ pub fn sessao_alfred_build(app: tauri::AppHandle, path: String) -> R<()> {
 #[tauri::command]
 pub fn sessao_alfred_install(app: tauri::AppHandle, state: State<AppState>, path: String) -> R<()> {
     let dir = alfred_repo(&path)?;
-    let bundle = dir.join("src-tauri/target/release/bundle/macos/Alfred.app");
+    let bundle = dir.join(format!("src-tauri/target/release/bundle/macos/{APP_NAME}.app"));
     if !bundle.exists() {
         return Err("compile antes de aplicar".into());
     }
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let target = exe.ancestors().find(|p| p.extension().is_some_and(|e| e == "app")).map(Path::to_path_buf).ok_or("o Alfred não está rodando de um .app")?;
+    let target = exe.ancestors().find(|p| p.extension().is_some_and(|e| e == "app")).map(Path::to_path_buf).ok_or("o Shed não está rodando de um .app")?;
     if !target.starts_with("/Applications") && !target.starts_with(home()?) {
         return Err("lugar de instalação inesperado".into());
     }
+    let named = target.with_file_name(format!("{APP_NAME}.app"));
     let script = state.data_dir.join("tmp/aplicar-alfred.sh");
     std::fs::create_dir_all(script.parent().unwrap_or(&state.data_dir)).map_err(|e| e.to_string())?;
-    std::fs::write(&script, "#!/bin/bash\nTARGET=\"$1\"\nSRC=\"$2\"\nPID=\"$3\"\nfor i in $(seq 1 120); do kill -0 \"$PID\" 2>/dev/null || break; sleep 0.5; done\nrm -rf \"$TARGET\" && /usr/bin/ditto \"$SRC\" \"$TARGET\" && /usr/bin/open \"$TARGET\"\n").map_err(|e| e.to_string())?;
+    std::fs::write(&script, "#!/bin/bash\nTARGET=\"$1\"\nSRC=\"$2\"\nPID=\"$3\"\nNAMED=\"$4\"\nfor i in $(seq 1 120); do kill -0 \"$PID\" 2>/dev/null || break; sleep 0.5; done\nrm -rf \"$TARGET\" \"$NAMED\" && /usr/bin/ditto \"$SRC\" \"$NAMED\" && /usr/bin/open \"$NAMED\"\n").map_err(|e| e.to_string())?;
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        Command::new("/bin/bash").arg(&script).arg(&target).arg(&bundle).arg(std::process::id().to_string()).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).process_group(0).spawn().map_err(|e| e.to_string())?;
+        Command::new("/bin/bash").arg(&script).arg(&target).arg(&bundle).arg(std::process::id().to_string()).arg(&named).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).process_group(0).spawn().map_err(|e| e.to_string())?;
     }
     crate::oficina::close_all();
     let handle = app.clone();

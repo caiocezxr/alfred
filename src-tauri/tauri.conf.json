@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Alfred",
+  "productName": "Shed",
   "version": "0.1.0",
   "identifier": "app.personalspace.desktop",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Alfred",
+        "title": "Shed",
         "width": 1380,
         "height": 880,
         "minWidth": 1024,
