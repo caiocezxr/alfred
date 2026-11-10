@@ -631,7 +631,7 @@
   height: 6px;
   border-radius: 50%;
   background: var(--wk-red);
-  animation: wk-blink 1.2s ease-in-out infinite;
+  animation: wk-blink 1.2s ease-in-out 3;
 }
 
 @keyframes wk-blink {
@@ -2928,7 +2928,7 @@
 .wk-ruler-seg.is-running {
   background: repeating-linear-gradient(-45deg, var(--co) 0 3px, color-mix(in srgb, var(--co) 55%, transparent) 3px 6px);
   background-size: 8.5px 8.5px;
-  animation: wk-stripes 900ms linear infinite;
+  animation: wk-stripes 900ms linear 3;
 }
 
 @keyframes wk-stripes {
@@ -4242,7 +4242,7 @@
 
 .wk-g-seg.is-late .wk-g-seg-main {
   stroke: var(--wk-red);
-  animation: wk-redline 1.8s ease-in-out infinite;
+  animation: wk-redline 1.8s ease-in-out 3;
 }
 
 .wk-g-seg-rim {
@@ -4267,11 +4267,11 @@
 
 .wk-g-seg.is-armed .wk-g-seg-main {
   stroke: var(--wk-green);
-  animation: wk-blink 0.8s ease-in-out infinite;
+  animation: wk-blink 0.8s ease-in-out 3;
 }
 
 .wk-gauge.has-red .wk-g-red {
-  animation: wk-redline 1.8s ease-in-out infinite;
+  animation: wk-redline 1.8s ease-in-out 3;
 }
 
 @keyframes wk-redline {
@@ -4435,7 +4435,7 @@
 .wk-ws-led.is-on {
   background: radial-gradient(circle at 35% 30%, #fff3c4, #f0a92c 55%, #9a5d0a);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 0 8px 2px rgba(240, 169, 44, 0.55);
-  animation: wk-led 2.4s ease-in-out infinite;
+  animation: wk-led 2.4s ease-in-out 3;
 }
 
 .wk-ws-win.is-validated .wk-ws-led.is-on,
@@ -5317,7 +5317,7 @@
   background: var(--wk-forget);
   border-color: var(--wk-forget);
   color: #fff;
-  animation: wk-pin-pulse 1.8s ease-in-out infinite;
+  animation: wk-pin-pulse 1.8s ease-in-out 3;
 }
 
 .wk-ruler-pin.is-done {
@@ -5882,7 +5882,7 @@
   border-radius: 50%;
   background: var(--wk-amber);
   box-shadow: 0 0 0 0 color-mix(in srgb, var(--wk-amber) 60%, transparent);
-  animation: wk-amber-pulse 2s ease-out infinite;
+  animation: wk-amber-pulse 2s ease-out 3;
 }
 
 @keyframes wk-amber-pulse {
@@ -5908,7 +5908,7 @@
   border-radius: 50%;
   pointer-events: none;
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--wk-amber) 35%, transparent);
-  animation: wk-amber-ring 3s ease-in-out infinite;
+  animation: wk-amber-ring 3s ease-in-out 3;
 }
 
 @keyframes wk-amber-ring {
@@ -6184,7 +6184,7 @@
   vertical-align: 0.05em;
   background: #ffb547;
   box-shadow: 0 0 8px rgba(255, 181, 71, 0.8);
-  animation: wk-led 2.4s ease-in-out infinite;
+  animation: wk-led 2.4s ease-in-out 3;
 }
 
 .wk-ws.is-board .wk-ws-row {
@@ -6256,7 +6256,7 @@
   background: #ffb547;
   box-shadow: 0 0 8px rgba(255, 181, 71, 0.8);
   opacity: 0;
-  animation: wk-flow 1.8s ease-in-out infinite;
+  animation: wk-flow 1.8s ease-in-out 3;
 }
 
 .wk-ws-flow i:nth-child(2)::after {
@@ -6744,7 +6744,7 @@
   border-radius: 50%;
   background: #ffb547;
   box-shadow: 0 0 8px rgba(255, 181, 71, 0.8);
-  animation: wk-led 2.4s ease-in-out infinite;
+  animation: wk-led 2.4s ease-in-out 3;
 }
 
 .wk-dv-sub {
@@ -7275,12 +7275,12 @@
 .wk-prchip.is-failure i,
 .wk-prchip.is-error i {
   background: var(--wk-red, #d4483f);
-  animation: wk-led 1.4s ease-in-out infinite;
+  animation: wk-led 1.4s ease-in-out 3;
 }
 
 .wk-prchip.is-pending i {
   background: #e0a020;
-  animation: wk-led 1s ease-in-out infinite;
+  animation: wk-led 1s ease-in-out 3;
 }
 
 .wk-prchip.is-review {
@@ -7356,7 +7356,7 @@
 
 .wk-deskchip.is-live i {
   background: #e0a020;
-  animation: wk-led 1.2s ease-in-out infinite;
+  animation: wk-led 1.2s ease-in-out 3;
 }
 
 .wk-deskchip b {

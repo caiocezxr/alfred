@@ -132,3 +132,9 @@
 - Ícone: saiu a gravata-borboleta do Alfred. O provisório é só o contorno de um galpão de uma água, em bronze chapado sobre preto, sem brilho, até a marca definitiva (briefing em `docs/MARCA.md`).
 - O README virou a visão geral do app (módulos, IA, integrações e APIs).
 - Ficam iguais de propósito: o identificador `app.personalspace.desktop` (a pasta de dados, o banco e o armazenamento da janela dependem dele), o id das skills da biblioteca (`alfred:…`), os nomes internos de funções e comandos, a pasta local `assistent-app` e o repositório `caiocezxr/alfred`.
+
+## Workstation mais leve (10/11/2026)
+
+- O medidor mostrava a Workstation em ~120% de CPU. Causas: o ponteiro do medidor tremia sem parar num laço de 60 qps, e 15 animações de CSS rodavam em loop infinito. Com a janela transparente e os painéis de vidro, cada quadro redesenha o desfoque.
+- Agora o ponteiro só anima quando o valor muda e para ao assentar; os pulsos e luzes rodam 3 vezes e param. Só o esqueleto de carregamento continua em loop.
+- Pendente: a Home tem o mesmo padrão (céu animado `LiveSky` a ~75 qps e 5 loops de CSS).

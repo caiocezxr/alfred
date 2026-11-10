@@ -1,4 +1,3 @@
-import { isResting, onWake } from '../../shared/ui/rest'
 import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { GaugeSegment } from './logic'
 import { openItemFrom, readUi, toggleTodo } from './store'
@@ -93,11 +92,13 @@ export function Gauge({ progress, red, level, children, segments, companies, sum
   const [armed, setArmed] = useState<string | null>(null)
   const [over, setOver] = useState(false)
 
+  const start = useRef<() => void>(() => {})
   const drive = (t: number, kick = 0) => {
     const s = sim.current
     s.t = t
     s.v += kick
     s.settled = false
+    start.current()
   }
 
   useEffect(() => {
@@ -119,25 +120,9 @@ export function Gauge({ progress, red, level, children, segments, companies, sum
       return
     }
     let last = performance.now()
-    let nextTwitch = last + 1800 + Math.random() * 3000
-    let drawn = 0
     const step = (now: number) => {
-      if (isResting() && s.settled) {
-        s.raf = 0
-        return
-      }
-      if (s.settled && now - drawn < 33) {
-        s.raf = requestAnimationFrame(step)
-        return
-      }
-      drawn = now
       const dt = Math.min(0.05, (now - last) / 1000)
       last = now
-      if (s.settled && now > nextTwitch) {
-        s.v += (Math.random() < 0.5 ? -1 : 1) * (14 + Math.random() * 18)
-        s.settled = false
-        nextTwitch = now + 2200 + Math.random() * 4200
-      }
       const f = -210 * (s.a - s.t) - 11 * s.v
       s.v += f * dt
       s.a += s.v * dt
@@ -145,22 +130,23 @@ export function Gauge({ progress, red, level, children, segments, companies, sum
         s.a = s.t
         s.v = 0
         s.settled = true
+        paint(s.a)
+        s.raf = 0
+        return
       }
-      const sec = now / 1000
-      const idle = 0.55 * Math.sin(sec * 6.1) + 0.22 * Math.sin(sec * 17.3 + 1.1) + 0.1 * Math.sin(sec * 41)
-      paint(s.a + idle)
+      paint(s.a)
       s.raf = requestAnimationFrame(step)
     }
-    s.raf = requestAnimationFrame(step)
-    const off = onWake(() => {
-      if (!s.raf) {
-        last = performance.now()
-        s.raf = requestAnimationFrame(step)
-      }
-    })
+    start.current = () => {
+      if (s.raf) return
+      last = performance.now()
+      s.raf = requestAnimationFrame(step)
+    }
+    start.current()
     return () => {
-      off()
       cancelAnimationFrame(s.raf)
+      s.raf = 0
+      start.current = () => {}
     }
   }, [])
 
