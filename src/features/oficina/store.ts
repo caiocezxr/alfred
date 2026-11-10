@@ -6,9 +6,9 @@ import { api, isTauri } from '../../shared/db/api'
 import { alwaysOn, cofreOf, codexHome, getSettings, isBase, listSkills, mcpFor, skillsFor } from './cofre'
 import { route as routeSkills, type Pick } from './router'
 
-export type AgentId = 'claude' | 'codex' | 'local'
+import { AGENT_NAME, deskContext, type AgentId } from './context.ts'
+export { AGENT_NAME, type AgentId }
 export const AGENTS: AgentId[] = ['claude', 'codex', 'local']
-export const AGENT_NAME: Record<AgentId, string> = { claude: 'Claude', codex: 'Codex', local: 'Local' }
 export type LocalModel = { name: string; params: string | null; context: number | null; size: number | null }
 
 export type Mesa = {
@@ -21,6 +21,7 @@ export type Mesa = {
   flow?: 'livre' | 'maivado'
   isolate?: boolean
   trees?: Partial<Record<AgentId, string>>
+  sync?: Partial<Record<AgentId, number>>
   accounts?: Partial<Record<AgentId, string>>
   itemId?: string
   ticket?: string | null
@@ -45,8 +46,8 @@ Pensa como quem já segurou incidente às 3 da manhã: segurança, dados de clie
 Na hora de escrever código, comentário, mensagem de commit ou descrição de PR, é profissional: limpo, sem gíria e sem palavrão.`
 
 export type Item =
-  | { id: string; agent: AgentId; role: 'user'; text: string; at: number; skills?: string[] }
-  | { id: string; agent: AgentId; role: 'agent'; text: string; at: number; open: boolean }
+  | { id: string; agent: AgentId; role: 'user'; text: string; at: number; skills?: string[]; shared?: number }
+  | { id: string; agent: AgentId; role: 'agent'; text: string; at: number; open: boolean; end?: number }
   | { id: string; agent: AgentId; role: 'thought'; text: string; at: number; open: boolean }
   | { id: string; agent: AgentId; role: 'tool'; title: string; kind: string; status: string; files: string[]; at: number }
   | { id: string; agent: AgentId; role: 'perm'; title: string; options: PermOption[]; rpc: unknown; answered: string | null; at: number }
@@ -324,7 +325,7 @@ function apply(ev: Out) {
         const next = { ...cur, title: (u.title as string) || cur.title, status: (u.status as string) || cur.status, files: locs.length ? locs : cur.files }
         m.items = m.items.map((x, j) => (j === i ? next : x))
       } else {
-        m.items = m.items.map((x) => (x.role === 'agent' || x.role === 'thought') && x.open && x.agent === agent ? { ...x, open: false } : x)
+        m.items = m.items.map((x) => (x.role === 'agent' || x.role === 'thought') && x.open && x.agent === agent ? { ...x, open: false, end: Date.now() } : x)
         push(mesa, { id, agent, role: 'tool', title: (u.title as string) || 'ferramenta', kind: (u.kind as string) || 'other', status: (u.status as string) || 'pending', files: locs, at: Date.now() })
       }
       const st = (u.status as string) || 'in_progress'
@@ -386,7 +387,7 @@ function apply(ev: Out) {
     }
     if (agent === 'local') queueMicrotask(() => saveLocal(mesa))
     const err = ev.data.error as { message?: string } | undefined
-    m.items = m.items.map((x) => (x.role === 'agent' || x.role === 'thought') && x.open && x.agent === agent ? { ...x, open: false } : x)
+    m.items = m.items.map((x) => (x.role === 'agent' || x.role === 'thought') && x.open && x.agent === agent ? { ...x, open: false, end: Date.now() } : x)
     const said = turnText(m.items, agent)
     if (!err && agent !== 'local' && said && said.text.length < 400) {
       if (AUTH_MSG.test(said.text)) {
@@ -461,7 +462,7 @@ function settle(mesa: string, agent: AgentId, reply: boolean) {
   m.items = m.items.map((x) => {
     if (x.agent !== agent) return x
     if (x.role === 'perm' && !x.answered) return { ...x, answered: 'cancelled' }
-    if ((x.role === 'agent' || x.role === 'thought') && x.open) return { ...x, open: false }
+    if ((x.role === 'agent' || x.role === 'thought') && x.open) return { ...x, open: false, end: Date.now() }
     return x
   })
 }
@@ -668,7 +669,7 @@ function withSkills(agent: AgentId, text: string, picks: Pick[]) {
 const BUSY = new Set<Status>(['opening', 'thinking', 'writing', 'tool', 'waiting'])
 export const isBusy = (mesa: string, agent: AgentId) => BUSY.has(liveOf(mesa).agents[agent].status)
 
-export async function send(mesa: Mesa, agent: AgentId, text0: string, images: Shot[], codexHome: string | null, fallback: string, picks?: Pick[]) {
+export async function send(mesa: Mesa, agent: AgentId, text0: string, images: Shot[], codexHome: string | null, fallback: string, picks?: Pick[], share = true) {
   if (isBusy(mesa.id, agent)) {
     push(mesa.id, { id: uid(), agent, role: 'note', text: `O ${AGENT_NAME[agent]} ainda está trabalhando. Espere terminar ou pare (Esc) antes de mandar outra.`, tone: 'info', at: Date.now() })
     emit()
@@ -677,9 +678,14 @@ export async function send(mesa: Mesa, agent: AgentId, text0: string, images: Sh
   const flow = mesa.flow ?? cofreOf(mesa.companyId).flow
   const maivado = flow === 'maivado' && agent === 'claude' && !mesa.sessions.claude && text0 && !text0.startsWith('/')
   const chosen = (maivado ? [] : (picks ?? (getSettings().autoSkills === false ? [] : await routeSkills(text0, mesa.repos, mesa.companyId).catch(() => [])))).filter((p) => !isBase(p, getSettings().base))
-  const text = maivado ? `/maivado ${text0}` : withSkills(agent, text0, chosen)
+  const command = maivado || text0.startsWith('/')
+  const now = Date.now()
+  const cur = mesas.find((x) => x.id === mesa.id) ?? mesa
+  const desk = share && !command ? deskContext(liveOf(mesa.id).items, agent, cur.sync?.[agent] ?? 0) : { text: '', count: 0 }
+  if (!command) patchMesa(mesa.id, { sync: { ...(cur.sync ?? {}), [agent]: now } })
+  const text = maivado ? `/maivado ${text0}` : desk.text + withSkills(agent, text0, chosen)
   const shown = images.length ? `${text0}${text0 ? '\n' : ''}[${images.length} imagem${images.length > 1 ? 's' : ''}]` : text0
-  push(mesa.id, { id: uid(), agent, role: 'user', text: maivado ? `/maivado ${text0}` : shown, at: Date.now(), skills: chosen.map((p) => p.name) })
+  push(mesa.id, { id: uid(), agent, role: 'user', text: maivado ? `/maivado ${text0}` : shown, at: now, skills: chosen.map((p) => p.name), shared: desk.count || undefined })
   if (!mesa.title && text0) patchMesa(mesa.id, { title: text0.split('\n')[0].slice(0, 70) })
   emit()
   await ensureAgent(mesa, agent, codexHome, fallback)
@@ -690,6 +696,7 @@ export async function send(mesa: Mesa, agent: AgentId, text0: string, images: Sh
     const model = list.find((m) => m.name === prefs.model)?.name ?? list[0]?.name
     const ctx = list.find((m) => m.name === model)?.context ?? null
     const history = liveOf(mesa.id).items.filter((x) => x.agent === 'local' && (x.role === 'user' || x.role === 'agent')).map((x) => ({ role: x.role === 'agent' ? 'assistant' : 'user', content: (x as { text: string }).text }))
+    if (desk.text && history.length) history[history.length - 1].content = desk.text + history[history.length - 1].content
     setAgent(mesa.id, agent, { status: 'thinking', action: `carregando ${model}`, since: Date.now() })
     busy(mesa.id, agent, true)
     emit()
@@ -787,7 +794,7 @@ export async function handoff(mesa: Mesa, from: AgentId, to: AgentId, kind: 'rev
   const branch = (mesas.find((x) => x.id === mesa.id) ?? mesa).isolate ? mesa.trees?.[from] : undefined
   const iso = branch && `Atenção: os agentes estão isolados. O ${AGENT_NAME[from]} trabalhou na cópia dele, na branch ${branch}, e os caminhos acima são dessa cópia. ${kind === 'review' ? 'Leia os arquivos de lá.' : 'Antes de continuar, traga o trabalho dele para a sua cópia (commit lá e merge dessa branch aqui).'}`
   const body = [head, r.plan && `Plano:\n${r.plan}`, r.files.length && `Arquivos mexidos:\n${r.files.map((f) => `- ${f}`).join('\n')}`, iso, r.talk && `Conversa recente:\n${r.talk}`].filter(Boolean).join('\n\n')
-  await send(mesa, to, body, [], null, fallback, [])
+  await send(mesa, to, body, [], null, fallback, [], false)
 }
 
 export async function setRepos(mesa: Mesa, repos: string[]) {

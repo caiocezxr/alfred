@@ -729,6 +729,11 @@ function Row({ it, desk, mesa, fallback }: { it: Item; desk: string; mesa: Mesa;
             <Icon name="spark" size={10} /> com {it.skills.join(', ')}
           </span>
         )}
+        {!!it.shared && (
+          <span className="ofc-u-sk" title="O agente recebeu junto o que foi dito aos outros agentes desta desk desde a última mensagem dele">
+            <Icon name="link" size={10} /> levou {it.shared} {it.shared === 1 ? 'mensagem' : 'mensagens'} dos outros agentes
+          </span>
+        )}
       </div>
     )
   if (it.role === 'agent')
