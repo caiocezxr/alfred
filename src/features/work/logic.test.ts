@@ -136,7 +136,7 @@ test('alertas: validação, aguardando, retorno, prazo, parado, WIP e cobrança 
   const closeIt = mk({ stage: 'validated', deliveredAt: at('2026-11-01'), validatedAt: at('2026-11-03') })
   const items = [val, cobrado, wait, ret, late, due, stale, snoozed, closeIt]
   const events = [ev(ret.id, 'returned', at(TODAY), { fromStage: 'delivered', toStage: 'doing', note: 'faltou filtro' })]
-  const alerts = computeAlerts(base(items, events), TODAY)
+  const alerts = computeAlerts(base(items, events), TODAY, 'all', Date.parse(at(TODAY)))
   const kinds = (id: string) => alerts.filter((a) => a.itemId === id).map((a) => a.kind)
   assert.deepEqual(kinds(val.id), ['validation'])
   assert.ok(alerts.find((a) => a.itemId === val.id)!.detail.includes('cobrar Marcos'))
@@ -151,7 +151,7 @@ test('alertas: validação, aguardando, retorno, prazo, parado, WIP e cobrança 
   assert.deepEqual(kinds(closeIt.id), ['close'])
   assert.ok(alerts.some((a) => a.kind === 'wip'))
   assert.equal(alerts[0].severity, 3)
-  assert.equal(computeAlerts(base(items, events), TODAY, 'livelo').length, 0)
+  assert.equal(computeAlerts(base(items, events), TODAY, 'livelo', Date.parse(at(TODAY))).length, 0)
 })
 
 test('alerta de entrega com checklist em aberto', () => {
@@ -554,6 +554,17 @@ test('respostas rápidas, commit e busca', () => {
   assert.equal(hits[1].itemId, i.id)
   assert.equal(searchWork({ items: [i, other], events: [], todos: [], companies: COMPANIES }, '9488')[0].score >= 100, true)
   assert.equal(searchWork({ items: [i], events: [], todos: [], companies: COMPANIES }, '  ').length, 0)
+})
+
+test('medidor usa o horário informado para calcular o SLA', () => {
+  const item = mk({ ticket: '#1', createdAt: at(TODAY, 8) })
+  const state = base([item])
+  const early = computeHealth(state, TODAY, `${TODAY}T10:00`)
+  const late = computeHealth(state, TODAY, `${TODAY}T13:00`)
+  assert.equal(early.blockers.filter((b) => b.alert?.kind === 'sla').length, 0)
+  const alerts = late.blockers.filter((b) => b.alert?.kind === 'sla')
+  assert.equal(alerts.length, 1)
+  assert.equal(alerts[0].severity, 3)
 })
 
 test('segmentos do medidor: feitos, pendentes e atrasados em ordem', () => {

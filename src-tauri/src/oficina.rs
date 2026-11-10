@@ -770,6 +770,38 @@ pub fn oficina_local_chat(app: AppHandle, mesa: String, model: String, messages:
     Ok(())
 }
 
+const GIST_PROMPT: &str = "Você resume, para outro assistente, uma troca entre o Caio e um agente. Escreva só o que importa depois: pedidos, decisões, combinados, preferências, nomes, números, caminhos de arquivo e conclusões. Ignore cortesias e ofertas de ajuda. Um fato por linha, começando com '- ', curto, em português. Sem saudação nem comentário. Se nada importar depois, responda só: -";
+
+fn clean_gist(raw: &str) -> String {
+    raw.lines().map(str::trim).filter(|l| l.starts_with("- ") && l.len() > 2).take(12).collect::<Vec<_>>().join("\n")
+}
+
+#[tauri::command]
+pub async fn oficina_local_gist(model: String, text: String) -> R<String> {
+    if model.is_empty() || model.len() > 120 || model.contains(char::is_whitespace) {
+        return Err("modelo inválido".into());
+    }
+    let text: String = text.chars().take(12_000).collect();
+    tauri::async_runtime::spawn_blocking(move || -> R<String> {
+        let a: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(90))).http_status_as_error(false).build().into();
+        let body = json!({
+            "model": model,
+            "stream": false,
+            "think": false,
+            "options": { "temperature": 0, "num_predict": 240, "num_ctx": 8192 },
+            "messages": [{ "role": "system", "content": GIST_PROMPT }, { "role": "user", "content": text }],
+        });
+        let mut r = post_json(&a, "/api/chat", &body).map_err(|_| "o Ollama não está rodando".to_string())?;
+        if r.status().as_u16() != 200 {
+            return Err(format!("o Ollama respondeu {}", r.status().as_u16()));
+        }
+        let v = read_value(&mut r).ok_or_else(|| "resposta inválida do Ollama".to_string())?;
+        Ok(clean_gist(v.pointer("/message/content").and_then(Value::as_str).unwrap_or("")))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 static EMBED_MODEL: Mutex<Option<String>> = Mutex::new(None);
 
 fn embed_model(a: &ureq::Agent) -> R<String> {
@@ -825,6 +857,13 @@ pub fn oficina_local_cancel(mesa: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gist_keeps_only_fact_lines() {
+        assert_eq!(clean_gist("Claro! Aqui vai:\n- Caio quer ser chamado de Jorge.\n  - Usar a branch x\n\nEspero ter ajudado"), "- Caio quer ser chamado de Jorge.\n- Usar a branch x");
+        assert_eq!(clean_gist("-"), "");
+        assert_eq!(clean_gist(""), "");
+    }
 
     #[test]
     fn kill_takes_the_whole_group() {

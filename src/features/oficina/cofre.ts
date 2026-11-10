@@ -23,7 +23,10 @@ export type Settings = {
   accounts: { claude: Account[]; codex: Account[] }
   cofres: Record<string, Cofre>
   autoSkills?: boolean
+  agents?: CustomAgent[]
 }
+
+export type CustomAgent = { id: string; name: string; engine: 'claude' | 'codex' | 'local'; brief: string; model?: string }
 
 export type SkillInfo = { id: string; name: string; description: string; source: 'user' | 'plugin' | 'alfred'; origin: string; path: string; manual?: boolean }
 

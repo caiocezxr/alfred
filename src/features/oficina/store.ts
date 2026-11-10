@@ -3,10 +3,10 @@ import { listen } from '@tauri-apps/api/event'
 import { useSyncExternalStore } from 'react'
 import { track } from '../../shared/activity'
 import { api, isTauri } from '../../shared/db/api'
-import { alwaysOn, cofreOf, codexHome, getSettings, isBase, listSkills, mcpFor, skillsFor } from './cofre'
+import { alwaysOn, cofreOf, codexHome, getSettings, isBase, listSkills, mcpFor, patchSettings, skillsFor, type CustomAgent } from './cofre'
 import { route as routeSkills, type Pick } from './router'
 
-import { AGENT_NAME, deskContext, type AgentId } from './context.ts'
+import { AGENT_NAME, deskContext, needsGist, turnSource, turns, type AgentId } from './context.ts'
 export { AGENT_NAME, type AgentId }
 export const AGENTS: AgentId[] = ['claude', 'codex', 'local']
 export type LocalModel = { name: string; params: string | null; context: number | null; size: number | null }
@@ -22,6 +22,7 @@ export type Mesa = {
   isolate?: boolean
   trees?: Partial<Record<AgentId, string>>
   sync?: Partial<Record<AgentId, number>>
+  cast?: Partial<Record<AgentId, string>>
   accounts?: Partial<Record<AgentId, string>>
   itemId?: string
   ticket?: string | null
@@ -46,8 +47,8 @@ Pensa como quem já segurou incidente às 3 da manhã: segurança, dados de clie
 Na hora de escrever código, comentário, mensagem de commit ou descrição de PR, é profissional: limpo, sem gíria e sem palavrão.`
 
 export type Item =
-  | { id: string; agent: AgentId; role: 'user'; text: string; at: number; skills?: string[]; shared?: number }
-  | { id: string; agent: AgentId; role: 'agent'; text: string; at: number; open: boolean; end?: number }
+  | { id: string; agent: AgentId; role: 'user'; text: string; at: number; skills?: string[]; shared?: number; sharedText?: string; gist?: string; alias?: string }
+  | { id: string; agent: AgentId; role: 'agent'; text: string; at: number; open: boolean; end?: number; model?: string; alias?: string }
   | { id: string; agent: AgentId; role: 'thought'; text: string; at: number; open: boolean }
   | { id: string; agent: AgentId; role: 'tool'; title: string; kind: string; status: string; files: string[]; at: number }
   | { id: string; agent: AgentId; role: 'perm'; title: string; options: PermOption[]; rpc: unknown; answered: string | null; at: number }
@@ -63,6 +64,7 @@ export type Status = 'off' | 'opening' | 'idle' | 'thinking' | 'writing' | 'tool
 export type Live = {
   status: Status
   action: string
+  model: string | null
   account: string | null
   config: ConfigOption[]
   plan: PlanEntry[]
@@ -90,7 +92,7 @@ const cacheConfig = (agent: AgentId, c: ConfigOption[]) => {
   if (c.length) localStorage.setItem(`oficina.config.${agent}`, JSON.stringify(c))
 }
 
-const blank = (agent: AgentId): Live => ({ status: 'off', action: '', account: null, config: cachedConfig(agent), plan: [], usage: null, files: [], commands: [], edits: [], outputs: [], since: null, turns: 0, error: null })
+const blank = (agent: AgentId): Live => ({ status: 'off', action: '', model: null, account: null, config: cachedConfig(agent), plan: [], usage: null, files: [], commands: [], edits: [], outputs: [], since: null, turns: 0, error: null })
 
 let mesas: Mesa[] = []
 let loaded = false
@@ -305,7 +307,7 @@ function apply(ev: Out) {
       const role = kind === 'agent_message_chunk' ? 'agent' : 'thought'
       const text = textOf(u.content)
       if (last && last.role === role && last.open) grow(text)
-      else push(mesa, { id: uid(), agent, role, text, at: Date.now(), open: true } as Item)
+      else push(mesa, { id: uid(), agent, role, text, at: Date.now(), open: true, ...(role === 'agent' ? { model: m.agents[agent].model ?? undefined, alias: customOf(mesa, agent)?.name } : {}) } as Item)
       setAgent(mesa, agent, { status: role === 'agent' ? 'writing' : 'thinking', action: role === 'agent' ? 'escrevendo a resposta' : 'pensando' })
       return
     }
@@ -388,6 +390,7 @@ function apply(ev: Out) {
     if (agent === 'local') queueMicrotask(() => saveLocal(mesa))
     const err = ev.data.error as { message?: string } | undefined
     m.items = m.items.map((x) => (x.role === 'agent' || x.role === 'thought') && x.open && x.agent === agent ? { ...x, open: false, end: Date.now() } : x)
+    if (!err) queueMicrotask(() => gistDesk(mesa))
     const said = turnText(m.items, agent)
     if (!err && agent !== 'local' && said && said.text.length < 400) {
       if (AUTH_MSG.test(said.text)) {
@@ -501,6 +504,36 @@ export function localConfig(): ConfigOption[] {
   return [{ id: 'model', name: 'Modelo', category: 'model', currentValue: list[0].name, options: list.map((m) => ({ value: m.name, name: m.name, description: `${m.params ?? ''} · contexto de ${k(m.context)} tokens` })) }]
 }
 
+const gisting = new Map<string, { mesa: string; p: Promise<void> }>()
+const gistFailed = new Set<string>()
+
+function gistDesk(mesa: string) {
+  if (!isTauri) return
+  for (const t of turns(liveOf(mesa).items)) {
+    const id = t.ask?.id
+    if (!id || !needsGist(t) || gisting.has(id) || gistFailed.has(id)) continue
+    const p = (async () => {
+      const list = await loadLocalModels()
+      const pref = mesas.find((x) => x.id === mesa)?.prefs.local?.model
+      const model = list.find((m) => m.name === pref)?.name ?? list[0]?.name
+      if (!model) return
+      const gist = await invoke<string>('oficina_local_gist', { model, text: turnSource(t) })
+      const m = liveOf(mesa)
+      m.items = m.items.map((x) => (x.id === id && x.role === 'user' ? { ...x, gist } : x))
+      if (t.agent === 'local') saveLocal(mesa)
+    })()
+      .catch(() => void gistFailed.add(id))
+      .finally(() => gisting.delete(id))
+    gisting.set(id, { mesa, p })
+  }
+}
+
+function gistsReady(mesa: string, ms: number) {
+  const ps = [...gisting.values()].filter((g) => g.mesa === mesa).map((g) => g.p)
+  if (!ps.length) return Promise.resolve()
+  return Promise.race([Promise.all(ps).then(() => {}), new Promise<void>((r) => setTimeout(r, ms))])
+}
+
 function saveLocal(mesa: string) {
   const items = liveOf(mesa).items.filter((x) => x.agent === 'local' && (x.role === 'user' || x.role === 'agent')).slice(-80)
   localStorage.setItem(`oficina.local.${mesa}`, JSON.stringify(items.map((x) => (x.role === 'agent' ? { ...x, open: false } : x))))
@@ -555,6 +588,62 @@ export async function setIsolate(mesa: Mesa, on: boolean) {
   const { claude: _c, codex: _x, ...rest } = mesas.find((x) => x.id === mesa.id)?.sessions ?? {}
   patchMesa(mesa.id, { isolate: on, sessions: rest })
   push(mesa.id, { id: uid(), agent: mesa.agent, role: 'note', text: on ? 'Agentes isolados: cada um trabalha na própria branch. A próxima mensagem abre sessões novas, já na cópia isolada.' : 'Agentes de volta à pasta do repositório. A próxima mensagem abre sessões novas, sem o contexto anterior.', tone: 'info', at: Date.now() })
+  emit()
+}
+
+export function customOf(mesa: string | Mesa, agent: AgentId): CustomAgent | null {
+  const m = typeof mesa === 'string' ? mesas.find((x) => x.id === mesa) : (mesas.find((x) => x.id === mesa.id) ?? mesa)
+  const id = m?.cast?.[agent]
+  return (id && getSettings().agents?.find((a) => a.id === id && a.engine === agent)) || null
+}
+
+export const agentLabel = (mesa: string | Mesa, agent: AgentId) => customOf(mesa, agent)?.name ?? AGENT_NAME[agent]
+
+export function modelOf(mesa: Mesa, agent: AgentId): string {
+  const l = liveOf(mesa.id).agents[agent]
+  if (l.model) return l.model
+  const prefs = mesa.prefs[agent] ?? {}
+  if (agent === 'local') return prefs.model ?? localList()[0]?.name ?? 'sem modelo'
+  if ((prefs.model ?? 'auto') === 'auto') return 'auto'
+  const opt = l.config.find((c) => c.id === MODEL_KEY[agent])
+  const cur = prefs.model ?? opt?.currentValue
+  return opt?.options.find((o) => o.value === cur)?.name ?? cur ?? 'auto'
+}
+
+const briefed = new Map<string, { sig: string; sess: string | null }>()
+
+function briefFor(mesa: Mesa, agent: AgentId) {
+  const c = customOf(mesa, agent)
+  const sig = c ? `${c.id}:${c.name}:${c.brief}` : ''
+  const sess = mesa.sessions[agent] ?? null
+  const k = `${mesa.id}:${agent}`
+  const was = briefed.get(k)
+  const same = !was || was.sess === null || was.sess === sess
+  briefed.set(k, { sig, sess })
+  if (was && same && was.sig === sig) return ''
+  if (c) return `[Shed: nesta desk você atua como o agente "${c.name}". Siga estas instruções até eu avisar o contrário:\n${c.brief.trim()}]\n\n`
+  return was && same && was.sig ? '[Shed: o papel especial anterior acabou. Volte ao seu comportamento padrão.]\n\n' : ''
+}
+
+export function castAgent(mesa: Mesa, agent: AgentId, id: string | null) {
+  const cur = mesas.find((x) => x.id === mesa.id) ?? mesa
+  const cast = { ...(cur.cast ?? {}) }
+  if (id) cast[agent] = id
+  else delete cast[agent]
+  patchMesa(mesa.id, { cast })
+  const model = id ? getSettings().agents?.find((a) => a.id === id)?.model : undefined
+  if (model) void setOption({ ...cur, cast }, agent, 'model', model)
+  emit()
+}
+
+export function saveCustom(a: CustomAgent) {
+  const list = getSettings().agents ?? []
+  patchSettings({ agents: list.some((x) => x.id === a.id) ? list.map((x) => (x.id === a.id ? a : x)) : [...list, a] })
+  emit()
+}
+
+export function removeCustom(id: string) {
+  patchSettings({ agents: (getSettings().agents ?? []).filter((x) => x.id !== id) })
   emit()
 }
 
@@ -679,13 +768,15 @@ export async function send(mesa: Mesa, agent: AgentId, text0: string, images: Sh
   const maivado = flow === 'maivado' && agent === 'claude' && !mesa.sessions.claude && text0 && !text0.startsWith('/')
   const chosen = (maivado ? [] : (picks ?? (getSettings().autoSkills === false ? [] : await routeSkills(text0, mesa.repos, mesa.companyId).catch(() => [])))).filter((p) => !isBase(p, getSettings().base))
   const command = maivado || text0.startsWith('/')
+  if (share && !command) await gistsReady(mesa.id, 5000)
   const now = Date.now()
   const cur = mesas.find((x) => x.id === mesa.id) ?? mesa
   const desk = share && !command ? deskContext(liveOf(mesa.id).items, agent, cur.sync?.[agent] ?? 0) : { text: '', count: 0 }
   if (!command) patchMesa(mesa.id, { sync: { ...(cur.sync ?? {}), [agent]: now } })
-  const text = maivado ? `/maivado ${text0}` : desk.text + withSkills(agent, text0, chosen)
+  const role = command || agent === 'local' ? '' : briefFor(cur, agent)
+  const text = maivado ? `/maivado ${text0}` : role + desk.text + withSkills(agent, text0, chosen)
   const shown = images.length ? `${text0}${text0 ? '\n' : ''}[${images.length} imagem${images.length > 1 ? 's' : ''}]` : text0
-  push(mesa.id, { id: uid(), agent, role: 'user', text: maivado ? `/maivado ${text0}` : shown, at: now, skills: chosen.map((p) => p.name), shared: desk.count || undefined })
+  push(mesa.id, { id: uid(), agent, role: 'user', text: maivado ? `/maivado ${text0}` : shown, at: now, skills: chosen.map((p) => p.name), shared: desk.count || undefined, sharedText: desk.text || undefined, alias: customOf(cur, agent)?.name })
   if (!mesa.title && text0) patchMesa(mesa.id, { title: text0.split('\n')[0].slice(0, 70) })
   emit()
   await ensureAgent(mesa, agent, codexHome, fallback)
@@ -695,12 +786,13 @@ export async function send(mesa: Mesa, agent: AgentId, text0: string, images: Sh
     const list = localList()
     const model = list.find((m) => m.name === prefs.model)?.name ?? list[0]?.name
     const ctx = list.find((m) => m.name === model)?.context ?? null
+    const custom = customOf(cur, 'local')
     const history = liveOf(mesa.id).items.filter((x) => x.agent === 'local' && (x.role === 'user' || x.role === 'agent')).map((x) => ({ role: x.role === 'agent' ? 'assistant' : 'user', content: (x as { text: string }).text }))
     if (desk.text && history.length) history[history.length - 1].content = desk.text + history[history.length - 1].content
-    setAgent(mesa.id, agent, { status: 'thinking', action: `carregando ${model}`, since: Date.now() })
+    setAgent(mesa.id, agent, { status: 'thinking', action: `carregando ${model}`, model: model ?? null, since: Date.now() })
     busy(mesa.id, agent, true)
     emit()
-    await invoke('oficina_local_chat', { mesa: mesa.id, model, messages: history, persona: personaText(), context: ctx }).catch((e) => {
+    await invoke('oficina_local_chat', { mesa: mesa.id, model, messages: history, persona: personaText() + (custom ? `\n\nNesta desk você atua como o agente "${custom.name}". ${custom.brief.trim()}` : ''), context: ctx }).catch((e) => {
       push(mesa.id, { id: uid(), agent, role: 'note', text: e instanceof Error ? e.message : String(e), tone: 'error', at: Date.now() })
       setAgent(mesa.id, agent, { status: 'idle', since: null })
       busy(mesa.id, agent, false)
@@ -719,9 +811,11 @@ export async function send(mesa: Mesa, agent: AgentId, text0: string, images: Sh
     const name = cfg.find((c) => c.id === MODEL_KEY[agent])?.options.find((o) => o.value === model)?.name ?? r.model
     const PT: Record<string, string> = { low: 'baixo', medium: 'médio', high: 'alto', xhigh: 'muito alto', max: 'máximo', ultra: 'ultra' }
     const eff = prefs[EFFORT_KEY[agent]] ?? r.effort
+    setAgent(mesa.id, agent, { model: `${name} · ${PT[eff] ?? eff}` })
     push(mesa.id, { id: uid(), agent, role: 'note', text: `Auto: ${name} · esforço ${PT[eff] ?? eff}, porque é ${r.why}`, tone: 'info', at: Date.now() })
   }
-  setAgent(mesa.id, agent, { status: 'thinking', action: 'lendo o pedido', since: Date.now() })
+  if ((prefs.model ?? 'auto') !== 'auto') setAgent(mesa.id, agent, { model: null })
+  setAgent(mesa.id, agent, { status: 'thinking', action: 'lendo o pedido', model: modelOf(cur, agent), since: Date.now() })
   busy(mesa.id, agent, true)
   emit()
   try {
@@ -820,6 +914,7 @@ export async function freshSession(mesa: Mesa, agent: AgentId) {
   delete sessions[agent]
   patchMesa(mesa.id, { sessions })
   setAgent(mesa.id, agent, { usage: null, plan: [], files: [] })
+  briefed.delete(`${mesa.id}:${agent}`)
   push(mesa.id, { id: uid(), agent, role: 'note', text: `Sessão nova do ${AGENT_NAME[agent]}: o contexto começa do zero na próxima mensagem.`, tone: 'info', at: Date.now() })
   emit()
 }

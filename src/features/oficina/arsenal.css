@@ -1,42 +1,3 @@
-.ofc-areas {
-  display: grid;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 12px;
-  background: var(--ofc-soft);
-}
-
-.ofc-areas button {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  height: 32px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 9px;
-  background: none;
-  color: var(--text-2);
-  font: 600 12.5px/1 var(--font-ui);
-  text-align: left;
-  cursor: pointer;
-  transition: background 160ms ease, color 160ms ease;
-}
-
-.ofc-areas button:hover {
-  color: var(--text);
-}
-
-.ofc-areas button.is-on {
-  background: var(--surface-solid);
-  color: var(--text);
-  box-shadow: 0 0 0 1px var(--ofc-line), 0 4px 10px -8px var(--shadow);
-}
-
-.ofc-areas.is-icons button {
-  justify-content: center;
-  padding: 0;
-}
-
 .ofc-hist {
   min-width: 0;
   min-height: 0;
@@ -1338,14 +1299,6 @@
 .ofc-skchip button:hover {
   background: color-mix(in srgb, var(--text) 12%, transparent);
   color: var(--text);
-}
-
-.ofc-u-sk {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font: 600 10.5px/1 var(--ofc-mono);
-  color: #c9a45c;
 }
 
 .ofc-item {

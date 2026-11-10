@@ -125,6 +125,7 @@ pub fn run() {
             oficina::oficina_status,
             oficina::oficina_local_models,
             oficina::oficina_local_chat,
+            oficina::oficina_local_gist,
             oficina::oficina_local_cancel,
             oficina::oficina_embed,
             oficina::oficina_claude_token,

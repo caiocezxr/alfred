@@ -434,7 +434,7 @@
 
 .sun-rays {
   transform-origin: 24px 24px;
-  animation: rays-turn 60s linear infinite;
+  animation: none;
 }
 
 @keyframes rays-turn {
@@ -455,7 +455,7 @@
 
 .moon-glow {
   transform-origin: 24px 24px;
-  animation: glow-breathe 5s ease-in-out infinite alternate;
+  animation: glow-breathe 5s ease-in-out 3 alternate;
 }
 
 @keyframes glow-breathe {
@@ -466,7 +466,7 @@
 }
 
 .star {
-  animation: twinkle 3.2s ease-in-out infinite alternate;
+  animation: twinkle 3.2s ease-in-out 4 alternate;
 }
 
 .star.s2 {
@@ -1018,7 +1018,7 @@
   border-radius: 50%;
   background: radial-gradient(closest-side, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.35) 55%, transparent);
   filter: blur(18px);
-  animation: sky-drift linear infinite;
+  animation: sky-drift linear infinite paused;
 }
 
 .sky.is-night .sky-clouds i,
@@ -1150,7 +1150,7 @@
 
 .dc-colon {
   padding: 0 1px;
-  animation: dc-blink 2s steps(1) infinite;
+  animation: dc-blink 2s steps(1) 3;
 }
 
 @keyframes dc-blink {

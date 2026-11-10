@@ -13,8 +13,14 @@ import { PERSONAL_ID, type Company } from '../work/types'
 import {
   AGENT_NAME,
   AGENTS,
+  agentLabel,
   answer,
   cancel,
+  castAgent,
+  customOf,
+  modelOf,
+  removeCustom,
+  saveCustom,
   closeAgent,
   createMesa,
   effortKey,
@@ -44,7 +50,7 @@ import {
 } from './store'
 import { Arsenal } from './Arsenal'
 import { Bench } from './Bench'
-import { cofreOf, getSettings, loadSettings, useSettings } from './cofre'
+import { cofreOf, getSettings, loadSettings, useSettings, type CustomAgent } from './cofre'
 import { route as routeSkills, warmRouter, type Pick } from './router'
 import { draftFor, type PendingItem } from './bridge'
 import { ApplyAlfred, useAlfredRepo } from './Apply'
@@ -159,7 +165,6 @@ export default function Oficina() {
   const { mesas, loaded } = useOficina()
   const gs = useGhSettings()
   const [current, setCurrent] = useState<string | null>(() => localStorage.getItem('oficina.current'))
-  const [rail, setRail] = useState(() => localStorage.getItem('oficina.rail') !== 'closed')
   const [area, setArea] = useState<'desks' | 'historico' | 'arsenal'>(() => (localStorage.getItem('sessao.area') as 'desks' | 'historico' | 'arsenal') || 'desks')
   useEffect(() => localStorage.setItem('sessao.area', area), [area])
 
@@ -171,8 +176,6 @@ export default function Oficina() {
     void loadLocalModels()
     void loadSettings().then(() => window.setTimeout(() => void warmRouter(), 1500))
   }, [])
-
-  useEffect(() => localStorage.setItem('oficina.rail', rail ? 'open' : 'closed'), [rail])
 
   const companies = state?.companies ?? []
   const visible = mesas.filter((m) => inScope(m.companyId, scope))
@@ -272,66 +275,51 @@ export default function Oficina() {
   if (!loaded) return <div className="ofc" />
 
   return (
-    <div className={`ofc ${rail ? '' : 'is-railless'}`}>
-      <aside className="ofc-rail">
-        <header>
-          <button className="ofc-rail-t" onClick={() => setRail((r) => !r)} title={rail ? 'Recolher' : 'Expandir'}>
-            <Icon name="list" size={14} />
-            {rail && <span>Sessão</span>}
-          </button>
-          {rail && (
-            <button className="ofc-plus" onClick={newDesk} title="Nova desk (⌘N)">
-              <Icon name="plus" size={13} />
-            </button>
-          )}
-        </header>
-        <nav className={`ofc-areas ${rail ? '' : 'is-icons'}`} aria-label="Áreas da Sessão">
+    <div className="ofc">
+      <header className="ofc-bar">
+        <nav className="ofc-areas" aria-label="Áreas da Sessão">
           {(
             [
-              ['desks', 'Desks', 'board'],
-              ['historico', 'Histórico', 'clock'],
-              ['arsenal', 'Arsenal', 'gear'],
+              ['desks', 'Desks'],
+              ['historico', 'Histórico'],
+              ['arsenal', 'Arsenal'],
             ] as const
-          ).map(([id, label, icon]) => (
-            <button key={id} className={area === id ? 'is-on' : ''} onClick={() => setArea(id)} title={label}>
-              <Icon name={icon} size={13} />
-              {rail && <span>{label}</span>}
+          ).map(([id, label]) => (
+            <button key={id} className={area === id ? 'is-on' : ''} onClick={() => (id === 'desks' && area === 'desks' ? newDesk() : setArea(id))}>
+              {label}
             </button>
           ))}
         </nav>
-        {rail && area === 'desks' && (
-          <ul>
-            {visible.length === 0 && <li className="ofc-muted">Nenhuma desk ainda.</li>}
-            {visible.map((m, i) => {
-              const l = liveOf(m.id)
-              const co = companies.find((c) => c.id === m.companyId)
-              const on = AGENTS.filter((a) => l.agents[a].status !== 'off' || m.sessions[a])
-              return (
-                <li key={m.id} style={{ ['--k' as string]: i } as CSSProperties}>
-                  <button className={`ofc-desk ${m.id === desk?.id ? 'is-on' : ''}`} onClick={() => (setArea('desks'), setCurrent(m.id))}>
-                    <span className="ofc-desk-t">{m.title || 'Desk nova'}</span>
-                    <span className="ofc-desk-m">
-                      {scope === 'all' && co && <em style={{ ['--co' as string]: co.color } as CSSProperties}>{co.name}</em>}
-                      <span>{m.repos.length ? m.repos.map(base).join(' + ') : 'sem repositório'}</span>
-                      <span className="ofc-dots">
-                        {on.map((a) => (
-                          <i key={a} className={`is-${a} is-${l.agents[a].status}`} />
-                        ))}
-                      </span>
-                      <time>{rel(m.updatedAt)}</time>
-                    </span>
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-        {!rail && (
-          <button className="ofc-plus is-solo" onClick={newDesk} title="Nova desk (⌘N)">
-            <Icon name="plus" size={13} />
-          </button>
-        )}
-      </aside>
+        <div className="ofc-strip" role="tablist" aria-label="Desks abertas">
+          {visible.map((m) => {
+            const l = liveOf(m.id)
+            const co = companies.find((c) => c.id === m.companyId)
+            const on = AGENTS.filter((a) => l.agents[a].status !== 'off' || m.sessions[a])
+            const busy = AGENTS.some((a) => WORKING.has(l.agents[a].status))
+            return (
+              <button
+                key={m.id}
+                role="tab"
+                aria-selected={area === 'desks' && m.id === desk?.id}
+                className={`ofc-tab ${area === 'desks' && m.id === desk?.id ? 'is-on' : ''} ${busy ? 'is-busy' : ''}`}
+                onClick={() => (setArea('desks'), setCurrent(m.id))}
+                title={`${m.title || 'Desk nova'} · ${m.repos.length ? m.repos.map(base).join(' + ') : 'sem repositório'} · ${rel(m.updatedAt)}`}
+                style={scope === 'all' && co ? ({ ['--co' as string]: co.color } as CSSProperties) : undefined}
+              >
+                <span className="ofc-tab-t">{m.title || 'Desk nova'}</span>
+                <span className="ofc-dots">
+                  {on.map((a) => (
+                    <i key={a} className={`is-${a} is-${l.agents[a].status}`} />
+                  ))}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+        <button className="ofc-new" onClick={newDesk} title="Nova desk (⌘N)">
+          <Icon name="plus" size={12} /> Nova desk
+        </button>
+      </header>
 
       {area === 'arsenal' ? (
         <Arsenal companies={companies} scope={scope} />
@@ -340,7 +328,7 @@ export default function Oficina() {
       ) : desk ? (
         <DeskView key={desk.id} desk={desk} companies={companies} scope={scope} fallback={fallback} onDelete={() => void removeMesa(desk.id).then(() => setCurrent(null))} />
       ) : (
-        <Launch companies={companies} scope={scope} recent={visible.slice(0, 6)} onOpen={setCurrent} onStart={start} />
+        <Launch companies={companies} scope={scope} recent={visible.slice(0, 24)} onOpen={setCurrent} onStart={start} />
       )}
       <SessionHost />
     </div>
@@ -421,7 +409,7 @@ function Launch({ companies, scope, recent, onOpen, onStart }: { companies: Comp
         </div>
         {recent.length > 0 && (
           <div className="ofc-recent">
-            <div className="ofc-recent-k">Desks recentes</div>
+            <div className="ofc-recent-k">Suas desks</div>
             <div className="ofc-recent-grid">
               {recent.map((m, i) => {
                 const l = liveOf(m.id)
@@ -530,6 +518,11 @@ function DeskView({ desk, companies, scope, fallback, onDelete }: { desk: Mesa; 
           </button>
           <Kebab onDelete={onDelete} />
         </header>
+        <div className="ofc-postos" role="radiogroup" aria-label="Agentes desta desk">
+          {AGENTS.map((a) => (
+            <Posto key={a} desk={desk} agent={a} live={l.agents[a]} items={l.items} active={agent === a} onPick={() => setAgent(a)} />
+          ))}
+        </div>
         <Feed desk={desk} agent={agent} fallback={fallback} />
         <Deck desk={desk} agent={agent} setAgent={setAgent} fallback={fallback} />
       </section>
@@ -538,6 +531,194 @@ function DeskView({ desk, companies, scope, fallback, onDelete }: { desk: Mesa; 
           <Bench desk={desk} agent={agent} setAgent={setAgent} fallback={fallback} onClose={toggle} />
         </div>
       )}
+    </div>
+  )
+}
+
+const TICK: Record<string, string> = { read: 'r', search: 'r', fetch: 'r', think: 'r', edit: 'e', delete: 'e', move: 'e', execute: 'x' }
+
+function Posto({ desk, agent, live, items, active, onPick }: { desk: Mesa; agent: AgentId; live: Live; items: Item[]; active: boolean; onPick: () => void }) {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    if (!live.since) return
+    const id = window.setInterval(() => tick((n) => n + 1), 1000)
+    return () => window.clearInterval(id)
+  }, [live.since])
+  const tools = useMemo(() => items.filter((x): x is Extract<Item, { role: 'tool' }> => x.agent === agent && x.role === 'tool').slice(-40), [items, agent])
+  const working = WORKING.has(live.status)
+  const last = tools[tools.length - 1]
+  const file = working ? (last?.files[0] ?? live.edits[live.edits.length - 1]?.path) : undefined
+  const secs = live.since ? Math.round((Date.now() - live.since) / 1000) : 0
+  const ctx = live.usage && live.usage.size ? Math.min(1, live.usage.used / live.usage.size) : null
+  const custom = customOf(desk, agent)
+  const line = live.status === 'error' ? (live.error ?? 'deu erro') : working ? live.action || STATUS_PT[live.status] : last ? `por último: ${last.title}` : live.status === 'off' ? 'ainda não entrou nesta desk' : 'à disposição'
+  return (
+    <div
+      className={`ofc-posto is-${agent} is-${live.status} ${active ? 'is-on' : ''} ${working ? 'is-working' : ''}`}
+      role="radio"
+      aria-checked={active}
+      tabIndex={0}
+      onClick={onPick}
+      onKeyDown={(e) => {
+        if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault()
+          onPick()
+        }
+      }}
+    >
+      <header>
+        <ToolMark tool={agent} size={13} />
+        <b>{custom?.name ?? AGENT_NAME[agent]}</b>
+        {custom && <small>via {AGENT_NAME[agent]}</small>}
+        <span className="ofc-grow" />
+        <span className="ofc-posto-st">
+          <i aria-hidden="true" />
+          {STATUS_PT[live.status]}
+          {live.since && <time>{secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m${String(secs % 60).padStart(2, '0')}`}</time>}
+        </span>
+        <CastMenu desk={desk} agent={agent} />
+      </header>
+      <div className="ofc-posto-m" title="Modelo em uso neste posto">
+        {modelOf(desk, agent)}
+      </div>
+      <p className="ofc-posto-a" key={line + (file ?? '')}>
+        <span>{line}</span>
+        {file && <code>{base(file)}</code>}
+      </p>
+      <div className="ofc-fita" aria-hidden="true">
+        {tools.map((t) => (
+          <i key={t.id} className={`k-${TICK[t.kind] ?? 'o'} s-${t.status}`} />
+        ))}
+        <span className="ofc-fita-head" />
+      </div>
+      {ctx !== null && <i className={`ofc-posto-ctx ${ctx > 0.8 ? 'is-hot' : ''}`} style={{ ['--w' as string]: `${ctx * 100}%` } as CSSProperties} title={`Contexto: ${Math.round(ctx * 100)}% usado`} />}
+    </div>
+  )
+}
+
+function CastMenu({ desk, agent }: { desk: Mesa; agent: AgentId }) {
+  const s = useSettings()
+  const [open, setOpen] = useState(false)
+  const [forge, setForge] = useState<CustomAgent | 'new' | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+  useOutside(open, () => setOpen(false), ref)
+  const mine = (s.agents ?? []).filter((a) => a.engine === agent)
+  const cur = desk.cast?.[agent] ?? null
+  return (
+    <div className="ofc-cast" ref={ref} onClick={(e) => e.stopPropagation()}>
+      <button className={`ofc-cast-b ${open ? 'is-open' : ''}`} onClick={() => setOpen((o) => !o)} title="Trocar o agente deste posto ou criar um seu">
+        <Icon name="chevron" size={9} />
+      </button>
+      {open && (
+        <div className="ofc-menu is-down is-right ofc-cast-menu">
+          <div className="ofc-menu-list">
+            <Choice on={!cur || !mine.some((a) => a.id === cur)} name={AGENT_NAME[agent]} desc="Agente padrão, sem instruções extras" onClick={() => (castAgent(desk, agent, null), setOpen(false))} />
+            {mine.map((a) => (
+              <div key={a.id} className="ofc-cast-row">
+                <Choice on={cur === a.id} name={a.name} desc={a.brief.trim().split('\n')[0].slice(0, 80)} onClick={() => (castAgent(desk, agent, a.id), setOpen(false))} />
+                <button className="ofc-cast-ed" onClick={() => (setForge(a), setOpen(false))}>
+                  editar
+                </button>
+              </div>
+            ))}
+          </div>
+          <button className="ofc-cast-new" onClick={() => (setForge('new'), setOpen(false))}>
+            <Icon name="plus" size={11} /> Criar agente
+          </button>
+        </div>
+      )}
+      {forge && <AgentForge desk={desk} engine={agent} editing={forge === 'new' ? null : forge} onClose={() => setForge(null)} />}
+    </div>
+  )
+}
+
+function AgentForge({ desk, engine: engine0, editing, onClose }: { desk: Mesa; engine: AgentId; editing: CustomAgent | null; onClose: () => void }) {
+  const [name, setName] = useState(editing?.name ?? '')
+  const [engine, setEngine] = useState<AgentId>(editing?.engine ?? engine0)
+  const [model, setModel] = useState(editing?.model ?? '')
+  const [brief, setBrief] = useState(editing?.brief ?? '')
+  const [arm, setArm] = useState(false)
+  const live = liveOf(desk.id).agents[engine]
+  const models = ((engine === 'local' ? localConfig() : live.config).find((c) => c.id === 'model')?.options ?? []).filter((o) => o.value !== 'default')
+  const ok = name.trim().length > 1 && brief.trim().length > 9
+  useEffect(() => {
+    const esc = (e: globalThis.KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', esc)
+    return () => window.removeEventListener('keydown', esc)
+  }, [])
+  const save = () => {
+    if (!ok) return
+    const a: CustomAgent = { id: editing?.id ?? crypto.randomUUID(), name: name.trim().slice(0, 28), engine, brief: brief.trim().slice(0, 4000), model: model || undefined }
+    saveCustom(a)
+    if (editing && editing.engine !== engine && desk.cast?.[editing.engine] === a.id) castAgent(desk, editing.engine, null)
+    castAgent(desk, engine, a.id)
+    onClose()
+  }
+  return (
+    <div className="ofc-forge-veil" onClick={onClose}>
+      <form
+        className={`ofc-forge is-${engine}`}
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => {
+          e.preventDefault()
+          save()
+        }}
+      >
+        <h3 className="display">{editing ? 'Editar agente' : 'Criar agente'}</h3>
+        <p className="ofc-forge-sub">Um agente seu é um papel com nome e instruções, rodando em cima de um dos motores. Ele assume o posto desse motor nesta desk e fica salvo para as outras.</p>
+        <label>
+          <span>Nome</span>
+          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Revisor, Arquiteto, DBA…" maxLength={28} />
+        </label>
+        <div className="ofc-forge-f">
+          <span>Motor</span>
+          <div className="ofc-flow" role="radiogroup" aria-label="Motor">
+            {AGENTS.map((a) => (
+              <button type="button" key={a} role="radio" aria-checked={engine === a} className={engine === a ? 'is-on' : ''} onClick={() => (setEngine(a), setModel(''))}>
+                {AGENT_NAME[a]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <label>
+          <span>Modelo</span>
+          <select value={model} onChange={(e) => setModel(e.target.value)}>
+            <option value="">O que estiver no posto</option>
+            {models.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Instruções</span>
+          <textarea value={brief} onChange={(e) => setBrief(e.target.value)} placeholder="O que ele faz, como responde, o que nunca faz. Ex.: Você só revisa. Não edita arquivo. Aponta bug, risco de segurança e teste faltando, em ordem de gravidade." rows={7} />
+        </label>
+        <footer>
+          {editing && (
+            <button
+              type="button"
+              className="ofc-forge-del"
+              onClick={() => {
+                if (!arm) return setArm(true)
+                if (desk.cast?.[editing.engine] === editing.id) castAgent(desk, editing.engine, null)
+                removeCustom(editing.id)
+                onClose()
+              }}
+            >
+              {arm ? 'Confirmar exclusão' : 'Excluir'}
+            </button>
+          )}
+          <span className="ofc-grow" />
+          <button type="button" className="ofc-forge-no" onClick={onClose}>
+            Cancelar
+          </button>
+          <button type="submit" className="ofc-forge-ok" disabled={!ok}>
+            {editing ? 'Salvar' : 'Criar e pôr no posto'}
+          </button>
+        </footer>
+      </form>
     </div>
   )
 }
@@ -713,37 +894,50 @@ function Tools({ list }: { list: Extract<Item, { role: 'tool' }>[] }) {
   )
 }
 
+const clock = (at: number) => (at > 1e11 ? new Date(at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '')
+
 function Row({ it, desk, mesa, fallback }: { it: Item; desk: string; mesa: Mesa; fallback: string }) {
   const [open, setOpen] = useState(false)
   if (it.role === 'user')
     return (
-      <div className="ofc-u">
-        <span className="ofc-u-to">
-          para <ToolMark tool={it.agent} size={10} /> {AGENT_NAME[it.agent]}
-        </span>
-        <div className="ofc-u-b">
-          <Text text={it.text} />
+      <div className={`ofc-e is-ask is-${it.agent}`}>
+        <div className="ofc-e-who">
+          <b>Caio</b>
+          <span>
+            <i aria-hidden="true">→</i> {it.alias ?? AGENT_NAME[it.agent]}
+          </span>
+          <time>{clock(it.at)}</time>
         </div>
-        {!!it.skills?.length && (
-          <span className="ofc-u-sk">
-            <Icon name="spark" size={10} /> com {it.skills.join(', ')}
-          </span>
-        )}
-        {!!it.shared && (
-          <span className="ofc-u-sk" title="O agente recebeu junto o que foi dito aos outros agentes desta desk desde a última mensagem dele">
-            <Icon name="link" size={10} /> levou {it.shared} {it.shared === 1 ? 'mensagem' : 'mensagens'} dos outros agentes
-          </span>
-        )}
+        <div className="ofc-e-b">
+          <Text text={it.text} />
+          {(!!it.skills?.length || !!it.shared) && (
+            <div className="ofc-e-x">
+              {!!it.skills?.length && (
+                <span>
+                  <Icon name="spark" size={10} /> com {it.skills.join(', ')}
+                </span>
+              )}
+              {!!it.shared && (
+                <span title={it.sharedText ?? 'O agente recebeu junto o que foi dito aos outros agentes desta desk desde a última mensagem dele'}>
+                  <Icon name="link" size={10} /> levou {it.shared} {it.shared === 1 ? 'nota' : 'notas'} dos outros agentes
+                </span>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     )
   if (it.role === 'agent')
     return (
-      <article className={`ofc-a is-${it.agent} ${it.open ? 'is-live' : ''}`}>
-        <header>
-          <ToolMark tool={it.agent} size={13} />
-          <b>{AGENT_NAME[it.agent]}</b>
-        </header>
-        <div className="ofc-a-b">
+      <article className={`ofc-e is-say is-${it.agent} ${it.open ? 'is-live' : ''}`}>
+        <div className="ofc-e-who">
+          <b>
+            <ToolMark tool={it.agent} size={11} /> {it.alias ?? AGENT_NAME[it.agent]}
+          </b>
+          {it.model && <span title="Modelo que respondeu">{it.model}</span>}
+          <time>{clock(it.at)}</time>
+        </div>
+        <div className="ofc-e-b">
           <Text text={it.text} />
         </div>
       </article>
@@ -1143,7 +1337,7 @@ function Deck({ desk, agent, setAgent, fallback }: { desk: Mesa; agent: AgentId;
     const el = box.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = `${Math.min(260, Math.max(56, el.scrollHeight))}px`
+    el.style.height = `${Math.min(260, Math.max(44, el.scrollHeight))}px`
   }, [text])
 
   const go = () => {
@@ -1248,18 +1442,14 @@ function Deck({ desk, agent, setAgent, fallback }: { desk: Mesa; agent: AgentId;
         }}
         onKeyDown={onKey}
         onPaste={(e) => void onPaste(e)}
-        placeholder={`Fala com o ${AGENT_NAME[agent]}…   / para comandos`}
+        placeholder={`Fala com o ${agentLabel(desk, agent)}…   / para comandos`}
       />
       <div className="ofc-deck-bar">
-        <div className="ofc-agents" role="radiogroup" aria-label="Agente">
-          {AGENTS.map((a) => (
-            <button key={a} role="radio" aria-checked={agent === a} className={agent === a ? 'is-on' : ''} onClick={() => setAgent(a)} title={`${AGENT_NAME[a]}: ${STATUS_PT[l.agents[a].status]}`}>
-              <ToolMark tool={a} size={12} />
-              <span>{AGENT_NAME[a]}</span>
-              <i className={`is-${l.agents[a].status}`} aria-hidden="true" />
-            </button>
-          ))}
-        </div>
+        <button className="ofc-to" onClick={() => setAgent(AGENTS[(AGENTS.indexOf(agent) + 1) % AGENTS.length])} title="Para quem vai a mensagem. Clique para trocar, ou escolha um posto lá em cima.">
+          <small>para</small>
+          <ToolMark tool={agent} size={11} />
+          <b>{agentLabel(desk, agent)}</b>
+        </button>
         <Controls desk={desk} agent={agent} live={live} />
         <span className="ofc-grow" />
         <input

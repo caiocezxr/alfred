@@ -865,7 +865,7 @@ export function handledToday(state: Pick<WorkState, 'items' | 'events' | 'todos'
 }
 
 export function computeHealth(state: HealthInput, today: string, nowLocal: string, scope: Scope = 'all', alerts?: Alert[]): Health {
-  const list = alerts ?? computeAlerts(state, today, scope)
+  const list = alerts ?? computeAlerts(state, today, scope, Date.parse(nowLocal))
   const blockers: Blocker[] = []
   const forget = forgetList(state.todos, state.todoChecks, today, nowLocal, scope)
   const forgotten = new Set<string>()
