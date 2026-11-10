@@ -124,10 +124,26 @@ fn call(conn: &Shared, method: &str, params: Value, wait: Duration) -> R<Value> 
 
 fn stop(k: &str) {
     if let Some(c) = conns(|m| m.remove(k)) {
-        if let Ok(mut c) = c.lock() {
-            let _ = c.child.kill();
-            let _ = c.child.wait();
+        kill(&c);
+    }
+}
+
+fn stop_conn(k: &str, conn: &Shared) {
+    if conns(|m| m.get(k).is_some_and(|c| Arc::ptr_eq(c, conn)).then(|| m.remove(k)).flatten()).is_some() {
+        kill(conn);
+    }
+}
+
+fn kill(c: &Shared) {
+    if let Ok(mut c) = c.lock() {
+        let group = -(c.child.id() as i32);
+        unsafe { libc::kill(group, libc::SIGTERM) };
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while std::time::Instant::now() < deadline && matches!(c.child.try_wait(), Ok(None)) {
+            std::thread::sleep(Duration::from_millis(50));
         }
+        unsafe { libc::kill(group, libc::SIGKILL) };
+        let _ = c.child.wait();
     }
 }
 
@@ -135,6 +151,7 @@ fn spawn(app: &AppHandle, state: &State<AppState>, mesa: &str, agent: &str, cwd:
     let bin = adapter(state, agent)?;
     let mut cmd = Command::new(bin);
     cmd.current_dir(cwd).env("PATH", path_env()).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
     for k in SECRET_ENV {
         cmd.env_remove(k);
     }
@@ -208,11 +225,15 @@ fn spawn(app: &AppHandle, state: &State<AppState>, mesa: &str, agent: &str, cwd:
                     _ => {}
                 }
             }
+            if let Ok(mut c) = conn.lock() {
+                c.waiting.clear();
+            }
             let k = key(&mesa, &agent);
             let mine = conns(|m| m.get(&k).map(|c| Arc::ptr_eq(c, &conn)).unwrap_or(false));
-            if mine {
-                conns(|m| m.remove(&k));
+            if !mine {
+                return;
             }
+            conns(|m| m.remove(&k));
             let code = conn.lock().ok().and_then(|mut c| c.child.try_wait().ok().flatten()).and_then(|s| s.code());
             let lines = tail.lock().map(|t| t.iter().filter(|l| !l.starts_with('[')).cloned().collect::<Vec<_>>().join("\n")).unwrap_or_default();
             emit(&app, &mesa, &agent, "exit", json!({ "code": code, "stderr": lines }));
@@ -340,7 +361,7 @@ pub async fn oficina_start(
         }
     }
     let extra: Vec<String> = extra.iter().map(|p| p.to_string_lossy().to_string()).collect();
-    if persona.as_ref().is_some_and(|p| p.len() > 24000) {
+    if persona.as_ref().is_some_and(|p| p.len() > 48000) {
         return Err("instrução grande demais".into());
     }
     let codex_home = match codex_home {
@@ -350,25 +371,122 @@ pub async fn oficina_start(
     let k = key(&mesa, &agent);
     stop(&k);
     let conn = spawn(&app, &state, &mesa, &agent, &dir, codex_home, claude_account.as_deref())?;
+    let mine = conn.clone();
     let cwd_s = dir.to_string_lossy().to_string();
     let agent = agent.clone();
-    tauri::async_runtime::spawn_blocking(move || -> R<Value> {
+    let opened = tauri::async_runtime::spawn_blocking(move || -> R<Value> {
         let init = call(&conn, "initialize", json!({ "protocolVersion": 1, "clientCapabilities": { "fs": { "readTextFile": false, "writeTextFile": false }, "terminal": false } }), Duration::from_secs(40))?;
-        let params = session_params_with(&agent, &cwd_s, &extra, persona.as_deref(), resume.as_deref(), &extras);
+        let fresh = || call(&conn, "session/new", session_params_with(&agent, &cwd_s, &extra, persona.as_deref(), None, &extras), Duration::from_secs(90));
         let opened = match &resume {
-            Some(id) => {
-                let r = call(&conn, "session/resume", params, Duration::from_secs(90))?;
-                let mut r = if r.is_object() { r } else { json!({}) };
-                r["sessionId"] = json!(id);
-                r
-            }
-            None => call(&conn, "session/new", params, Duration::from_secs(90))?,
+            Some(id) => match call(&conn, "session/resume", session_params_with(&agent, &cwd_s, &extra, persona.as_deref(), Some(id), &extras), Duration::from_secs(90)) {
+                Ok(r) => {
+                    let mut r = if r.is_object() { r } else { json!({}) };
+                    r["sessionId"] = json!(id);
+                    r
+                }
+                Err(e) if conn.lock().map(|mut c| matches!(c.child.try_wait(), Ok(None))).unwrap_or(false) => {
+                    let mut r = fresh()?;
+                    r["resumeFailed"] = json!(e);
+                    r
+                }
+                Err(e) => return Err(e),
+            },
+            None => fresh()?,
         };
         let sid = opened.get("sessionId").and_then(Value::as_str).ok_or("o agente não abriu a sessão")?.to_string();
         if let Ok(mut c) = conn.lock() {
             c.session = Some(sid);
         }
         Ok(json!({ "agent": init.get("agentInfo"), "session": opened }))
+    })
+    .await
+    .map_err(|e| e.to_string())
+    .and_then(|r| r);
+    if opened.is_err() {
+        stop_conn(&k, &mine);
+    }
+    opened
+}
+
+fn git_run(dir: &std::path::Path, args: &[&str]) -> R<String> {
+    let out = Command::new(crate::github::git_bin()?).arg("-C").arg(dir).args(args).env("GIT_TERMINAL_PROMPT", "0").output().map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("o git falhou").to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+pub(crate) fn tree_dir(name: &str, full: &str) -> String {
+    let h = full.bytes().fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
+    format!("{name}-{:06x}", h & 0xffffff)
+}
+
+pub(crate) fn worktree_branch(mesa: &str, agent: &str) -> String {
+    format!("alfred/{}-{agent}", &mesa[..mesa.len().min(8)])
+}
+
+#[derive(Serialize)]
+pub struct Worktree {
+    path: String,
+    branch: String,
+    created: bool,
+}
+
+#[tauri::command]
+pub async fn oficina_worktree(state: State<'_, AppState>, mesa: String, agent: String, repo: String) -> R<Worktree> {
+    if !valid_id(&mesa) || !valid_id(&agent) {
+        return Err("mesa ou agente inválido".into());
+    }
+    let repo = safe_dir(&repo)?;
+    let root = state.data_dir.join("worktrees").join(&mesa).join(&agent);
+    tauri::async_runtime::spawn_blocking(move || -> R<Worktree> {
+        let Ok(top) = git_run(&repo, &["rev-parse", "--show-toplevel"]).map(PathBuf::from) else {
+            return Ok(Worktree { path: repo.to_string_lossy().to_string(), branch: String::new(), created: false });
+        };
+        let rel = repo.strip_prefix(&top).map(|r| r.to_path_buf()).unwrap_or_default();
+        let name = top.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "repo".into());
+        let tree = root.join(tree_dir(&name, &top.to_string_lossy()));
+        let branch = worktree_branch(&mesa, &agent);
+        let path = tree.join(&rel).to_string_lossy().to_string();
+        if tree.join(".git").exists() {
+            return Ok(Worktree { path, branch, created: false });
+        }
+        std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+        let _ = git_run(&top, &["worktree", "prune"]);
+        let t = tree.to_string_lossy().to_string();
+        if git_run(&top, &["rev-parse", "--verify", "--quiet", &format!("refs/heads/{branch}")]).is_ok() {
+            git_run(&top, &["worktree", "add", &t, &branch])?;
+        } else {
+            git_run(&top, &["worktree", "add", "-b", &branch, &t, "HEAD"])?;
+        }
+        Ok(Worktree { path, branch, created: true })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn oficina_worktree_remove(state: State<'_, AppState>, mesa: String) -> R<Vec<String>> {
+    if !valid_id(&mesa) {
+        return Err("mesa inválida".into());
+    }
+    let root = state.data_dir.join("worktrees").join(&mesa);
+    tauri::async_runtime::spawn_blocking(move || -> R<Vec<String>> {
+        let mut kept = vec![];
+        let dirs = |p: &std::path::Path| std::fs::read_dir(p).map(|rd| rd.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.is_dir()).collect::<Vec<_>>()).unwrap_or_default();
+        for agent in dirs(&root) {
+            for tree in dirs(&agent) {
+                let common = git_run(&tree, &["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+                let main = common.ok().map(PathBuf::from).and_then(|c| c.parent().map(|p| p.to_path_buf()));
+                let t = tree.to_string_lossy().to_string();
+                if main.is_none_or(|m| git_run(&m, &["worktree", "remove", &t]).is_err()) {
+                    kept.push(t);
+                }
+            }
+            let _ = std::fs::remove_dir(&agent);
+        }
+        let _ = std::fs::remove_dir(&root);
+        Ok(kept)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -707,6 +825,31 @@ pub fn oficina_local_cancel(mesa: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kill_takes_the_whole_group() {
+        let mut cmd = Command::new("/bin/sh");
+        cmd.args(["-c", "sleep 30 & echo $!; wait"]).stdin(Stdio::piped()).stdout(Stdio::piped());
+        std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+        let mut child = cmd.spawn().expect("spawn");
+        let mut out = BufReader::new(child.stdout.take().unwrap());
+        let mut line = String::new();
+        out.read_line(&mut line).unwrap();
+        let grandchild: i32 = line.trim().parse().unwrap();
+        let stdin = child.stdin.take().unwrap();
+        let conn: Shared = Arc::new(Mutex::new(Conn { child, stdin, next: 0, waiting: HashMap::new(), session: None }));
+        kill(&conn);
+        std::thread::sleep(Duration::from_millis(100));
+        assert_ne!(unsafe { libc::kill(grandchild, 0) }, 0, "o neto continuou vivo");
+    }
+
+    #[test]
+    fn worktree_branch_is_short_and_per_agent() {
+        assert_eq!(worktree_branch("1f2e3d4c-aaaa-bbbb", "codex"), "alfred/1f2e3d4c-codex");
+        assert_eq!(worktree_branch("abc", "claude"), "alfred/abc-claude");
+        assert_ne!(tree_dir("front", "/Users/x/a/front"), tree_dir("front", "/Users/x/b/front"));
+        assert_eq!(tree_dir("front", "/Users/x/a/front"), tree_dir("front", "/Users/x/a/front"));
+    }
 
     #[test]
     fn refuses_api_key_auth() {

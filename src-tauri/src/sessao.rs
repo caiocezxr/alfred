@@ -110,6 +110,33 @@ pub fn sessao_skills(state: State<AppState>) -> R<Vec<Skill>> {
     Ok(out)
 }
 
+fn body_of(text: &str) -> &str {
+    text.strip_prefix("---").and_then(|b| b.find("\n---").map(|e| &b[e + 4..])).map(|b| b.trim_start_matches(|c| c != '\n').trim()).unwrap_or(text.trim())
+}
+
+#[derive(Serialize)]
+pub struct SkillBody {
+    id: String,
+    name: String,
+    path: String,
+    body: String,
+}
+
+#[tauri::command]
+pub fn sessao_skill_bodies(state: State<AppState>, ids: Vec<String>) -> R<Vec<SkillBody>> {
+    let all = sessao_skills(state)?;
+    Ok(ids
+        .iter()
+        .take(12)
+        .filter_map(|id| all.iter().find(|s| &s.id == id))
+        .filter_map(|s| {
+            let text = std::fs::read_to_string(Path::new(&s.path).join("SKILL.md")).ok()?;
+            let body: String = body_of(&text).chars().take(16000).collect();
+            Some(SkillBody { id: s.id.clone(), name: s.name.clone(), path: s.path.clone(), body })
+        })
+        .collect())
+}
+
 fn safe_name(s: &str) -> String {
     let n: String = s.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c.to_ascii_lowercase() } else { '-' }).collect();
     n.trim_matches('-').chars().take(60).collect()
@@ -412,6 +439,12 @@ mod tests {
         assert_eq!(front(t, "name").as_deref(), Some("maivado"));
         assert_eq!(front(t, "description").as_deref(), Some("Fluxo amarrado"));
         assert_eq!(front("# sem frontmatter", "name"), None);
+    }
+
+    #[test]
+    fn skill_body_drops_frontmatter() {
+        assert_eq!(body_of("---\nname: x\ndescription: y\n---\n\n# X\nfaz"), "# X\nfaz");
+        assert_eq!(body_of("# sem frontmatter"), "# sem frontmatter");
     }
 
     #[test]

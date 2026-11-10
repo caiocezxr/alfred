@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { useSyncExternalStore } from 'react'
 import { api, isTauri } from '../../shared/db/api'
 
-export const SCHEMA = 2
+export const SCHEMA = 3
 
 export type Mcp = { id: string; name: string; type: 'stdio' | 'http'; command?: string; args?: string[]; url?: string; on: boolean; note?: string }
 export type Account = { id: string; label: string }
@@ -27,7 +27,10 @@ export type Settings = {
 
 export type SkillInfo = { id: string; name: string; description: string; source: 'user' | 'plugin' | 'alfred'; origin: string; path: string; manual?: boolean }
 
-export const BASE_DEFAULT = ['i-have-adhd:i-have-adhd', 'ponytail:ponytail']
+export const BASE_DEFAULT = ['i-have-adhd:i-have-adhd', 'alfred:ponytail', 'alfred:caveman']
+
+const nameOf = (id: string) => id.split(':').pop() ?? id
+export const isBase = (s: { id: string; name: string }, base: string[]) => base.some((b) => b === s.id || nameOf(b) === s.name)
 
 export const MCP_PRESETS: Omit<Mcp, 'id' | 'on'>[] = [
   { name: 'playwright', type: 'stdio', command: 'npx', args: ['-y', '@playwright/mcp@latest'], note: 'Navegador: o agente abre, clica e testa páginas' },
@@ -44,6 +47,7 @@ function migrate(raw: unknown): Settings {
   if (!s.accounts?.claude?.length) s.accounts = { ...fresh().accounts, ...s.accounts }
   if (!s.accounts.codex?.length) s.accounts.codex = fresh().accounts.codex
   for (const [k, c] of Object.entries(s.cofres ?? {})) s.cofres[k] = { ...blankCofre(), ...c }
+  if ((s.schema ?? 0) < 3) s.base = [...s.base, ...BASE_DEFAULT.filter((d) => !s.base.some((b) => nameOf(b) === nameOf(d)))]
   s.schema = SCHEMA
   return s
 }
@@ -109,7 +113,31 @@ export function patchSettings(patch: Partial<Settings>) {
 export function skillsFor(companyId: string): string[] | null {
   const c = cofreOf(companyId)
   if (c.skills.mode === 'all') return null
-  return [...new Set([...state.base, ...c.skills.on])]
+  const base = (skillCache ?? []).filter((s) => isBase(s, state.base)).map((s) => s.id)
+  return [...new Set([...state.base, ...base, ...c.skills.on])]
+}
+
+export async function alwaysOn(): Promise<string> {
+  if (!isTauri) return ''
+  const ids = (await listSkills().catch(() => [])).filter((s) => isBase(s, state.base)).map((s) => s.id)
+  if (!ids.length) return ''
+  const list = await invoke<{ id: string; name: string; path: string; body: string }[]>('sessao_skill_bodies', { ids }).catch(() => [])
+  if (!list.length) return ''
+  const parts: string[] = []
+  const seen = new Set<string>()
+  let size = 0
+  for (const s of list) {
+    if (seen.has(s.name)) continue
+    seen.add(s.name)
+    const part = `### ${s.name}\n(pasta da skill: ${s.path})\n\n${s.body}`
+    if (size + part.length > 30000) {
+      parts.push(`### ${s.name}\nFicou de fora por tamanho. Se precisar, leia ${s.path}/SKILL.md.`)
+      continue
+    }
+    parts.push(part)
+    size += part.length
+  }
+  return `\n\n## Skills sempre ligadas\nAs skills abaixo valem em toda resposta desta conversa, sem precisar de comando. O idioma continua português do Brasil.\n\n${parts.join('\n\n')}`
 }
 
 export function mcpFor(companyId: string) {

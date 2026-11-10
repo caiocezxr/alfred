@@ -25,7 +25,7 @@ fn gh_bin() -> R<String> {
     find(&GH_PATHS).ok_or_else(|| "[gh-ausente] o GitHub CLI (gh) não está instalado. Instale com: brew install gh".into())
 }
 
-fn git_bin() -> R<String> {
+pub(crate) fn git_bin() -> R<String> {
     find(&GIT_PATHS).ok_or_else(|| "o git não foi encontrado".into())
 }
 

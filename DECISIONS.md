@@ -118,3 +118,10 @@
 
 - Ícone do app: nascer do sol sobre o horizonte, gerado em todos os tamanhos pelo `tauri icon`.
 - Repositório: `github.com/caiocezxr/alfred`, autor único caiocezxr, sem comentários no código.
+
+## Sessão em paralelo, skills de base e Dossiê enxuto (09/11/2026)
+
+- **Skills de base sempre ligadas:** `i-have-adhd`, `ponytail` e `caveman` (as duas últimas na biblioteca do Alfred). O texto delas vai nas instruções de toda sessão do Claude e do Codex, com teto de 30 mil caracteres. O chat local fica de fora pelo contexto pequeno.
+- **Claude e Codex ao mesmo tempo:** a conversa junta cada pedaço de texto na última mensagem do mesmo agente. O botão **Isolar** põe cada agente numa git worktree própria (branch `alfred/<desk>-<agente>`, pasta em `worktrees/` do Alfred); juntar as branches fica com o dono. Ligar ou mudar a pasta principal abre sessões novas.
+- **Robustez:** evento de processo encerrado de propósito é ignorado; abertura antiga não derruba a nova; sessão que não retoma abre uma nova com aviso; limite e login só são lidos no fim do turno, com frases exatas; não dá para mandar enquanto o agente trabalha; permissões pendentes são canceladas no Esc e no fechamento; o adaptador recebe SIGTERM no grupo de processos antes do SIGKILL.
+- **Dossiê:** saíram Em 30 segundos (no modo tela cheia), Linha do dia, linha de Confiança, cotações duplicadas, Como ler, rótulo "Topo" e changelog que repetia o resumo. A faixa do topo respeita os botões da janela; abaixo de 1180 px some o mercado lateral e abaixo de 860 px o sumário.

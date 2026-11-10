@@ -30,6 +30,7 @@ import {
   seed,
   send,
   setOption,
+  setIsolate,
   setRepos,
   switchAccount,
   handoff,
@@ -496,6 +497,19 @@ function DeskView({ desk, companies, scope, fallback, onDelete }: { desk: Mesa; 
           )}
           <span className="ofc-grow" />
           {alfred && <ApplyAlfred repo={alfred} />}
+          {desk.repos.length > 0 && (
+            <div className="ofc-flow">
+              <button
+                role="switch"
+                aria-checked={!!desk.isolate}
+                className={desk.isolate ? 'is-on' : ''}
+                onClick={() => void setIsolate(desk, !desk.isolate)}
+                title={desk.isolate ? `Cada agente na própria branch${desk.trees ? `: ${Object.values(desk.trees).join(', ')}` : ''}. Clique para voltar todos à pasta do repositório.` : 'Isolar: Claude e Codex trabalham ao mesmo tempo, cada um numa cópia própria do repositório (git worktree), sem pisar um no outro'}
+              >
+                Isolar
+              </button>
+            </div>
+          )}
           <div className="ofc-flow" role="radiogroup" aria-label="Fluxo">
             {(['livre', 'maivado'] as const).map((f) => (
               <button key={f} role="radio" aria-checked={flow === f} className={flow === f ? 'is-on' : ''} onClick={() => patchMesa(desk.id, { flow: f })} title={f === 'livre' ? 'Conversa direta' : 'O /maivado conduz: rápido ou avançado, com travas'}>
@@ -825,7 +839,7 @@ function CodexAuthCard({ mesa, done }: { mesa: Mesa; done: boolean }) {
           <button
             className="is-go"
             onClick={() => {
-              void closeAgent(mesa.id, 'codex').then(() => markAuthDone(mesa.id))
+              void closeAgent(mesa.id, 'codex').then(() => markAuthDone(mesa.id, 'codex'))
             }}
           >
             Já entrei
@@ -850,7 +864,7 @@ function AuthCard({ desk, done }: { desk: string; done: boolean }) {
     )
   const finish = async () => {
     await closeAgent(desk, 'claude')
-    markAuthDone(desk)
+    markAuthDone(desk, 'claude')
   }
   const check = async () => {
     setBusy(true)
@@ -1129,7 +1143,7 @@ function Deck({ desk, agent, setAgent, fallback }: { desk: Mesa; agent: AgentId;
 
   const go = () => {
     const t = text.trim()
-    if (!t && !shots.length) return
+    if ((!t && !shots.length) || WORKING.has(live.status)) return
     setText('')
     setShots([])
     setPicks([])

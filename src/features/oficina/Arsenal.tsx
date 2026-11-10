@@ -5,7 +5,7 @@ import { Icon } from '../work/icons'
 import { useGhSettings } from '../work/github/api'
 import { ToolMark } from '../work/sessions/Sessions'
 import { PERSONAL_ID, type Company } from '../work/types'
-import { BASE_DEFAULT, MCP_PRESETS, cachedSkills, cofreOf, listSkills, loadSettings, patchCofre, patchSettings, slug, useSettings, type Mcp, type SkillInfo } from './cofre'
+import { BASE_DEFAULT, MCP_PRESETS, cachedSkills, cofreOf, isBase as inBase, listSkills, loadSettings, patchCofre, patchSettings, slug, useSettings, type Mcp, type SkillInfo } from './cofre'
 import { PERSONA, closeAgent, useOficina } from './store'
 
 type Tab = 'contas' | 'jeito' | 'skills' | 'ferramentas' | 'motores'
@@ -257,7 +257,6 @@ function Skills({ co }: { co: string }) {
     void listSkills().then(setList)
   }, [])
   const on = new Set(c.skills.on)
-  const base = new Set(s.base)
   const groups = useMemo(() => {
     const out = new Map<string, SkillInfo[]>()
     for (const sk of list ?? []) {
@@ -274,7 +273,8 @@ function Skills({ co }: { co: string }) {
     else next.add(id)
     patchCofre(co, { skills: { mode: 'pick', on: [...next] } })
   }
-  const toggleBase = (id: string) => patchSettings({ base: base.has(id) ? s.base.filter((x) => x !== id) : [...s.base, id] })
+  const toggleBase = (sk: SkillInfo) => patchSettings({ base: inBase(sk, s.base) ? s.base.filter((b) => !inBase(sk, [b])) : [...s.base, sk.id] })
+  const missing = list ? BASE_DEFAULT.filter((d) => !list.some((x) => inBase(x, [d]))).map((d) => d.split(':').pop()) : []
 
   const load = async () => {
     setBusy(true)
@@ -340,18 +340,18 @@ function Skills({ co }: { co: string }) {
             </div>
             <div className="ars-skills">
               {items.map((sk, i) => {
-                const isBase = base.has(sk.id)
+                const isBase = inBase(sk, s.base)
                 const isOn = isBase || on.has(sk.id) || c.skills.mode === 'all'
                 return (
                   <div key={sk.id} className={`ars-skill ${isOn ? 'is-on' : ''} ${isBase ? 'is-base' : ''}`} style={{ ['--k' as string]: i } as CSSProperties}>
-                    <button className="ars-skill-main" onClick={() => !isBase && toggle(sk.id)} disabled={isBase} title={isBase ? 'Faz parte da base: vale em todo perfil' : isOn ? 'Desligar neste perfil' : 'Ligar neste perfil'}>
+                    <button className="ars-skill-main" onClick={() => !isBase && toggle(sk.id)} disabled={isBase} title={isBase ? 'Faz parte da base: sempre ligada em todo chat de todo perfil' : isOn ? 'Desligar neste perfil' : 'Ligar neste perfil'}>
                       <i aria-hidden="true" />
                       <span>
                         <b>{sk.name}</b>
                         <small>{sk.description || 'sem descrição'}</small>
                       </span>
                     </button>
-                    <button className={`ars-base ${isBase ? 'is-on' : ''}`} onClick={() => toggleBase(sk.id)} title={isBase ? 'Tirar da base' : 'Pôr na base de todo perfil'}>
+                    <button className={`ars-base ${isBase ? 'is-on' : ''}`} onClick={() => toggleBase(sk)} title={isBase ? 'Tirar da base' : 'Pôr na base: sempre ligada em todo chat'}>
                       base
                     </button>
                     {sk.source === 'alfred' && (
@@ -373,7 +373,7 @@ function Skills({ co }: { co: string }) {
             </div>
           </div>
         ))}
-        {list && !list.some((x) => BASE_DEFAULT.includes(x.id)) && <p className="ars-note">A Ponytail não está instalada. Carregue ela acima com o link do GitHub dela para entrar na base.</p>}
+        {missing.length > 0 && <p className="ars-note">Faltam na base: {missing.join(', ')}. Carregue acima com o link do GitHub de cada uma.</p>}
       </Section>
     </div>
   )

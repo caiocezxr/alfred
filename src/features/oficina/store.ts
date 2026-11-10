@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event'
 import { useSyncExternalStore } from 'react'
 import { track } from '../../shared/activity'
 import { api, isTauri } from '../../shared/db/api'
-import { cofreOf, codexHome, getSettings, listSkills, mcpFor, skillsFor } from './cofre'
+import { alwaysOn, cofreOf, codexHome, getSettings, isBase, listSkills, mcpFor, skillsFor } from './cofre'
 import { route as routeSkills, type Pick } from './router'
 
 export type AgentId = 'claude' | 'codex' | 'local'
@@ -19,6 +19,8 @@ export type Mesa = {
   repos: string[]
   agent: AgentId
   flow?: 'livre' | 'maivado'
+  isolate?: boolean
+  trees?: Partial<Record<AgentId, string>>
   accounts?: Partial<Record<AgentId, string>>
   itemId?: string
   ticket?: string | null
@@ -166,6 +168,9 @@ export function patchMesa(id: string, patch: Partial<Mesa>) {
 
 export async function removeMesa(id: string) {
   for (const a of AGENTS) await closeAgent(id, a)
+  if (isTauri) void invoke('oficina_local_cancel', { mesa: id }).catch(() => {})
+  localStorage.removeItem(`oficina.local.${id}`)
+  if (isTauri && mesas.find((m) => m.id === id)?.trees) void invoke('oficina_worktree_remove', { mesa: id }).catch(() => {})
   mesas = mesas.filter((m) => m.id !== id)
   live.delete(id)
   save()
@@ -173,6 +178,11 @@ export async function removeMesa(id: string) {
 }
 
 const uid = () => Math.random().toString(36).slice(2, 10)
+
+function lastOf(items: Item[], agent: AgentId) {
+  for (let i = items.length - 1; i >= 0; i--) if (items[i].agent === agent) return i
+  return -1
+}
 
 function push(mesa: string, item: Item) {
   const m = liveOf(mesa)
@@ -217,6 +227,8 @@ const textOf = (c: unknown) => {
 }
 
 const LIMIT = /(usage limit|rate limit|limit reached|hit your limit|reached your|quota|too many requests|5-hour|weekly limit|limite de uso)/i
+const LIMIT_MSG = /^\W*(claude ai usage limit reached|you'?ve (hit|reached) your (usage |weekly |5-hour )?limit|(5-hour|weekly|usage) limit reached|limite de uso)/i
+const AUTH_MSG = /^\W*(invalid api key|failed to authenticate|oauth (token|session) (has )?expired|please run \/login|not logged in)/i
 
 function capture(mesa: string, agent: AgentId, id: string, u: Record<string, unknown>) {
   const a = liveOf(mesa).agents[agent]
@@ -245,31 +257,32 @@ function capture(mesa: string, agent: AgentId, id: string, u: Record<string, unk
   if (edits !== a.edits || outputs !== a.outputs) setAgent(mesa, agent, { edits, outputs })
 }
 
-function limitCard(mesa: string, agent: AgentId, text: string) {
+function limitCard(mesa: string, agent: AgentId, text: string, drop?: string) {
   const m = liveOf(mesa)
-  m.items = m.items.filter((x) => !(x.agent === agent && x.role === 'agent' && x.text.length < 400 && LIMIT.test(x.text)))
-  if (m.items.slice(-4).some((x) => x.role === 'limit' && !x.done)) return
+  if (drop) m.items = m.items.filter((x) => x.id !== drop)
+  if (m.items.filter((x) => x.agent === agent).slice(-4).some((x) => x.role === 'limit' && !x.done)) return
   push(mesa, { id: uid(), agent, role: 'limit', at: Date.now(), text: text.slice(0, 240), done: false })
   setAgent(mesa, agent, { status: 'error', error: 'limite da conta', action: '' })
 }
 
 const AUTH_FAIL = /failed to authenticate|oauth session expired|authentication required|please run \/login|not logged in|invalid api key/i
 
-function authCard(mesa: string, agent: AgentId) {
+function authCard(mesa: string, agent: AgentId, drop?: string) {
   const m = liveOf(mesa)
-  m.items = m.items.filter((x) => !(x.agent === agent && ((x.role === 'agent' && AUTH_FAIL.test(x.text)) || (x.role === 'note' && AUTH_FAIL.test(x.text)))))
-  if (!m.items.slice(-4).some((x) => x.role === 'auth' && !x.done)) push(mesa, { id: uid(), agent, role: 'auth', at: Date.now(), done: false })
+  m.items = m.items.filter((x) => x.id !== drop && !(x.agent === agent && x.role === 'note' && AUTH_FAIL.test(x.text)))
+  if (!m.items.filter((x) => x.agent === agent).slice(-4).some((x) => x.role === 'auth' && !x.done)) push(mesa, { id: uid(), agent, role: 'auth', at: Date.now(), done: false })
   setAgent(mesa, agent, { status: 'error', error: agent === 'codex' ? 'conta do Codex sem login' : 'login do Claude expirado', action: '' })
 }
 
-export function markAuthDone(mesa: string) {
+export function markAuthDone(mesa: string, agent: AgentId) {
   const m = liveOf(mesa)
-  m.items = m.items.map((x) => (x.role === 'auth' ? { ...x, done: true } : x))
+  m.items = m.items.map((x) => (x.role === 'auth' && x.agent === agent ? { ...x, done: true } : x))
   emit()
 }
 
 function apply(ev: Out) {
   const { mesa, agent } = ev
+  if (loaded && !mesas.some((x) => x.id === mesa)) return
   const m = liveOf(mesa)
   if (ev.kind === 'notify') {
     const method = ev.data.method as string
@@ -282,22 +295,22 @@ function apply(ev: Out) {
     if (method !== 'session/update') return
     const u = p.update as Record<string, unknown>
     const kind = u.sessionUpdate as string
-    const last = m.items[m.items.length - 1]
+    const li = lastOf(m.items, agent)
+    const last = li >= 0 ? m.items[li] : undefined
+    const grow = (text: string) => {
+      m.items = m.items.map((x, j) => (j === li ? ({ ...x, text: (x as { text: string }).text + text } as Item) : x))
+    }
     if (kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') {
       const role = kind === 'agent_message_chunk' ? 'agent' : 'thought'
       const text = textOf(u.content)
-      if (last && last.agent === agent && last.role === role && last.open) {
-        m.items = [...m.items.slice(0, -1), { ...last, text: last.text + text }]
-      } else push(mesa, { id: uid(), agent, role, text, at: Date.now(), open: true } as Item)
+      if (last && last.role === role && last.open) grow(text)
+      else push(mesa, { id: uid(), agent, role, text, at: Date.now(), open: true } as Item)
       setAgent(mesa, agent, { status: role === 'agent' ? 'writing' : 'thinking', action: role === 'agent' ? 'escrevendo a resposta' : 'pensando' })
-      const cur = m.items[m.items.length - 1]
-      if (agent === 'claude' && cur.role === 'agent' && AUTH_FAIL.test(cur.text)) authCard(mesa, agent)
-      else if (cur.role === 'agent' && cur.text.length < 400 && LIMIT.test(cur.text)) limitCard(mesa, agent, cur.text)
       return
     }
     if (kind === 'user_message_chunk') {
       const text = textOf(u.content)
-      if (last && last.agent === agent && last.role === 'user') m.items = [...m.items.slice(0, -1), { ...last, text: last.text + text }]
+      if (last && last.role === 'user') grow(text)
       else push(mesa, { id: uid(), agent, role: 'user', text, at: Date.now() })
       return
     }
@@ -365,9 +378,30 @@ function apply(ev: Out) {
     return
   }
   if (ev.kind === 'response') {
+    const k = `${mesa}:${agent}`
+    if (agent !== 'local') {
+      const want = prompts.get(k)
+      if (want !== undefined && ev.data.id !== want) return
+      prompts.delete(k)
+    }
     if (agent === 'local') queueMicrotask(() => saveLocal(mesa))
     const err = ev.data.error as { message?: string } | undefined
     m.items = m.items.map((x) => (x.role === 'agent' || x.role === 'thought') && x.open && x.agent === agent ? { ...x, open: false } : x)
+    const said = turnText(m.items, agent)
+    if (!err && agent !== 'local' && said && said.text.length < 400) {
+      if (AUTH_MSG.test(said.text)) {
+        authCard(mesa, agent, said.id)
+        setAgent(mesa, agent, { since: null })
+        busy(mesa, agent, false)
+        return
+      }
+      if (LIMIT_MSG.test(said.text)) {
+        limitCard(mesa, agent, said.text, said.id)
+        setAgent(mesa, agent, { since: null })
+        busy(mesa, agent, false)
+        return
+      }
+    }
     if (err && agent !== 'local' && AUTH_FAIL.test(err.message ?? '')) {
       authCard(mesa, agent)
       setAgent(mesa, agent, { since: null })
@@ -381,7 +415,7 @@ function apply(ev: Out) {
       return
     }
     if (err) push(mesa, { id: uid(), agent, role: 'note', text: err.message ?? 'o agente falhou nesta mensagem', tone: 'error', at: Date.now() })
-    if (m.agents[agent].status === 'error' && m.items.some((x) => x.role === 'auth' && !x.done)) {
+    if (m.agents[agent].status === 'error' && m.items.some((x) => x.agent === agent && x.role === 'auth' && !x.done)) {
       setAgent(mesa, agent, { since: null })
       busy(mesa, agent, false)
       return
@@ -400,9 +434,36 @@ function apply(ev: Out) {
     const was = m.agents[agent].status
     const stderr = String(ev.data.stderr ?? '').trim()
     if (was !== 'off' && was !== 'idle' && stderr) push(mesa, { id: uid(), agent, role: 'note', text: stderr.split('\n').slice(-3).join('\n'), tone: 'error', at: Date.now() })
+    settle(mesa, agent, false)
+    prompts.delete(`${mesa}:${agent}`)
     setAgent(mesa, agent, { status: 'off', action: '', since: null })
     busy(mesa, agent, false)
   }
+}
+
+const prompts = new Map<string, number>()
+const gens = new Map<string, number>()
+const gen = (k: string) => gens.get(k) ?? 0
+
+function turnText(items: Item[], agent: AgentId) {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const x = items[i]
+    if (x.agent !== agent) continue
+    if (x.role === 'user') return null
+    if (x.role === 'agent') return x
+  }
+  return null
+}
+
+function settle(mesa: string, agent: AgentId, reply: boolean) {
+  const m = liveOf(mesa)
+  for (const x of m.items) if (reply && x.agent === agent && x.role === 'perm' && !x.answered) void oficinaApi.reply(mesa, agent, x.rpc, { outcome: { outcome: 'cancelled' } }).catch(() => {})
+  m.items = m.items.map((x) => {
+    if (x.agent !== agent) return x
+    if (x.role === 'perm' && !x.answered) return { ...x, answered: 'cancelled' }
+    if ((x.role === 'agent' || x.role === 'thought') && x.open) return { ...x, open: false }
+    return x
+  })
 }
 
 let listening = false
@@ -462,6 +523,40 @@ export function deskPlace(mesa: Mesa, fallback: string) {
   return { cwd: repos[0] ?? fallback, dirs: repos.slice(1) }
 }
 
+async function placeFor(mesa0: Mesa, agent: AgentId, fallback: string) {
+  const mesa = mesas.find((x) => x.id === mesa0.id) ?? mesa0
+  const place = deskPlace(mesa, fallback)
+  if (!mesa.isolate || !isTauri || !mesa.repos.length) return place
+  const made: string[] = []
+  let branch = ''
+  const all = await Promise.all(
+    [place.cwd, ...place.dirs].map((repo) =>
+      invoke<{ path: string; branch: string; created: boolean }>('oficina_worktree', { mesa: mesa.id, agent, repo })
+        .then((w) => {
+          if (w.branch) branch = w.branch
+          if (w.created) made.push(base(repo))
+          return w.path
+        })
+        .catch((e) => {
+          throw new Error(`não deu para criar a cópia isolada de ${base(repo)}: ${e instanceof Error ? e.message : String(e)}`)
+        }),
+    ),
+  )
+  if (branch && mesas.find((x) => x.id === mesa.id)?.trees?.[agent] !== branch) patchMesa(mesa.id, { trees: { ...(mesas.find((x) => x.id === mesa.id)?.trees ?? {}), [agent]: branch } })
+  if (made.length) push(mesa.id, { id: uid(), agent, role: 'note', text: `O ${AGENT_NAME[agent]} trabalha numa cópia isolada de ${made.join(' + ')}, na branch ${branch}. Nada muda na sua pasta até você juntar essa branch.`, tone: 'info', at: Date.now() })
+  return { cwd: all[0], dirs: all.slice(1) }
+}
+
+const base = (p: string) => p.split('/').filter(Boolean).pop() ?? p
+
+export async function setIsolate(mesa: Mesa, on: boolean) {
+  for (const a of AGENTS) if (a !== 'local' && liveOf(mesa.id).agents[a].status !== 'off') await closeAgent(mesa.id, a)
+  const { claude: _c, codex: _x, ...rest } = mesas.find((x) => x.id === mesa.id)?.sessions ?? {}
+  patchMesa(mesa.id, { isolate: on, sessions: rest })
+  push(mesa.id, { id: uid(), agent: mesa.agent, role: 'note', text: on ? 'Agentes isolados: cada um trabalha na própria branch. A próxima mensagem abre sessões novas, já na cópia isolada.' : 'Agentes de volta à pasta do repositório. A próxima mensagem abre sessões novas, sem o contexto anterior.', tone: 'info', at: Date.now() })
+  emit()
+}
+
 export function personaText(companyId?: string) {
   return (companyId ? cofreOf(companyId).persona : null) ?? PERSONA
 }
@@ -497,11 +592,13 @@ export function ensureAgent(mesa: Mesa, agent: AgentId, codexHome_: string | nul
   const k = `${mesa.id}:${agent}`
   const st = liveOf(mesa.id).agents[agent].status
   if (st !== 'off' && st !== 'error') return opening.get(k) ?? Promise.resolve()
+  const g = gen(k)
+  const stale = () => gen(k) !== g
   const p = (async () => {
     setAgent(mesa.id, agent, { status: 'opening', action: 'abrindo o agente', error: null })
     emit()
     try {
-      const place = deskPlace(mesa, fallback)
+      const place = await placeFor(mesa, agent, fallback)
       const acct = accountOf(mesa, agent)
       const home = agent === 'codex' ? ((await codexHome(acct)) ?? codexHome_) : null
       const r = await oficinaApi.start({
@@ -509,14 +606,17 @@ export function ensureAgent(mesa: Mesa, agent: AgentId, codexHome_: string | nul
         agent,
         cwd: place.cwd,
         dirs: place.dirs,
-        persona: agent === 'codex' ? personaText(mesa.companyId) + (await skillIndex(mesa.companyId)) : personaText(mesa.companyId),
+        persona: personaText(mesa.companyId) + (await alwaysOn()) + (agent === 'codex' ? await skillIndex(mesa.companyId) : ''),
         resume: mesa.sessions[agent] ?? null,
         codexHome: home,
         skills: agent === 'claude' ? skillsFor(mesa.companyId) : null,
         mcp: mcpFor(mesa.companyId),
         claudeAccount: agent === 'claude' ? acct : null,
       })
+      if (stale()) return
       const sid = r.session.sessionId
+      const lost = (r.session as { resumeFailed?: string }).resumeFailed
+      if (lost) push(mesa.id, { id: uid(), agent, role: 'note', text: `Não deu para retomar a conversa anterior do ${AGENT_NAME[agent]} (${lost}). Abri uma sessão nova.`, tone: 'info', at: Date.now() })
       if (mesa.sessions[agent] !== sid) patchMesa(mesa.id, { sessions: { ...mesas.find((x) => x.id === mesa.id)?.sessions, [agent]: sid } })
       const cfg = r.session.configOptions ?? liveOf(mesa.id).agents[agent].config
       cacheConfig(agent, cfg)
@@ -524,6 +624,7 @@ export function ensureAgent(mesa: Mesa, agent: AgentId, codexHome_: string | nul
       const prefs = mesas.find((x) => x.id === mesa.id)?.prefs[agent] ?? {}
       for (const [opt, val] of Object.entries(prefs)) if (val !== 'auto') await oficinaApi.config(mesa.id, agent, opt, val).catch(() => {})
     } catch (e) {
+      if (stale()) return
       const msg = e instanceof Error ? e.message : String(e)
       if (AUTH_FAIL.test(msg)) authCard(mesa.id, agent)
       else {
@@ -531,7 +632,7 @@ export function ensureAgent(mesa: Mesa, agent: AgentId, codexHome_: string | nul
         push(mesa.id, { id: uid(), agent, role: 'note', text: msg, tone: 'error', at: Date.now() })
       }
     } finally {
-      opening.delete(k)
+      if (!stale()) opening.delete(k)
       emit()
     }
   })()
@@ -564,14 +665,22 @@ function withSkills(agent: AgentId, text: string, picks: Pick[]) {
   return `[Alfred: antes de começar, leia e siga estas instruções: ${picks.map((p) => `${p.path}/SKILL.md`).join(', ')}]\n\n${text}`
 }
 
+const BUSY = new Set<Status>(['opening', 'thinking', 'writing', 'tool', 'waiting'])
+export const isBusy = (mesa: string, agent: AgentId) => BUSY.has(liveOf(mesa).agents[agent].status)
+
 export async function send(mesa: Mesa, agent: AgentId, text0: string, images: Shot[], codexHome: string | null, fallback: string, picks?: Pick[]) {
+  if (isBusy(mesa.id, agent)) {
+    push(mesa.id, { id: uid(), agent, role: 'note', text: `O ${AGENT_NAME[agent]} ainda está trabalhando. Espere terminar ou pare (Esc) antes de mandar outra.`, tone: 'info', at: Date.now() })
+    emit()
+    return
+  }
   const flow = mesa.flow ?? cofreOf(mesa.companyId).flow
   const maivado = flow === 'maivado' && agent === 'claude' && !mesa.sessions.claude && text0 && !text0.startsWith('/')
-  const chosen = maivado ? [] : (picks ?? (getSettings().autoSkills === false ? [] : await routeSkills(text0, mesa.repos, mesa.companyId).catch(() => [])))
+  const chosen = (maivado ? [] : (picks ?? (getSettings().autoSkills === false ? [] : await routeSkills(text0, mesa.repos, mesa.companyId).catch(() => [])))).filter((p) => !isBase(p, getSettings().base))
   const text = maivado ? `/maivado ${text0}` : withSkills(agent, text0, chosen)
   const shown = images.length ? `${text0}${text0 ? '\n' : ''}[${images.length} imagem${images.length > 1 ? 's' : ''}]` : text0
   push(mesa.id, { id: uid(), agent, role: 'user', text: maivado ? `/maivado ${text0}` : shown, at: Date.now(), skills: chosen.map((p) => p.name) })
-  if (!mesa.title && text) patchMesa(mesa.id, { title: text.split('\n')[0].slice(0, 70) })
+  if (!mesa.title && text0) patchMesa(mesa.id, { title: text0.split('\n')[0].slice(0, 70) })
   emit()
   await ensureAgent(mesa, agent, codexHome, fallback)
   if (liveOf(mesa.id).agents[agent].status === 'error') return
@@ -609,7 +718,7 @@ export async function send(mesa: Mesa, agent: AgentId, text0: string, images: Sh
   busy(mesa.id, agent, true)
   emit()
   try {
-    await oficinaApi.prompt(mesa.id, agent, text, images)
+    prompts.set(`${mesa.id}:${agent}`, await oficinaApi.prompt(mesa.id, agent, text, images))
   } catch (e) {
     push(mesa.id, { id: uid(), agent, role: 'note', text: e instanceof Error ? e.message : String(e), tone: 'error', at: Date.now() })
     setAgent(mesa.id, agent, { status: 'idle', since: null })
@@ -625,7 +734,11 @@ export async function answer(mesa: string, agent: AgentId, itemId: string, optio
   m.items = m.items.map((x) => (x.id === itemId ? { ...it, answered: optionId ?? 'cancelled' } : x))
   setAgent(mesa, agent, { status: 'tool', action: optionId ? 'continuando' : 'pedido recusado' })
   emit()
-  await oficinaApi.reply(mesa, agent, it.rpc, { outcome: optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' } })
+  await oficinaApi.reply(mesa, agent, it.rpc, { outcome: optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' } }).catch(() => {
+    setAgent(mesa, agent, { status: 'off', action: '' })
+    push(mesa, { id: uid(), agent, role: 'note', text: `O ${AGENT_NAME[agent]} já tinha fechado. Mande a mensagem de novo.`, tone: 'error', at: Date.now() })
+    emit()
+  })
 }
 
 export async function setOption(mesa: Mesa, agent: AgentId, option: string, value: string | null) {
@@ -671,12 +784,21 @@ export async function handoff(mesa: Mesa, from: AgentId, to: AgentId, kind: 'rev
     kind === 'review'
       ? `Revisão cruzada. O ${AGENT_NAME[from]} trabalhou nesta tarefa. Revise criticamente o que ele fez: bugs, escopo além do pedido, nomes inventados, riscos de segurança e testes que não provam nada. Leia os arquivos antes de opinar. Não edite nada, só aponte com caminho:linha.`
       : `Passagem de bastão. O ${AGENT_NAME[from]} estava nesta tarefa e você continua daqui, sem refazer o que já está pronto. Confira o estado dos arquivos antes de mexer.`
-  const body = [head, r.plan && `Plano:\n${r.plan}`, r.files.length && `Arquivos mexidos:\n${r.files.map((f) => `- ${f}`).join('\n')}`, r.talk && `Conversa recente:\n${r.talk}`].filter(Boolean).join('\n\n')
+  const branch = (mesas.find((x) => x.id === mesa.id) ?? mesa).isolate ? mesa.trees?.[from] : undefined
+  const iso = branch && `Atenção: os agentes estão isolados. O ${AGENT_NAME[from]} trabalhou na cópia dele, na branch ${branch}, e os caminhos acima são dessa cópia. ${kind === 'review' ? 'Leia os arquivos de lá.' : 'Antes de continuar, traga o trabalho dele para a sua cópia (commit lá e merge dessa branch aqui).'}`
+  const body = [head, r.plan && `Plano:\n${r.plan}`, r.files.length && `Arquivos mexidos:\n${r.files.map((f) => `- ${f}`).join('\n')}`, iso, r.talk && `Conversa recente:\n${r.talk}`].filter(Boolean).join('\n\n')
   await send(mesa, to, body, [], null, fallback, [])
 }
 
 export async function setRepos(mesa: Mesa, repos: string[]) {
-  patchMesa(mesa.id, { repos, cwd: repos[0] ?? '' })
+  const cur = mesas.find((x) => x.id === mesa.id) ?? mesa
+  const moved = (repos[0] ?? '') !== (cur.repos[0] ?? '')
+  const sessions = { ...cur.sessions }
+  if (moved) {
+    delete sessions.claude
+    delete sessions.codex
+  }
+  patchMesa(mesa.id, { repos, cwd: repos[0] ?? '', sessions })
   for (const a of AGENTS) if (liveOf(mesa.id).agents[a].status !== 'off') await closeAgent(mesa.id, a)
 }
 
@@ -697,11 +819,18 @@ export async function freshSession(mesa: Mesa, agent: AgentId) {
 
 export async function cancel(mesa: string, agent: AgentId) {
   if (agent === 'local') return void (await invoke('oficina_local_cancel', { mesa }).catch(() => {}))
+  settle(mesa, agent, true)
+  emit()
   await oficinaApi.cancel(mesa, agent).catch(() => {})
 }
 
 export async function closeAgent(mesa: string, agent: AgentId) {
+  const k = `${mesa}:${agent}`
+  gens.set(k, gen(k) + 1)
+  opening.delete(k)
+  prompts.delete(k)
   if (agent !== 'local') await oficinaApi.close(mesa, agent).catch(() => {})
+  settle(mesa, agent, false)
   setAgent(mesa, agent, { status: 'off', action: '' })
   busy(mesa, agent, false)
   emit()
@@ -709,7 +838,7 @@ export async function closeAgent(mesa: string, agent: AgentId) {
 
 export function seed(mesa: string, items: Item[]) {
   const m = liveOf(mesa)
-  if (m.items.length) return
+  if (m.items.some((x) => x.agent !== 'local')) return
   m.items = items
   emit()
 }

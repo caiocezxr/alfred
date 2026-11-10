@@ -4,8 +4,8 @@ import '@fontsource/fraunces/900.css'
 import '@fontsource/fraunces/400-italic.css'
 import { openExternal } from '../../shared/openExternal'
 import {
-  annexOf, cadernoLeads, confidenceLine, confidenceOf, dossieNumber, frontOf, regionOf, REGION_LABEL, SHAPE, skinOf, storiesOf, tierOf, TIER_LABEL,
-  timelineOf, timelineTicks, TYPE_LABEL, VIEWS, type Annex, type View,
+  annexOf, cadernoLeads, confidenceOf, dossieNumber, frontOf, regionOf, REGION_LABEL, SHAPE, skinOf, storiesOf, tierOf, TIER_LABEL,
+  TYPE_LABEL, VIEWS, type Annex, type View,
 } from './dossie.ts'
 import { direction, fmtChange, fmtValue, periodLabel } from './market.ts'
 import { briefingPlayer, rateOfSpeed, speedOfRate, useBriefingPlayer, voiceProgressLabel } from './player.ts'
@@ -208,11 +208,11 @@ export function Dossie({ edition, st, mode, onExpand, onClose, menu }: Props) {
   const doc =
     view === 'tudo' ? (
       <>
-        <Cover edition={edition} minutes={minutes} numbers={numbers} onJump={(k) => scrollToKey(k)} counts={counts} onView={setView} />
+        <Cover edition={edition} minutes={minutes} numbers={numbers} onJump={(k) => scrollToKey(k)} counts={counts} onView={setView} full={full} />
         <section>
           <SecHead label="Ponto principal" desc="O topo de cada caderno" n={(front.lead ? 1 : 0) + front.leads.length} />
           {front.lead && item(front.lead, 'O mais importante pra você hoje')}
-          {front.leads.map((it) => item(it, `Topo · ${CADERNO_LABEL[cadernoOf(it.area)]}`))}
+          {front.leads.map((it) => item(it))}
         </section>
         {(['politica', 'investimentos', 'ia_dev'] as Caderno[]).map((c) => {
           const rest = front.rest(c)
@@ -229,15 +229,15 @@ export function Dossie({ edition, st, mode, onExpand, onClose, menu }: Props) {
       <section>
         <SecHead caderno={view} label={cur.long} desc={cur.desc} n={list.length} />
         {view === 'investimentos' && <Ticker quotes={edition.market} cls="dz-ticker is-sec" />}
-        {list.length ? list.map((it, i) => item(it, i === 0 ? `Topo · ${CADERNO_LABEL[view]}` : undefined)) : <p className="dz-empty">Nada deste caderno passou na peneira hoje.</p>}
+        {list.length ? list.map((it) => item(it)) : <p className="dz-empty">Nada deste caderno passou na peneira hoje.</p>}
       </section>
     )
 
   return (
     <div className={`dz is-${mode} dz-skin-${look.skin}`} data-scheme={look.scheme} data-style={look.style} data-view={view} data-playing={onAir && player.status !== 'paused'}>
       <div className="dz-sheet" ref={sheet} tabIndex={0} onKeyDown={(e) => !full && keyAct(e) && (e.preventDefault(), e.stopPropagation())} aria-label="Dossiê do dia">
-        <header className={`dz-strip ${scrolled ? 'is-scrolled' : ''}`} tabIndex={full ? -1 : 0} onKeyDown={(e) => e.key === 'Enter' && !full && e.target === e.currentTarget && (e.preventDefault(), onExpand?.())}>
-          <div className="dz-strip-id">
+        <header className={`dz-strip ${scrolled ? 'is-scrolled' : ''}`} data-tauri-drag-region={full || undefined} tabIndex={full ? -1 : 0} onKeyDown={(e) => e.key === 'Enter' && !full && e.target === e.currentTarget && (e.preventDefault(), onExpand?.())}>
+          <div className="dz-strip-id" data-tauri-drag-region={full || undefined}>
             <span className="dz-class">
               Reservado<span className="dz-class-x"> · uso pessoal</span>
             </span>
@@ -253,7 +253,7 @@ export function Dossie({ edition, st, mode, onExpand, onClose, menu }: Props) {
             {VIEWS.map((v) => (
               <button key={v.id} type="button" role="tab" data-c={v.id} aria-selected={v.id === view} onClick={() => setView(v.id)} title={`${v.long} · tecla ${v.key}`}>
                 <span className="dz-tab-k">{v.key}</span>
-                <span className="dz-tab-l">{full && v.id !== 'tudo' ? v.long.replace('Caderno ', '') : v.tab}</span>
+                <span className="dz-tab-l">{v.tab}</span>
                 <span className="dz-tab-n">{counts[v.id]}</span>
               </button>
             ))}
@@ -325,7 +325,7 @@ export function Dossie({ edition, st, mode, onExpand, onClose, menu }: Props) {
               <span className="dz-lbl">Conclusão</span>
               <p>{edition.closing}</p>
               <RateBriefing edition={edition} variant="closing" />
-              <p className="dz-colo">
+              <p className="dz-colo" title="0–3 cadernos · J/K itens · Enter abre a fonte · I interessa · X não interessa · P ouvir · Esc fecha">
                 Preparado às {hm(edition.createdAt)} a partir de {edition.stats.candidates} candidatas e {edition.stats.sourcesOk} fontes
                 {edition.judge === 'codex' ? ' · avaliado pelo Codex' : ' · sem o juiz'}
                 {edition.hiddenEnglish ? ` · ${edition.hiddenEnglish} em inglês ficaram de fora` : ''} · fim do dossiê
@@ -359,10 +359,8 @@ function SecHead({ caderno, label, desc, n }: { caderno?: Caderno; label: string
 
 const MIX: Caderno[] = ['politica', 'investimentos', 'ia_dev']
 
-function Cover({ edition, minutes, numbers, onJump, counts, onView }: { edition: Edition; minutes: number; numbers: Map<string, number>; onJump: (key: string) => void; counts: Record<View, number>; onView: (v: View) => void }) {
+function Cover({ edition, minutes, numbers, onJump, counts, onView, full }: { edition: Edition; minutes: number; numbers: Map<string, number>; onJump: (key: string) => void; counts: Record<View, number>; onView: (v: View) => void; full: boolean }) {
   const tops = cadernoLeads(edition)
-  const pts = timelineOf(edition, edition.items)
-  const ticks = timelineTicks(edition)
   const total = Math.max(1, MIX.reduce((n, c) => n + counts[c], 0))
   return (
     <section className="dz-cover">
@@ -386,67 +384,22 @@ function Cover({ edition, minutes, numbers, onJump, counts, onView }: { edition:
           ))}
         </div>
       </div>
-      <div className="dz-points">
-        <span className="dz-label">Em 30 segundos</span>
-        <ol>
-          {tops.map(({ caderno, item }) => (
-            <li key={item.key} data-c={caderno}>
-              <span className="dz-pt-n">{pad(numbers.get(item.key) ?? 0)}</span>
-              <span className="dz-pt-c">{VIEWS.find((v) => v.id === caderno)!.tab}</span>
-              <button type="button" onClick={() => onJump(item.key)}>
-                {item.title}
-              </button>
-            </li>
-          ))}
-        </ol>
-      </div>
-      {pts.length > 1 && (
-        <figure className="dz-tl">
-          <figcaption>
-            <span className="dz-label">Linha do dia</span>
-            <span className="dz-tl-leg">
-              <span>
-                <i className="dz-shape" data-shape="sq" />
-                Política
-              </span>
-              <span>
-                <i className="dz-shape" data-shape="di" />
-                Investimentos
-              </span>
-              <span>
-                <i className="dz-shape" data-shape="ci" />
-                IA e dev
-              </span>
-            </span>
-          </figcaption>
-          <div className="dz-tl-track">
-            {ticks.map((t) => (
-              <span key={t.pos} className="dz-tl-tick" style={{ left: `${t.pos}%` }}>
-                <b>{t.label}</b>
-              </span>
+      {!full && (
+        <div className="dz-points">
+          <span className="dz-label">Em 30 segundos</span>
+          <ol>
+            {tops.map(({ caderno, item }) => (
+              <li key={item.key} data-c={caderno}>
+                <span className="dz-pt-n">{pad(numbers.get(item.key) ?? 0)}</span>
+                <span className="dz-pt-c">{VIEWS.find((v) => v.id === caderno)!.tab}</span>
+                <button type="button" onClick={() => onJump(item.key)}>
+                  {item.title}
+                </button>
+              </li>
             ))}
-            {pts.map((p) => (
-              <button
-                key={p.key}
-                type="button"
-                className="dz-tl-dot"
-                data-shape={p.shape}
-                style={{ left: `${p.pos}%`, ['--j' as string]: p.lane }}
-                title={`${hm(p.at)} · ${p.title}`}
-                aria-label={`${hm(p.at)} · ${p.title}`}
-                onClick={() => onJump(p.key)}
-              />
-            ))}
-            <span className="dz-tl-end" style={{ left: '100%' }}>
-              <b>{hm(edition.createdAt)} fechamento</b>
-            </span>
-          </div>
-        </figure>
+          </ol>
+        </div>
       )}
-      <p className="dz-cover-conf">
-        <span className="dz-label">Confiança</span>
-        {confidenceLine(edition.items)}
-      </p>
       {edition.market.length > 0 && <Ticker quotes={edition.market} cls="dz-ticker" />}
     </section>
   )
@@ -508,11 +461,10 @@ function Item({ it, n, mark, edition, annex, selected, speaking, down, onListen,
             {region}
           </span>
         )}
-        <span className="dz-pri" data-tier={tier} title={`Prioridade ${TIER_LABEL[tier]}`}>
+        <span className="dz-pri" data-tier={tier} title={`Prioridade ${TIER_LABEL[tier]}`} aria-label={`Prioridade ${TIER_LABEL[tier]}`}>
           <i />
           <i />
           <i />
-          Prioridade {TIER_LABEL[tier]}
         </span>
       </header>
       {mark && <div className="dz-mark">{mark}</div>}
@@ -531,23 +483,10 @@ function Item({ it, n, mark, edition, annex, selected, speaking, down, onListen,
         </div>
       )}
       <h3 className="dz-title">{it.title}</h3>
-      <dl className="dz-meta">
-        <div>
-          <dt>Publicado</dt>
-          <dd>{at}</dd>
-        </div>
-        <div>
-          <dt>Fonte</dt>
-          <dd>
-            {it.source}
-            {others}
-          </dd>
-        </div>
-        <div>
-          <dt>Confiança</dt>
-          <dd>{conf}</dd>
-        </div>
-      </dl>
+      <p className="dz-meta">
+        {it.source}
+        {others} · {at} · {conf}
+      </p>
       {it.summary && <p className="dz-sum">{it.summary}</p>}
       <div className="dz-assess">
         <span className="dz-lbl">Por que importa</span>
@@ -559,7 +498,7 @@ function Item({ it, n, mark, edition, annex, selected, speaking, down, onListen,
           <p>{it.action}</p>
         </div>
       )}
-      {annex && annex.kind !== 'dispatch' && (
+      {annex && annex.kind !== 'dispatch' && !(annex.kind === 'changelog' && annex.lines.every((l) => `${it.title} ${it.summary ?? ''}`.includes(l.trim()))) && (
         <div className="dz-annex">
           <span className="dz-annex-l">Anexo {pad(n)}·A</span>
           <AnnexView a={annex} edition={edition} />
@@ -763,13 +702,6 @@ function MarketAside({ edition }: { edition: Edition }) {
           <p className="dz-fine">Informação, não recomendação de investimento.</p>
         </div>
       )}
-      <div className="dz-aside-box">
-        <span className="dz-label">Como ler</span>
-        <p>
-          <b>Por que importa</b> liga a notícia ao seu trabalho. <b>O que fazer</b> é a ação sugerida. <b>Confiança</b> sobe com o número de veículos que confirmam o fato.
-        </p>
-        <p className="dz-fine">0–3 cadernos · J/K itens · Enter abre a fonte · I interessa · X não interessa · P ouvir · Esc fecha</p>
-      </div>
     </aside>
   )
 }
