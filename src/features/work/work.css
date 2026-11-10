@@ -7373,3 +7373,22 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.wk-capture.is-v2 .wk-cap-tray {
+  position: static;
+  max-height: 0;
+  overflow: hidden;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  transform: none;
+  transition: max-height 240ms var(--ease-out), padding 240ms var(--ease-out), opacity 160ms var(--ease-out);
+}
+
+.wk-capture.is-v2.is-open .wk-cap-tray {
+  max-height: 240px;
+  overflow: visible;
+  padding: 2px 12px 12px;
+}
