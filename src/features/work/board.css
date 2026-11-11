@@ -1,0 +1,598 @@
+/* ─────────────────────────────────────────────────────────────
+   Quadro: colunas como raias, cartão como ficha.
+   A animação de arraste e pouso (FLIP + ghost) continua a mesma.
+   ───────────────────────────────────────────────────────────── */
+
+.wk-board {
+  --lane: color-mix(in srgb, var(--text) 2.6%, transparent);
+  --lane-line: color-mix(in srgb, var(--text) 6%, transparent);
+  --ink-2: color-mix(in srgb, var(--text) 62%, transparent);
+  --ink-3: color-mix(in srgb, var(--text) 40%, transparent);
+  gap: 10px;
+  padding-bottom: 4px;
+}
+
+/* ───── raias ───── */
+
+.wk-board .wk-col {
+  padding: 12px 8px 0;
+  border-radius: 16px;
+  background: var(--lane);
+  box-shadow: inset 0 0 0 1px var(--lane-line);
+}
+
+.wk-board.is-dragging .wk-col {
+  background: color-mix(in srgb, var(--text) 3.6%, transparent);
+}
+
+.wk-board .wk-col.is-over {
+  background: color-mix(in srgb, var(--accent) 7%, transparent) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.wk-board .wk-col-head {
+  gap: 8px;
+  padding: 0 6px 12px;
+}
+
+.wk-board .wk-col-head h3 {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.wk-board .wk-col-dot {
+  width: 6px;
+  height: 6px;
+  box-shadow: none;
+}
+
+.wk-board .wk-col.is-doing .wk-col-dot {
+  box-shadow: none;
+}
+
+.wk-board .wk-col-n {
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.wk-col-slots {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: auto;
+}
+
+.wk-col-slots i {
+  width: 10px;
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  transition: background 300ms var(--ease-out);
+}
+
+.wk-col-slots i.is-on {
+  background: var(--accent);
+}
+
+.wk-col-slots i.is-over {
+  background: var(--wk-amber);
+}
+
+.wk-board .wk-col-body {
+  gap: 8px;
+  padding: 0 0 14px;
+  scrollbar-width: none;
+}
+
+.wk-board .wk-col-body::-webkit-scrollbar {
+  display: none;
+}
+
+.wk-board .wk-col-empty {
+  margin: 0;
+  padding: 18px 12px;
+  border: 1px dashed color-mix(in srgb, var(--text) 10%, transparent);
+  border-radius: 12px;
+  color: var(--ink-3);
+  font-size: 11.5px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.wk-board .wk-col.is-slim {
+  padding: 12px 0 0;
+}
+
+.wk-board .wk-quick-add {
+  padding: 6px 8px;
+}
+
+/* ───── ficha ───── */
+
+.wk-board .wk-card {
+  padding: 11px 12px 10px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--surface-solid);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text) 7%, transparent), 0 10px 22px -18px var(--shadow);
+}
+
+.wk-board .wk-card::before {
+  top: 12px;
+  bottom: auto;
+  height: 14px;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+}
+
+.wk-board .wk-card:hover::before {
+  box-shadow: none;
+}
+
+.wk-board .wk-card:hover {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text) 12%, transparent), 0 16px 30px -18px var(--shadow);
+}
+
+.wk-board .wk-card.is-selected {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 70%, transparent), 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent), 0 16px 30px -18px var(--shadow);
+}
+
+.wk-board .wk-card.is-live {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--co) 55%, transparent), 0 16px 30px -18px var(--shadow);
+}
+
+.wk-board .wk-card.is-returned {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--wk-red) 45%, transparent), 0 10px 22px -18px var(--shadow);
+}
+
+.wk-board .wk-card.is-focus {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--co) 8%, var(--surface-solid)), var(--surface-solid) 60%);
+}
+
+.wk-card.is-ghost {
+  border: 0;
+  background: var(--surface-solid);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--co) 45%, transparent), 0 30px 50px -18px rgba(0, 0, 0, 0.55);
+}
+
+.wk-board .wk-card-top {
+  gap: 7px;
+  margin-bottom: 6px;
+  min-height: 16px;
+}
+
+.wk-board .wk-ticket {
+  color: var(--ink-2);
+  font: 600 11px/1 var(--wk-mono);
+  letter-spacing: 0.01em;
+}
+
+.wk-board .wk-ticket::before {
+  content: '#';
+  opacity: 0.55;
+}
+
+.wk-board .wk-kind {
+  color: var(--ink-3);
+  font: 500 10.5px/1 var(--wk-mono);
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+}
+
+.wk-card-due {
+  flex: none;
+  color: var(--ink-3);
+  font: 500 10.5px/1 var(--wk-mono);
+  white-space: nowrap;
+}
+
+.wk-card-due.is-due-today,
+.wk-card-due.is-due-soon {
+  color: var(--wk-amber);
+}
+
+.wk-card-due.is-due-late {
+  color: var(--wk-red);
+}
+
+.wk-board .wk-card-title {
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.38;
+  letter-spacing: -0.003em;
+}
+
+.wk-board .wk-card.is-late .wk-card-title {
+  color: var(--text);
+}
+
+.wk-board .wk-card-note {
+  margin-top: 5px;
+  color: var(--ink-3);
+  font-size: 11.5px;
+}
+
+/* chips viram uma linha de rodapé em texto */
+.wk-board .wk-card-meta {
+  gap: 2px 10px;
+  margin-top: 8px;
+}
+
+.wk-board .wk-card-meta:empty {
+  display: none;
+}
+
+.wk-board .wk-card-meta .wk-chip {
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  font: 500 10.5px/1.4 var(--wk-mono);
+  gap: 4px;
+}
+
+.wk-board .wk-card-meta .wk-chip svg {
+  opacity: 0.8;
+}
+
+.wk-board .wk-card-meta .wk-chip:is(.is-warn, .is-due-late, .is-sla-breach) {
+  color: var(--wk-red);
+}
+
+.wk-board .wk-card-meta .wk-chip:is(.is-due-today, .is-sla-warn, .is-sla-risk) {
+  color: var(--wk-amber);
+}
+
+.wk-board .wk-card-meta .wk-chip.is-wait {
+  color: var(--wk-wait);
+}
+
+.wk-board .wk-card-meta .wk-chip.is-ok {
+  color: var(--wk-green);
+}
+
+.wk-board .wk-prchip,
+.wk-board .wk-deskchip {
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-size: 11px;
+  animation: none;
+}
+
+.wk-board .wk-prchip:hover,
+.wk-board .wk-deskchip:hover {
+  transform: none;
+  color: var(--text);
+}
+
+.wk-board .wk-prchip i {
+  box-shadow: none;
+}
+
+/* o caminho do chamado: cinco traços, preenchidos até a etapa atual */
+.wk-card-trail {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 3px;
+  margin-top: 10px;
+}
+
+.wk-card-trail i {
+  height: 2px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+  transition: background 420ms var(--ease-out);
+}
+
+.wk-card-trail i.is-past {
+  background: color-mix(in srgb, var(--co) 55%, transparent);
+}
+
+.wk-card-trail i.is-now {
+  background: var(--co);
+}
+
+.wk-card.is-landed .wk-card-trail i.is-now {
+  animation: wk-trail 700ms var(--ease-out);
+  transform-origin: left center;
+}
+
+@keyframes wk-trail {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+.wk-board .wk-card-act {
+  border: 0;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+
+.wk-board .wk-card-act:hover {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.wk-board .wk-placeholder {
+  border-radius: 12px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* ───── importar ───── */
+
+.wk-imp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 14px;
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+  font: 600 11px/1 var(--font-ui);
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+  transition: background var(--t-fast) ease;
+}
+
+.wk-imp-btn:hover {
+  background: color-mix(in srgb, var(--text) 11%, transparent);
+}
+
+.wk-dialog.is-import {
+  width: min(880px, 92vw);
+  max-width: none;
+}
+
+.wk-dialog.is-import.is-pick,
+.wk-dialog.is-import.is-reading {
+  width: min(560px, 92vw);
+}
+
+.wk-imp-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.wk-imp-head h2 {
+  margin: 0;
+}
+
+.wk-imp-head p {
+  margin: 0;
+  color: var(--text-2);
+  font: 500 11.5px/1 var(--wk-mono);
+}
+
+.wk-imp-drop {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 34px 20px 30px;
+  border: 1px dashed color-mix(in srgb, var(--text) 18%, transparent);
+  border-radius: 16px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  text-align: center;
+  cursor: pointer;
+  outline: 0;
+  transition: border-color var(--t-fast) ease, background var(--t-fast) ease;
+}
+
+.wk-imp-drop:hover,
+.wk-imp-drop:focus-visible,
+.wk-imp-drop.is-over {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.wk-imp-drop.is-reading {
+  cursor: progress;
+}
+
+.wk-imp-drop b {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.wk-imp-drop kbd {
+  margin-left: 2px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  font: 500 10.5px/1.4 var(--wk-mono);
+}
+
+/* folhinha de planilha que se "lê" enquanto a IA trabalha */
+.wk-imp-sheet {
+  display: grid;
+  grid-template-columns: 14px 40px 22px;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.wk-imp-sheet i {
+  height: 6px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 14%, transparent);
+}
+
+.wk-imp-sheet i:nth-child(-n + 3) {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.wk-imp-drop.is-reading .wk-imp-sheet i {
+  animation: wk-imp-scan 1.6s var(--ease-out) infinite;
+  animation-delay: calc(var(--k) * 70ms);
+}
+
+@keyframes wk-imp-scan {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  40% {
+    opacity: 1;
+    background: var(--accent);
+  }
+}
+
+.wk-imp-warn,
+.wk-imp-err {
+  margin: 0 0 12px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.wk-imp-warn {
+  background: color-mix(in srgb, var(--wk-amber) 12%, transparent);
+  color: color-mix(in srgb, var(--wk-amber) 80%, var(--text));
+}
+
+.wk-imp-err {
+  margin: 12px 0 0;
+  background: color-mix(in srgb, var(--wk-red) 12%, transparent);
+  color: color-mix(in srgb, var(--wk-red) 75%, var(--text));
+}
+
+.wk-imp-list {
+  display: grid;
+  max-height: min(56vh, 520px);
+  overflow: auto;
+  margin: 0 -6px;
+  padding: 0 6px;
+}
+
+.wk-imp-row {
+  display: grid;
+  grid-template-columns: 20px 74px minmax(0, 1fr) 150px 70px 128px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px;
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 6%, transparent);
+  transition: opacity var(--t-fast) ease;
+}
+
+.wk-imp-row.is-off {
+  opacity: 0.42;
+}
+
+.wk-imp-check {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--text) 25%, transparent);
+  border-radius: 5px;
+  background: none;
+  color: var(--bg);
+  cursor: pointer;
+}
+
+.wk-imp-check.is-on {
+  border-color: var(--text);
+  background: var(--text);
+}
+
+.wk-imp-row input,
+.wk-imp-row select {
+  min-width: 0;
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  outline: 0;
+}
+
+.wk-imp-row input:hover,
+.wk-imp-row select:hover,
+.wk-imp-row input:focus,
+.wk-imp-row select:focus {
+  border-color: color-mix(in srgb, var(--text) 14%, transparent);
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+
+.wk-imp-ticket {
+  font-family: var(--wk-mono) !important;
+  font-size: 11.5px !important;
+  color: var(--text-2) !important;
+}
+
+.wk-imp-main {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.wk-imp-title {
+  font-weight: 500;
+}
+
+.wk-imp-main small {
+  padding: 0 7px;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wk-imp-main small em {
+  font-style: normal;
+  color: var(--wk-amber);
+}
+
+.wk-imp-co {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.wk-imp-prio {
+  padding: 3px 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: 500 11.5px/1 var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+
+.wk-imp-prio.is-alta {
+  color: var(--wk-amber);
+}
+
+.wk-imp-prio.is-urgente {
+  color: var(--wk-red);
+  font-weight: 600;
+}
+
+.wk-imp-due {
+  font-family: var(--wk-mono) !important;
+  font-size: 11.5px !important;
+  color-scheme: dark light;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wk-imp-drop.is-reading .wk-imp-sheet i,
+  .wk-card.is-landed .wk-card-trail i.is-now {
+    animation: none;
+  }
+}

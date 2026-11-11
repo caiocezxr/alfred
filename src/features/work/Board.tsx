@@ -3,6 +3,7 @@ import { CompanyMark, coStyle } from './brand'
 import { Icon } from './icons'
 import { boardColumns, checklistFor, crossesDelivery, dueLabel, dueState, fmtDur, isPost, itemTimeMs, label, parseCapture, pendingChecks, shortDay, slaFor, ticketUrl, type Scope, type Sla } from './logic'
 import { Roll } from './Roll'
+import './board.css'
 import { openInSessao } from '../oficina/bridge'
 import { liveOf, loadMesas, useOficina, type Mesa } from '../oficina/store'
 import { CHECK_SHORT, checkOf, linkPr, livePrs, openPr, prOpen, useBoards, useGhSettings, type LivePr } from './github/api'
@@ -10,6 +11,8 @@ import {
   createItem, doMove, openDialog, openItemFrom, openTicket, readUi, reorderColumn, requestMove, resume, select, setFocus, toggleTimer, useWork, writeUi,
 } from './store'
 import { NEXT_ACTION, STAGE_LABEL, type Company, type Stage, type WorkItem, type WorkState } from './types'
+
+const TRAIL: Stage[] = ['todo', 'doing', 'delivered', 'tested', 'validated']
 
 const EMPTY: Record<Stage, string> = {
   todo: 'Fila limpa. Capture com / ou cole o link de um chamado.',
@@ -366,8 +369,14 @@ export function Board({ state, today, scope }: { state: WorkState; today: string
               <h3>{STAGE_LABEL[c.stage]}</h3>
               <span className={`wk-col-n ${tooMany ? 'is-warn' : ''}`} title={c.stage === 'doing' ? `limite ${wip}` : undefined}>
                 <Roll value={c.items.length} />
-                {c.stage === 'doing' && <span className="wk-col-lim">/{wip}</span>}
               </span>
+              {c.stage === 'doing' && (
+                <span className="wk-col-slots" title={`${c.items.length} de ${wip} no limite`} aria-hidden="true">
+                  {Array.from({ length: Math.max(wip, c.items.length) }, (_, i) => (
+                    <i key={i} className={i < c.items.length ? (i >= wip ? 'is-over' : 'is-on') : ''} />
+                  ))}
+                </span>
+              )}
               {c.stage === 'done' && (
                 <button
                   className="wk-icon-btn wk-col-toggle"
@@ -544,6 +553,12 @@ function Card({ item, company, today, note, attachments, pending, totalChecks, c
           <span className="wk-kind">{item.kind === 'pendencia' ? 'pendência' : item.kind}</span>
         )}
         {item.priority !== 'normal' && <span className={`wk-prio is-${item.priority}`} title={item.priority === 'urgente' ? 'Urgente' : 'Alta'} />}
+        <span className="wk-grow" />
+        {due && item.dueDate && !live && !item.focusedAt && (
+          <span className={`wk-card-due is-due-${due}`} title={`Prazo: ${dueLabel(item.dueDate, today)}`}>
+            {due === 'late' ? `atrasado · ${dueLabel(item.dueDate, today)}` : dueLabel(item.dueDate, today)}
+          </span>
+        )}
         {live && (
           <span className="wk-live-badge" title="Cronômetro rodando">
             <i />
@@ -611,7 +626,7 @@ function Card({ item, company, today, note, attachments, pending, totalChecks, c
             {item.waitingOn}
           </span>
         )}
-        {due && item.dueDate && (
+        {due && item.dueDate && (live || !!item.focusedAt) && (
           <span className={`wk-chip is-due-${due}`}>
             <Icon name="cal" size={10} />
             {due === 'late' ? `atrasado · ${dueLabel(item.dueDate, today)}` : dueLabel(item.dueDate, today)}
@@ -643,6 +658,11 @@ function Card({ item, company, today, note, attachments, pending, totalChecks, c
             {attachments}
           </span>
         )}
+      </div>
+      <div className="wk-card-trail" aria-hidden="true" title={STAGE_LABEL[item.stage]}>
+        {TRAIL.map((st, i) => (
+          <i key={st} className={i < TRAIL.indexOf(item.stage) || item.stage === 'done' ? 'is-past' : st === item.stage ? 'is-now' : ''} />
+        ))}
       </div>
       {item.stage !== 'done' && (
         <div className="wk-card-acts" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>

@@ -10,6 +10,7 @@ import {
 } from './store'
 import { MODE_LABEL, PRIORITIES, PRIORITY_LABEL, STAGE_LABEL, type NewTodo, type Priority, type TodoMode, type WorkState } from './types'
 import { WorkSettings } from './WorkSettings'
+import { ImportDialog } from './Import'
 
 export function Modal({ label: aria, onClose, children, className = '' }: { label: string; onClose: () => void; children: ReactNode; className?: string }) {
   const box = useRef<HTMLDivElement>(null)
@@ -72,6 +73,8 @@ function DialogSwitch({ dialog, state, scope }: { dialog: Dialog; state: WorkSta
       return <HoursDialog state={state} scope={scope} initial={dialog.range ?? 'day'} />
     case 'search':
       return <SearchDialog state={state} />
+    case 'import':
+      return <ImportDialog state={state} scope={scope} today={civil()} file={dialog.file} />
   }
 }
 

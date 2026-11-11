@@ -20,6 +20,7 @@ export type Dialog =
   | { kind: 'keys' }
   | { kind: 'hours'; range?: 'day' | 'week' }
   | { kind: 'search' }
+  | { kind: 'import'; file?: File }
 
 export type Toast = { id: number; text: string; tone?: 'error' | 'ok'; undo?: () => void; undoLabel?: string }
 export type Celebration = { id: number; itemId: string | null; todoId: string | null; color: string | null }

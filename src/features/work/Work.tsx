@@ -261,9 +261,24 @@ export default function Work() {
         {view === 'board' && <em>{openCount} {openCount === 1 ? 'aberto' : 'abertos'}</em>}
         <span className="wk-grow" />
         {view === 'board' && <em className="wk-section-hint">J/K para navegar · E avança · ? atalhos</em>}
+        {view === 'board' && (
+          <button className="wk-imp-btn" onClick={() => openDialog({ kind: 'import' })} title="Importar chamados de uma planilha ou print (ou arraste o arquivo no quadro)">
+            <Icon name="list" size={12} />
+            Importar
+          </button>
+        )}
       </div>
 
-      <div className="wk-main">
+      <div
+        className="wk-main"
+        onDragOver={(e) => view === 'board' && e.dataTransfer.types.includes('Files') && e.preventDefault()}
+        onDrop={(e) => {
+          const f = e.dataTransfer.files[0]
+          if (view !== 'board' || !f) return
+          e.preventDefault()
+          openDialog({ kind: 'import', file: f })
+        }}
+      >
         <div key={view} className={`wk-view is-${view} reveal`} style={{ ['--i' as string]: 2 }}>
           {view === 'board' ? <Board state={state} today={today} scope={validScope} /> : view === 'github' ? <GitHubView state={state} scope={validScope} /> :  <Delivered state={state} today={today} scope={validScope} health={health} />}
         </div>

@@ -854,9 +854,181 @@ pub fn oficina_local_cancel(mesa: String) {
     }
 }
 
+const TABLE_PROMPT: &str = "Você transcreve tabelas de imagens para TSV. Regras: uma linha de texto por linha da tabela; colunas separadas por TAB; a primeira linha é o cabeçalho; toda linha tem o mesmo número de colunas do cabeçalho; célula vazia vira um hífen (-); copie nomes, códigos e datas letra por letra, com acentos. Se a imagem for uma lista de tarefas sem tabela, use as colunas Tarefa e Detalhe. Responda só a tabela, sem explicação e sem cercas de código.";
+
+fn b64_decode(s: &str) -> R<Vec<u8>> {
+    let s = s.split_once(',').map(|(h, b)| if h.contains("base64") { b } else { s }).unwrap_or(s);
+    let val = |c: u8| -> Option<u32> {
+        match c {
+            b'A'..=b'Z' => Some((c - b'A') as u32),
+            b'a'..=b'z' => Some((c - b'a' + 26) as u32),
+            b'0'..=b'9' => Some((c - b'0' + 52) as u32),
+            b'+' | b'-' => Some(62),
+            b'/' | b'_' => Some(63),
+            _ => None,
+        }
+    };
+    let mut out = Vec::with_capacity(s.len() * 3 / 4);
+    let (mut acc, mut bits) = (0u32, 0u32);
+    for c in s.bytes() {
+        if c == b'=' {
+            break;
+        }
+        let Some(v) = val(c) else {
+            if c.is_ascii_whitespace() {
+                continue;
+            }
+            return Err("imagem inválida".into());
+        };
+        acc = (acc << 6) | v;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+            acc &= (1 << bits) - 1;
+        }
+    }
+    Ok(out)
+}
+
+fn clean_table(raw: &str) -> String {
+    raw.lines().map(str::trim_end).filter(|l| !l.trim_start().starts_with("```")).collect::<Vec<_>>().join("\n").trim().to_string()
+}
+
+fn wait_out(mut child: Child, secs: u64) -> R<Vec<u8>> {
+    let mut out = child.stdout.take().ok_or("sem saída")?;
+    let reader = std::thread::spawn(move || {
+        let mut buf = vec![];
+        let _ = std::io::Read::read_to_end(&mut out, &mut buf);
+        buf
+    });
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if start.elapsed() > Duration::from_secs(secs) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("demorou demais".into());
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(150)),
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    reader.join().map_err(|_| "falha ao ler a saída".to_string())
+}
+
+fn read_table_claude(bytes: &[u8], ext: &str, account: Option<&str>) -> R<String> {
+    let bin = claude_cli()?;
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let dir = std::env::temp_dir().join(format!("shed-ler-{}-{stamp}", std::process::id()));
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let file = dir.join(format!("print.{ext}"));
+    std::fs::write(&file, bytes).map_err(|e| e.to_string())?;
+    let prompt = format!("{TABLE_PROMPT}\n\nLeia a imagem {} com a ferramenta Read e transcreva a tabela.", file.display());
+    let mut cmd = Command::new(bin);
+    cmd.current_dir(&dir)
+        .args(["-p", &prompt, "--output-format", "json", "--model", "sonnet", "--tools", "Read", "--allowedTools", "Read", "--strict-mcp-config", "--setting-sources", "project", "--disable-slash-commands"])
+        .env("PATH", path_env())
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    for k in SECRET_ENV {
+        cmd.env_remove(k);
+    }
+    cmd.env_remove("ANTHROPIC_API_KEY");
+    if let Some(t) = claude_token(account) {
+        cmd.env("CLAUDE_CODE_OAUTH_TOKEN", t);
+    }
+    let res = cmd.spawn().map_err(|e| e.to_string()).and_then(|c| wait_out(c, 150));
+    let _ = std::fs::remove_dir_all(&dir);
+    let v: Value = serde_json::from_slice(&res?).map_err(|_| "o Claude não respondeu".to_string())?;
+    let text = v.get("result").and_then(Value::as_str).unwrap_or("").to_string();
+    if v.get("is_error").and_then(Value::as_bool) == Some(true) {
+        return Err(if text.to_lowercase().contains("auth") || text.contains("OAuth") { "o login do Claude Code expirou (rode claude e faça /login)".into() } else { text.chars().take(160).collect() });
+    }
+    let t = clean_table(&text);
+    if t.is_empty() { Err("o Claude não achou tabela".into()) } else { Ok(t) }
+}
+
+fn read_table_local(image: &str, model: Option<String>) -> R<(String, String)> {
+    let a: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(180))).http_status_as_error(false).build().into();
+    let model = match model.filter(|m| !m.is_empty() && m.len() <= 120 && !m.contains(char::is_whitespace)) {
+        Some(m) => m,
+        None => {
+            let mut r = a.get(&format!("{OLLAMA}/api/tags")).call().map_err(|_| "o Ollama não está rodando".to_string())?;
+            let tags = read_value(&mut r).ok_or("resposta inválida do Ollama")?;
+            tags.get("models")
+                .and_then(Value::as_array)
+                .and_then(|l| l.iter().filter_map(|m| m.get("name").and_then(Value::as_str)).find(|n| !n.contains("embed")).map(str::to_string))
+                .ok_or("nenhum modelo local no Ollama")?
+        }
+    };
+    let data = image.split_once(',').map(|(h, b)| if h.contains("base64") { b } else { image }).unwrap_or(image);
+    let body = json!({
+        "model": model,
+        "stream": false,
+        "think": false,
+        "options": { "temperature": 0, "num_ctx": 8192, "num_predict": 2000 },
+        "messages": [{ "role": "system", "content": TABLE_PROMPT }, { "role": "user", "content": "Transcreva a tabela da imagem.", "images": [data] }],
+    });
+    let mut r = post_json(&a, "/api/chat", &body).map_err(|_| "o Ollama não está rodando".to_string())?;
+    if r.status().as_u16() != 200 {
+        return Err(format!("o Ollama respondeu {}", r.status().as_u16()));
+    }
+    let v = read_value(&mut r).ok_or("resposta inválida do Ollama")?;
+    let t = clean_table(v.pointer("/message/content").and_then(Value::as_str).unwrap_or(""));
+    if t.is_empty() { Err("o modelo local não achou tabela".into()) } else { Ok((t, model)) }
+}
+
+/// Lê um print de planilha e devolve a tabela em TSV. Tenta o Claude Code (mais preciso) e cai no modelo local.
+#[tauri::command]
+pub async fn work_read_table(image: String, mime: String, account: Option<String>, local: Option<String>, engine: Option<String>) -> R<Value> {
+    if image.len() > 14_000_000 {
+        return Err("imagem grande demais (máx. 10 MB)".into());
+    }
+    let ext = match mime.as_str() {
+        "image/png" => "png",
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/webp" => "webp",
+        "image/gif" => "gif",
+        _ => return Err("formato de imagem não suportado".into()),
+    };
+    if let Some(a) = &account {
+        if !crate::sessao::valid_account(a) {
+            return Err("conta inválida".into());
+        }
+    }
+    tauri::async_runtime::spawn_blocking(move || -> R<Value> {
+        let only_local = engine.as_deref() == Some("local");
+        let mut why = String::new();
+        if !only_local {
+            match b64_decode(&image).and_then(|b| read_table_claude(&b, ext, account.as_deref())) {
+                Ok(t) => return Ok(json!({ "engine": "claude", "text": t })),
+                Err(e) => why = e,
+            }
+        }
+        match read_table_local(&image, local) {
+            Ok((t, m)) => Ok(json!({ "engine": "local", "model": m, "text": t, "fallback": if why.is_empty() { Value::Null } else { json!(why) } })),
+            Err(e) if why.is_empty() => Err(e),
+            Err(e) => Err(format!("Claude: {why}. Local: {e}")),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn b64_e_tabela() {
+        assert_eq!(b64_decode("data:image/png;base64,T2zDoQ==").unwrap(), "Olá".as_bytes());
+        assert_eq!(b64_decode("YWJj").unwrap(), b"abc");
+        assert!(b64_decode("@@@").is_err());
+        assert_eq!(clean_table("```tsv\na\tb\n1\t2\n```"), "a\tb\n1\t2");
+    }
 
     #[test]
     fn gist_keeps_only_fact_lines() {
