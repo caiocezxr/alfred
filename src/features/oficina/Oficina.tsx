@@ -58,6 +58,7 @@ import { navigate } from '../../app/router'
 import { openItem } from '../work/store'
 import './oficina.css'
 import './arsenal.css'
+import './sessao.css'
 
 const rel = (iso: string) => {
   const m = Math.round((Date.now() - Date.parse(iso)) / 60000)
@@ -276,8 +277,8 @@ export default function Oficina() {
 
   return (
     <div className="ofc">
-      <header className="ofc-bar">
-        <nav className="ofc-areas" aria-label="Áreas da Sessão">
+      <header className="ss-bar">
+        <nav className="ss-areas" aria-label="Áreas da Sessão">
           {(
             [
               ['desks', 'Desks'],
@@ -290,34 +291,32 @@ export default function Oficina() {
             </button>
           ))}
         </nav>
-        <div className="ofc-strip" role="tablist" aria-label="Desks abertas">
+        <div className="ss-tabs" role="tablist" aria-label="Desks abertas">
           {visible.map((m) => {
             const l = liveOf(m.id)
             const co = companies.find((c) => c.id === m.companyId)
-            const on = AGENTS.filter((a) => l.agents[a].status !== 'off' || m.sessions[a])
-            const busy = AGENTS.some((a) => WORKING.has(l.agents[a].status))
+            const busy = AGENTS.some((a) => WORKING.has(l.agents[a].status) && l.agents[a].status !== 'waiting')
+            const ask = AGENTS.some((a) => l.agents[a].status === 'waiting')
+            const on = area === 'desks' && m.id === desk?.id
             return (
               <button
                 key={m.id}
                 role="tab"
-                aria-selected={area === 'desks' && m.id === desk?.id}
-                className={`ofc-tab ${area === 'desks' && m.id === desk?.id ? 'is-on' : ''} ${busy ? 'is-busy' : ''}`}
+                aria-selected={on}
+                className={`ss-tab ${on ? 'is-on' : ''} ${busy ? 'is-busy' : ''} ${ask ? 'is-ask' : ''}`}
                 onClick={() => (setArea('desks'), setCurrent(m.id))}
                 title={`${m.title || 'Desk nova'} · ${m.repos.length ? m.repos.map(base).join(' + ') : 'sem repositório'} · ${rel(m.updatedAt)}`}
                 style={scope === 'all' && co ? ({ ['--co' as string]: co.color } as CSSProperties) : undefined}
               >
-                <span className="ofc-tab-t">{m.title || 'Desk nova'}</span>
-                <span className="ofc-dots">
-                  {on.map((a) => (
-                    <i key={a} className={`is-${a} is-${l.agents[a].status}`} />
-                  ))}
-                </span>
+                {scope === 'all' && co && <i className="ss-tab-co" aria-hidden="true" />}
+                <span>{m.title || 'Desk nova'}</span>
+                {(busy || ask) && <i className="ss-tab-st" aria-hidden="true" />}
               </button>
             )
           })}
         </div>
-        <button className="ofc-new" onClick={newDesk} title="Nova desk (⌘N)">
-          <Icon name="plus" size={12} /> Nova desk
+        <button className="ss-new" onClick={newDesk} title="Nova desk (⌘N)" aria-label="Nova desk">
+          <Icon name="plus" size={13} />
         </button>
       </header>
 
@@ -444,7 +443,7 @@ function DeskView({ desk, companies, scope, fallback, onDelete }: { desk: Mesa; 
   useSettings()
   const l = liveOf(desk.id)
   const [agent, setAgent] = useState<AgentId>(desk.agent)
-  const [bench, setBench] = useState(() => localStorage.getItem('sessao.bench') !== 'closed')
+  const [bench, setBench] = useState(() => localStorage.getItem('sessao.bench') === 'open')
   const [wide, setWide] = useState(true)
   const [peek, setPeek] = useState(false)
   const view = useRef<HTMLDivElement>(null)
@@ -465,65 +464,60 @@ function DeskView({ desk, companies, scope, fallback, onDelete }: { desk: Mesa; 
   const alfred = useAlfredRepo(desk.repos)
 
   return (
-    <div ref={view} className={`ofc-desk-view ${show ? (wide ? 'has-bench' : 'has-peek') : ''}`}>
-      <section className="ofc-center">
-        <header className="ofc-top">
-          <input className="ofc-title display" value={desk.title} placeholder="Desk nova" onChange={(e) => patchMesa(desk.id, { title: e.target.value })} />
-          <RepoChips repos={desk.repos} onChange={(r) => void setRepos(desk, r)} companies={companies} scope={scope} />
-          {desk.itemId && (
-            <button
-              className="ofc-item"
-              onClick={() => {
-                navigate('work')
-                window.setTimeout(() => openItem(desk.itemId!), 120)
-              }}
-              title="Abrir o chamado no Quadro da Workstation"
-            >
-              <Icon name="hash" size={11} />
-              {desk.ticket ? desk.ticket.replace(/^#/, '') : 'chamado'}
-            </button>
-          )}
-          <span className="ofc-grow" />
-          {alfred && <ApplyAlfred repo={alfred} />}
-          {desk.repos.length > 0 && (
-            <div className="ofc-flow">
+    <div ref={view} className={`ofc-desk-view ss-desk ${show ? (wide ? 'has-bench' : 'has-peek') : ''}`}>
+      <section className="ss-main">
+        <header className="ss-head">
+          <div className="ss-head-l">
+            <input className="ss-title" value={desk.title} placeholder="Desk nova" onChange={(e) => patchMesa(desk.id, { title: e.target.value })} spellCheck={false} />
+            <div className="ss-meta">
+              <RepoChips repos={desk.repos} onChange={(r) => void setRepos(desk, r)} companies={companies} scope={scope} />
+              {desk.itemId && (
+                <button
+                  className="ss-meta-b"
+                  onClick={() => {
+                    navigate('work')
+                    window.setTimeout(() => openItem(desk.itemId!), 120)
+                  }}
+                  title="Abrir o chamado no Quadro da Workstation"
+                >
+                  #{desk.ticket ? desk.ticket.replace(/^#/, '') : 'chamado'}
+                </button>
+              )}
               <button
-                role="switch"
-                aria-checked={!!desk.isolate}
-                className={desk.isolate ? 'is-on' : ''}
-                onClick={() => void setIsolate(desk, !desk.isolate)}
-                title={desk.isolate ? `Cada agente na própria branch${desk.trees ? `: ${Object.values(desk.trees).join(', ')}` : ''}. Clique para voltar todos à pasta do repositório.` : 'Isolar: Claude e Codex trabalham ao mesmo tempo, cada um numa cópia própria do repositório (git worktree), sem pisar um no outro'}
+                className={`ss-meta-b ${flow === 'maivado' ? 'is-on' : ''}`}
+                onClick={() => patchMesa(desk.id, { flow: flow === 'livre' ? 'maivado' : 'livre' })}
+                title={flow === 'livre' ? 'Conversa direta. Clique para o /maivado conduzir, com travas' : 'O /maivado conduz: rápido ou avançado, com travas. Clique para conversa direta'}
               >
-                Isolar
+                {flow === 'livre' ? 'livre' : 'mAIvado'}
               </button>
+              {desk.repos.length > 0 && (
+                <button
+                  role="switch"
+                  aria-checked={!!desk.isolate}
+                  className={`ss-meta-b ${desk.isolate ? 'is-on' : ''}`}
+                  onClick={() => void setIsolate(desk, !desk.isolate)}
+                  title={desk.isolate ? `Cada agente na própria branch${desk.trees ? `: ${Object.values(desk.trees).join(', ')}` : ''}. Clique para voltar todos à pasta do repositório.` : 'Isolar: Claude e Codex trabalham ao mesmo tempo, cada um numa cópia própria do repositório (git worktree), sem pisar um no outro'}
+                >
+                  {desk.isolate ? 'isolados' : 'mesma pasta'}
+                </button>
+              )}
             </div>
-          )}
-          <div className="ofc-flow" role="radiogroup" aria-label="Fluxo">
-            {(['livre', 'maivado'] as const).map((f) => (
-              <button key={f} role="radio" aria-checked={flow === f} className={flow === f ? 'is-on' : ''} onClick={() => patchMesa(desk.id, { flow: f })} title={f === 'livre' ? 'Conversa direta' : 'O /maivado conduz: rápido ou avançado, com travas'}>
-                {f === 'livre' ? 'Livre' : 'mAIvado'}
-              </button>
-            ))}
           </div>
-          <button className={`ofc-benchbtn ${show ? 'is-on' : ''}`} onClick={toggle} title={show ? 'Esconder a bancada' : 'Mostrar a bancada: código, arquivos, plano e agentes'}>
-            <span className="ofc-avs">
-              {AGENTS.filter((a) => desk.sessions[a] || l.agents[a].status !== 'off').map((a) => (
-                <span key={a} className={`ofc-av is-${l.agents[a].status}`}>
-                  <ToolMark tool={a} size={11} />
-                </span>
-              ))}
-            </span>
-            Bancada
-            {working.length > 0 && editing && <i className="bn-rec" aria-hidden="true" />}
-          </button>
-          <Kebab onDelete={onDelete} />
+          <div className="ss-head-r">
+            <Roster desk={desk} live={l} agent={agent} onPick={setAgent} />
+            {alfred && <ApplyAlfred repo={alfred} />}
+            <button className={`ss-ico ${show ? 'is-on' : ''}`} onClick={toggle} title={show ? 'Esconder a bancada' : 'Bancada: código, arquivos, plano e terminal'} aria-label="Bancada">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
+                <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2.25" />
+                <path d="M10 2.75v10.5" />
+              </svg>
+              {working.length > 0 && editing && <i className="ss-ico-rec" aria-hidden="true" />}
+            </button>
+            <Kebab onDelete={onDelete} />
+          </div>
         </header>
-        <div className="ofc-postos" role="radiogroup" aria-label="Agentes desta desk">
-          {AGENTS.map((a) => (
-            <Posto key={a} desk={desk} agent={a} live={l.agents[a]} items={l.items} active={agent === a} onPick={() => setAgent(a)} />
-          ))}
-        </div>
         <Feed desk={desk} agent={agent} fallback={fallback} />
+        <Pulse desk={desk} live={l} items={l.items} />
         <Deck desk={desk} agent={agent} setAgent={setAgent} fallback={fallback} />
       </section>
       {show && (
@@ -535,87 +529,102 @@ function DeskView({ desk, companies, scope, fallback, onDelete }: { desk: Mesa; 
   )
 }
 
-const TICK: Record<string, string> = { read: 'r', search: 'r', fetch: 'r', think: 'r', edit: 'e', delete: 'e', move: 'e', execute: 'x' }
+const elapsed = (since: number) => {
+  const s = Math.max(0, Math.round((Date.now() - since) / 1000))
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
 
-function Posto({ desk, agent, live, items, active, onPick }: { desk: Mesa; agent: AgentId; live: Live; items: Item[]; active: boolean; onPick: () => void }) {
-  const [, tick] = useState(0)
-  useEffect(() => {
-    if (!live.since) return
-    const id = window.setInterval(() => tick((n) => n + 1), 1000)
-    return () => window.clearInterval(id)
-  }, [live.since])
-  const tools = useMemo(() => items.filter((x): x is Extract<Item, { role: 'tool' }> => x.agent === agent && x.role === 'tool').slice(-40), [items, agent])
-  const working = WORKING.has(live.status)
-  const last = tools[tools.length - 1]
-  const file = working ? (last?.files[0] ?? live.edits[live.edits.length - 1]?.path) : undefined
-  const secs = live.since ? Math.round((Date.now() - live.since) / 1000) : 0
-  const ctx = live.usage && live.usage.size ? Math.min(1, live.usage.used / live.usage.size) : null
-  const custom = customOf(desk, agent)
-  const line = live.status === 'error' ? (live.error ?? 'deu erro') : working ? live.action || STATUS_PT[live.status] : last ? `por último: ${last.title}` : live.status === 'off' ? 'ainda não entrou nesta desk' : 'à disposição'
+function Roster({ desk, live, agent, onPick }: { desk: Mesa; live: ReturnType<typeof liveOf>; agent: AgentId; onPick: (a: AgentId) => void }) {
   return (
-    <div
-      className={`ofc-posto is-${agent} is-${live.status} ${active ? 'is-on' : ''} ${working ? 'is-working' : ''}`}
-      role="radio"
-      aria-checked={active}
-      tabIndex={0}
-      onClick={onPick}
-      onKeyDown={(e) => {
-        if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
-          e.preventDefault()
-          onPick()
-        }
-      }}
-    >
-      <header>
-        <ToolMark tool={agent} size={13} />
-        <b>{custom?.name ?? AGENT_NAME[agent]}</b>
-        {custom && <small>via {AGENT_NAME[agent]}</small>}
-        <span className="ofc-grow" />
-        <span className="ofc-posto-st">
-          <i aria-hidden="true" />
-          {STATUS_PT[live.status]}
-          {live.since && <time>{secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m${String(secs % 60).padStart(2, '0')}`}</time>}
-        </span>
-        <CastMenu desk={desk} agent={agent} />
-      </header>
-      <div className="ofc-posto-m" title="Modelo em uso neste posto">
-        {modelOf(desk, agent)}
-      </div>
-      <p className="ofc-posto-a" key={line + (file ?? '')}>
-        <span>{line}</span>
-        {file && <code>{base(file)}</code>}
-      </p>
-      <div className="ofc-fita" aria-hidden="true">
-        {tools.map((t) => (
-          <i key={t.id} className={`k-${TICK[t.kind] ?? 'o'} s-${t.status}`} />
-        ))}
-        <span className="ofc-fita-head" />
-      </div>
-      {ctx !== null && <i className={`ofc-posto-ctx ${ctx > 0.8 ? 'is-hot' : ''}`} style={{ ['--w' as string]: `${ctx * 100}%` } as CSSProperties} title={`Contexto: ${Math.round(ctx * 100)}% usado`} />}
+    <div className="ss-roster" role="radiogroup" aria-label="Agentes desta desk">
+      {AGENTS.map((a) => {
+        const st = live.agents[a].status
+        const custom = customOf(desk, a)
+        return (
+          <button
+            key={a}
+            role="radio"
+            aria-checked={agent === a}
+            className={`ss-who is-${a} is-${st} ${agent === a ? 'is-on' : ''} ${WORKING.has(st) ? 'is-working' : ''}`}
+            onClick={() => onPick(a)}
+            title={`${custom?.name ?? AGENT_NAME[a]}${custom ? ` (via ${AGENT_NAME[a]})` : ''} · ${STATUS_PT[st]} · ${modelOf(desk, a)}`}
+          >
+            <i aria-hidden="true" />
+            {custom?.name ?? AGENT_NAME[a]}
+          </button>
+        )
+      })}
     </div>
   )
 }
 
-function CastMenu({ desk, agent }: { desk: Mesa; agent: AgentId }) {
+function Pulse({ desk, live, items }: { desk: Mesa; live: ReturnType<typeof liveOf>; items: Item[] }) {
+  const [, tick] = useState(0)
+  const rows = AGENTS.map((a) => {
+    const l = live.agents[a]
+    const ctx = l.usage && l.usage.size ? Math.min(1, l.usage.used / l.usage.size) : 0
+    return { a, l, ctx }
+  }).filter(({ l, ctx }) => WORKING.has(l.status) || l.status === 'error' || ctx > 0.8)
+  const ticking = rows.some(({ l }) => l.since)
+  useEffect(() => {
+    if (!ticking) return
+    const id = window.setInterval(() => tick((n) => n + 1), 1000)
+    return () => window.clearInterval(id)
+  }, [ticking])
+  if (!rows.length) return null
+  return (
+    <div className="ss-pulse" aria-live="polite">
+      {rows.map(({ a, l, ctx }) => {
+        const working = WORKING.has(l.status)
+        const last = [...items].reverse().find((x): x is Extract<Item, { role: 'tool' }> => x.agent === a && x.role === 'tool')
+        const file = working ? (last?.files[0] ?? l.edits[l.edits.length - 1]?.path) : undefined
+        const line = l.status === 'error' ? (l.error ?? 'deu erro') : working ? l.action || STATUS_PT[l.status] : 'contexto quase cheio: use /compactar'
+        return (
+          <div key={a} className={`ss-pulse-r is-${a} is-${l.status}`}>
+            <i aria-hidden="true" />
+            <b>{agentLabel(desk, a)}</b>
+            <span>{line}</span>
+            {file && <code>{base(file)}</code>}
+            {ctx > 0.8 && working && <em title={`Contexto: ${Math.round(ctx * 100)}% usado`}>{Math.round(ctx * 100)}%</em>}
+            {l.since && working && <time>{elapsed(l.since)}</time>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function AgentPick({ desk, agent, setAgent }: { desk: Mesa; agent: AgentId; setAgent: (a: AgentId) => void }) {
   const s = useSettings()
+  const l = liveOf(desk.id)
   const [open, setOpen] = useState(false)
   const [forge, setForge] = useState<CustomAgent | 'new' | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   useOutside(open, () => setOpen(false), ref)
   const mine = (s.agents ?? []).filter((a) => a.engine === agent)
   const cur = desk.cast?.[agent] ?? null
+  const st = l.agents[agent].status
   return (
-    <div className="ofc-cast" ref={ref} onClick={(e) => e.stopPropagation()}>
-      <button className={`ofc-cast-b ${open ? 'is-open' : ''}`} onClick={() => setOpen((o) => !o)} title="Trocar o agente deste posto ou criar um seu">
+    <div className="ss-pick" ref={ref}>
+      <button className={`ss-to is-${agent} is-${st} ${open ? 'is-open' : ''}`} onClick={() => setOpen((o) => !o)} title="Para quem vai a mensagem e com qual papel">
+        <i aria-hidden="true" />
+        <b>{agentLabel(desk, agent)}</b>
         <Icon name="chevron" size={9} />
       </button>
       {open && (
-        <div className="ofc-menu is-down is-right ofc-cast-menu">
+        <div className="ofc-menu is-up ss-pick-menu">
+          <p className="ss-menu-k">Mandar para</p>
           <div className="ofc-menu-list">
-            <Choice on={!cur || !mine.some((a) => a.id === cur)} name={AGENT_NAME[agent]} desc="Agente padrão, sem instruções extras" onClick={() => (castAgent(desk, agent, null), setOpen(false))} />
+            {AGENTS.map((a) => (
+              <Choice key={a} on={agent === a} name={agentLabel(desk, a)} desc={`${STATUS_PT[l.agents[a].status]} · ${modelOf(desk, a)}`} onClick={() => setAgent(a)} />
+            ))}
+          </div>
+          <p className="ss-menu-k">Papel do {AGENT_NAME[agent]}</p>
+          <div className="ofc-menu-list">
+            <Choice on={!cur || !mine.some((a) => a.id === cur)} name={AGENT_NAME[agent]} desc="Padrão, sem instruções extras" onClick={() => castAgent(desk, agent, null)} />
             {mine.map((a) => (
               <div key={a.id} className="ofc-cast-row">
-                <Choice on={cur === a.id} name={a.name} desc={a.brief.trim().split('\n')[0].slice(0, 80)} onClick={() => (castAgent(desk, agent, a.id), setOpen(false))} />
+                <Choice on={cur === a.id} name={a.name} desc={a.brief.trim().split('\n')[0].slice(0, 80)} onClick={() => castAgent(desk, agent, a.id)} />
                 <button className="ofc-cast-ed" onClick={() => (setForge(a), setOpen(false))}>
                   editar
                 </button>
@@ -824,7 +833,16 @@ function Feed({ desk, agent, fallback }: { desk: Mesa; agent: AgentId; fallback:
   const [show, setShow] = useState(160)
   const ref = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
-  const blocks = useMemo(() => group(l.items.slice(-show)), [l.items, show])
+  const blocks = useMemo(() => {
+    let prev = ''
+    return group(l.items.slice(-show)).map((b) => {
+      if (b.kind !== 'item' || (b.it.role !== 'agent' && b.it.role !== 'user')) return { b, cont: false }
+      const who = `${b.it.role}:${b.it.agent}`
+      const cont = b.it.role === 'agent' && who === prev
+      prev = who
+      return { b, cont }
+    })
+  }, [l.items, show])
   useLayoutEffect(() => {
     const el = ref.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
@@ -838,30 +856,35 @@ function Feed({ desk, agent, fallback }: { desk: Mesa; agent: AgentId; fallback:
         stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90
       }}
     >
-      <div className="ofc-feed-in">
+      <div className="ss-feed-in">
         {l.items.length > show && (
           <button className="ofc-more" onClick={() => setShow((n) => n + 160)}>
             Ver anteriores ({l.items.length - show})
           </button>
         )}
         {l.items.length === 0 && (
-          <div className="ofc-empty">
-            <ToolMark tool={agent} size={26} />
-            <h3 className="display">O que vamos fazer?</h3>
-            <p>{desk.repos.length ? `Trabalhando em ${desk.repos.map(base).join(' + ')}.` : 'Sem repositório: bom pra pensar, planejar e perguntar. Adicione um ou mais lá em cima quando for mexer em código.'}</p>
-            <div className="ofc-ideas">
+          <div className="ss-empty">
+            <h3>O que vamos fazer?</h3>
+            <p>{desk.repos.length ? `Trabalhando em ${desk.repos.map(base).join(' + ')}, com ${agentLabel(desk, agent)}.` : 'Sem repositório: bom pra pensar, planejar e perguntar. Adicione um lá em cima quando for mexer em código.'}</p>
+            <ul>
               {IDEAS.map((t) => (
-                <button key={t} onClick={() => window.dispatchEvent(new CustomEvent('ofc:fill', { detail: t }))}>
-                  {t}
-                </button>
+                <li key={t}>
+                  <button onClick={() => window.dispatchEvent(new CustomEvent('ofc:fill', { detail: t }))}>{t}</button>
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
         )}
-        {blocks.map((b) => (b.kind === 'tools' ? <Tools key={b.id} list={b.list} /> : <Row key={b.it.id} it={b.it} desk={desk.id} mesa={desk} fallback={fallback} />))}
+        {blocks.map(({ b, cont }) => (b.kind === 'tools' ? <Tools key={b.id} list={b.list} /> : <Row key={b.it.id} it={b.it} cont={cont} desk={desk.id} mesa={desk} fallback={fallback} />))}
       </div>
     </div>
   )
+}
+
+const kinds = (list: Extract<Item, { role: 'tool' }>[]) => {
+  const seen = new Map<string, number>()
+  for (const t of list) for (const w of t.title.split(' · ')) seen.set(w, (seen.get(w) ?? 0) + 1)
+  return [...seen].map(([w, n]) => (n > 1 ? `${w} ×${n}` : w)).join(', ')
 }
 
 function Tools({ list }: { list: Extract<Item, { role: 'tool' }>[] }) {
@@ -870,15 +893,15 @@ function Tools({ list }: { list: Extract<Item, { role: 'tool' }>[] }) {
   const running = list.some((t) => t.status === 'in_progress' || t.status === 'pending')
   const failed = list.filter((t) => t.status === 'failed').length
   return (
-    <div className={`ofc-tools ${open ? 'is-open' : ''} ${running ? 'is-running' : ''}`}>
+    <div className={`ss-tools ${open ? 'is-open' : ''} ${running ? 'is-running' : ''}`}>
       <button onClick={() => setOpen((o) => !o)}>
         <i aria-hidden="true" />
-        <span className="ofc-tools-t">{running ? last.title : `${list.length} ${list.length === 1 ? 'ação' : 'ações'}`}</span>
-        {!running && <span className="ofc-tools-l">{last.title}</span>}
+        <span className="ss-tools-t">{running ? last.title : `${list.length} ${list.length === 1 ? 'ação' : 'ações'}`}</span>
+        {!running && <span className="ss-tools-l">{kinds(list)}</span>}
         {failed > 0 && <em>{failed} falhou</em>}
-        <Icon name="chevron" size={10} />
+        <Icon name="chevron" size={9} />
       </button>
-      <div className="ofc-tools-b">
+      <div className="ss-tools-b">
         <ol>
           {list.map((t) => (
             <li key={t.id} className={`is-${t.status}`}>
@@ -896,22 +919,21 @@ function Tools({ list }: { list: Extract<Item, { role: 'tool' }>[] }) {
 
 const clock = (at: number) => (at > 1e11 ? new Date(at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '')
 
-function Row({ it, desk, mesa, fallback }: { it: Item; desk: string; mesa: Mesa; fallback: string }) {
+function Row({ it, cont, desk, mesa, fallback }: { it: Item; cont?: boolean; desk: string; mesa: Mesa; fallback: string }) {
   const [open, setOpen] = useState(false)
   if (it.role === 'user')
     return (
-      <div className={`ofc-e is-ask is-${it.agent}`}>
-        <div className="ofc-e-who">
-          <b>Caio</b>
+      <div className={`ss-ask is-${it.agent}`}>
+        <div className="ss-lbl">
           <span>
-            <i aria-hidden="true">→</i> {it.alias ?? AGENT_NAME[it.agent]}
+            para <b>{it.alias ?? AGENT_NAME[it.agent]}</b>
           </span>
           <time>{clock(it.at)}</time>
         </div>
-        <div className="ofc-e-b">
+        <div className="ss-ask-b">
           <Text text={it.text} />
           {(!!it.skills?.length || !!it.shared) && (
-            <div className="ofc-e-x">
+            <div className="ss-x">
               {!!it.skills?.length && (
                 <span>
                   <Icon name="spark" size={10} /> com {it.skills.join(', ')}
@@ -929,22 +951,25 @@ function Row({ it, desk, mesa, fallback }: { it: Item; desk: string; mesa: Mesa;
     )
   if (it.role === 'agent')
     return (
-      <article className={`ofc-e is-say is-${it.agent} ${it.open ? 'is-live' : ''}`}>
-        <div className="ofc-e-who">
-          <b>
-            <ToolMark tool={it.agent} size={11} /> {it.alias ?? AGENT_NAME[it.agent]}
-          </b>
-          {it.model && <span title="Modelo que respondeu">{it.model}</span>}
-          <time>{clock(it.at)}</time>
-        </div>
-        <div className="ofc-e-b">
+      <article className={`ss-say is-${it.agent} ${it.open ? 'is-live' : ''} ${cont ? 'is-cont' : ''}`}>
+        {!cont && (
+          <div className="ss-lbl">
+            <b>
+              <i aria-hidden="true" />
+              {it.alias ?? AGENT_NAME[it.agent]}
+            </b>
+            {it.model && <span title="Modelo que respondeu">{it.model}</span>}
+            <time>{clock(it.at)}</time>
+          </div>
+        )}
+        <div className="ss-say-b">
           <Text text={it.text} />
         </div>
       </article>
     )
   if (it.role === 'thought')
     return (
-      <button className={`ofc-th ${open ? 'is-open' : ''} ${it.open ? 'is-live' : ''}`} onClick={() => setOpen((o) => !o)}>
+      <button className={`ss-th ${open ? 'is-open' : ''} ${it.open ? 'is-live' : ''}`} onClick={() => setOpen((o) => !o)}>
         <span>
           <i aria-hidden="true" /> {it.open ? 'pensando' : 'raciocínio'}
           <Icon name="chevron" size={9} />
@@ -1129,22 +1154,6 @@ function AuthCard({ desk, done }: { desk: string; done: boolean }) {
   )
 }
 
-function Menu({ label, value, title, children, wide }: { label: string; value: ReactNode; title?: string; children: (close: () => void) => ReactNode; wide?: boolean }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useOutside(open, () => setOpen(false), ref)
-  return (
-    <div className="ofc-pick" ref={ref}>
-      <button className={`ofc-pick-b ${open ? 'is-open' : ''}`} onClick={() => setOpen((o) => !o)} title={title}>
-        <small>{label}</small>
-        <span>{value}</span>
-        <Icon name="chevron" size={9} />
-      </button>
-      {open && <div className={`ofc-menu is-up ${wide ? 'is-wide' : ''}`}>{children(() => setOpen(false))}</div>}
-    </div>
-  )
-}
-
 function Choice({ on, name, desc, onClick }: { on: boolean; name: ReactNode; desc?: string; onClick: () => void }) {
   return (
     <button className={`ofc-choice ${on ? 'is-on' : ''}`} onClick={onClick}>
@@ -1168,104 +1177,77 @@ function Controls({ desk, agent, live }: { desk: Mesa; agent: AgentId; live: Liv
   const modelName = auto ? 'Auto' : (model?.options.find((o) => o.value === curModel)?.name ?? curModel ?? '—')
   const curEffort = prefs[effortKey(agent)] ?? null
   const set = (c: ConfigOption | undefined, v: string | null) => c && void setOption(desk, agent, c.id, v)
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useOutside(open, () => setOpen(false), ref)
   if (!cfg.length)
     return (
       <span className="ofc-wait">
         {agent === 'local' ? 'procurando modelos no Ollama…' : live.status === 'opening' ? 'abrindo o agente…' : 'opções aparecem na primeira mensagem'}
       </span>
     )
+  const effortName = curEffort ? (EFFORT_PT[curEffort] ?? curEffort) : auto ? null : effort ? (EFFORT_PT[effort.currentValue] ?? effort.currentValue) : null
+  const modeName = mode ? (MODE_PT[prefs.mode ?? mode.currentValue] ?? mode.currentValue) : null
   return (
-    <div className="ofc-ctrls">
-      {model && (
-        <Menu label="modelo" value={modelName} wide>
-          {(close) => (
-            <div className="ofc-menu-list">
-              {agent !== 'local' && (
-                <Choice
-                  on={auto}
-                  name={
-                    <>
-                      Auto <em className="ofc-tag">recomendado</em>
-                    </>
-                  }
-                  desc="Escolhe modelo e esforço a cada mensagem, pelo tipo do pedido"
-                  onClick={() => {
-                    set(model, 'auto')
-                    close()
-                  }}
-                />
-              )}
-              {model.options
-                .filter((o) => o.value !== 'default')
-                .map((o) => (
+    <div className="ss-tune" ref={ref}>
+      <button className={`ss-tune-b ${open ? 'is-open' : ''}`} onClick={() => setOpen((o) => !o)} title="Modelo, esforço e permissão">
+        {[modelName, effortName, modeName].filter(Boolean).map((t, i) => (
+          <span key={i}>{t}</span>
+        ))}
+        <Icon name="chevron" size={9} />
+      </button>
+      {open && (
+        <div className="ofc-menu is-up ss-tune-menu">
+          {model && (
+            <section>
+              <p className="ss-menu-k">Modelo</p>
+              <div className="ofc-menu-list">
+                {agent !== 'local' && (
                   <Choice
-                    key={o.value}
-                    on={!auto && curModel === o.value}
-                    name={o.name}
-                    desc={modelDesc(o.value, o.description)}
-                    onClick={() => {
-                      set(model, o.value)
-                      close()
-                    }}
+                    on={auto}
+                    name={
+                      <>
+                        Auto <em className="ofc-tag">recomendado</em>
+                      </>
+                    }
+                    desc="Escolhe modelo e esforço a cada mensagem, pelo tipo do pedido"
+                    onClick={() => set(model, 'auto')}
                   />
-                ))}
-            </div>
+                )}
+                {model.options
+                  .filter((o) => o.value !== 'default')
+                  .map((o) => (
+                    <Choice key={o.value} on={!auto && curModel === o.value} name={o.name} desc={modelDesc(o.value, o.description)} onClick={() => set(model, o.value)} />
+                  ))}
+              </div>
+            </section>
           )}
-        </Menu>
-      )}
-      {effort && (
-        <Menu label="esforço" value={curEffort ? (EFFORT_PT[curEffort] ?? curEffort) : auto ? 'Auto' : (EFFORT_PT[effort.currentValue] ?? effort.currentValue)}>
-          {(close) => (
-            <div className="ofc-menu-list">
-              {auto && (
-                <Choice
-                  on={!curEffort}
-                  name="Auto"
-                  desc="Acompanha o modelo escolhido pelo Auto"
-                  onClick={() => {
-                    set(effort, null)
-                    close()
-                  }}
-                />
-              )}
-              {effort.options
-                .filter((o) => o.value !== 'default')
-                .map((o) => (
-                  <Choice
-                    key={o.value}
-                    on={(curEffort ?? (auto ? '' : effort.currentValue)) === o.value}
-                    name={EFFORT_PT[o.value] ?? o.name}
-                    onClick={() => {
-                      set(effort, o.value)
-                      close()
-                    }}
-                  />
-                ))}
-            </div>
+          {effort && (
+            <section>
+              <p className="ss-menu-k">Esforço</p>
+              <div className="ofc-menu-list">
+                {auto && <Choice on={!curEffort} name="Auto" desc="Acompanha o modelo" onClick={() => set(effort, null)} />}
+                {effort.options
+                  .filter((o) => o.value !== 'default')
+                  .map((o) => (
+                    <Choice key={o.value} on={(curEffort ?? (auto ? '' : effort.currentValue)) === o.value} name={EFFORT_PT[o.value] ?? o.name} onClick={() => set(effort, o.value)} />
+                  ))}
+              </div>
+            </section>
           )}
-        </Menu>
-      )}
-      {mode && (
-        <Menu label="permissão" value={MODE_PT[prefs.mode ?? mode.currentValue] ?? mode.currentValue}>
-          {(close) => (
-            <div className="ofc-menu-list">
-              {mode.options
-                .filter((o) => !HIDE.has(o.value) || o.value === (prefs.mode ?? mode.currentValue))
-                .map((o) => (
-                  <Choice
-                    key={o.value}
-                    on={(prefs.mode ?? mode.currentValue) === o.value}
-                    name={MODE_PT[o.value] ?? o.name}
-                    desc={o.description}
-                    onClick={() => {
-                      set(mode, o.value)
-                      close()
-                    }}
-                  />
-                ))}
-            </div>
+          {mode && (
+            <section>
+              <p className="ss-menu-k">Permissão</p>
+              <div className="ofc-menu-list">
+                {mode.options
+                  .filter((o) => !HIDE.has(o.value) || o.value === (prefs.mode ?? mode.currentValue))
+                  .map((o) => (
+                    <Choice key={o.value} on={(prefs.mode ?? mode.currentValue) === o.value} name={MODE_PT[o.value] ?? o.name} desc={o.description} onClick={() => set(mode, o.value)} />
+                  ))}
+              </div>
+            </section>
           )}
-        </Menu>
+        </div>
       )}
     </div>
   )
@@ -1337,7 +1319,7 @@ function Deck({ desk, agent, setAgent, fallback }: { desk: Mesa; agent: AgentId;
     const el = box.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = `${Math.min(260, Math.max(44, el.scrollHeight))}px`
+    el.style.height = `${Math.min(260, Math.max(24, el.scrollHeight))}px`
   }, [text])
 
   const go = () => {
@@ -1442,14 +1424,11 @@ function Deck({ desk, agent, setAgent, fallback }: { desk: Mesa; agent: AgentId;
         }}
         onKeyDown={onKey}
         onPaste={(e) => void onPaste(e)}
+        rows={1}
         placeholder={`Fala com o ${agentLabel(desk, agent)}…   / para comandos`}
       />
       <div className="ofc-deck-bar">
-        <button className="ofc-to" onClick={() => setAgent(AGENTS[(AGENTS.indexOf(agent) + 1) % AGENTS.length])} title="Para quem vai a mensagem. Clique para trocar, ou escolha um posto lá em cima.">
-          <small>para</small>
-          <ToolMark tool={agent} size={11} />
-          <b>{agentLabel(desk, agent)}</b>
-        </button>
+        <AgentPick desk={desk} agent={agent} setAgent={setAgent} />
         <Controls desk={desk} agent={agent} live={live} />
         <span className="ofc-grow" />
         <input

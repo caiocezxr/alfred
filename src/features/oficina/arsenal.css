@@ -6,7 +6,7 @@
 }
 
 .ofc-desk-view.has-bench {
-  grid-template-columns: minmax(0, 1fr) minmax(340px, 34%);
+  grid-template-columns: minmax(0, 1fr) clamp(340px, 30%, 380px);
 }
 
 .ofc-bench {
@@ -50,39 +50,6 @@
   background: var(--surface-solid);
   color: var(--text);
   box-shadow: 0 0 0 1px var(--ofc-line);
-}
-
-.ofc-benchbtn {
-  position: relative;
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 8px;
-  height: 32px;
-  padding: 0 12px 0 6px;
-  border: 0;
-  border-radius: 10px;
-  background: none;
-  color: var(--text-2);
-  font: 650 12px/1 var(--font-ui);
-  cursor: pointer;
-}
-
-.ofc-benchbtn:hover,
-.ofc-benchbtn.is-on {
-  background: var(--ofc-soft);
-  color: var(--text);
-}
-
-.ofc-avs {
-  display: inline-flex;
-  gap: 3px;
-}
-
-.ofc-avs .sx-mark {
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
 }
 
 .bn-rec {
@@ -1191,15 +1158,6 @@
   flex: none;
 }
 
-.ofc-title {
-  flex: 0 1 200px;
-}
-
-.ofc-top .ofc-repos {
-  flex: 0 1 auto;
-  min-width: 120px;
-}
-
 .ofc-deck-bar {
   flex-wrap: wrap;
   row-gap: 6px;
@@ -1299,26 +1257,6 @@
 .ofc-skchip button:hover {
   background: color-mix(in srgb, var(--text) 12%, transparent);
   color: var(--text);
-}
-
-.ofc-item {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 8px;
-  background: color-mix(in srgb, #c9a45c 15%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, #c9a45c 40%, transparent);
-  color: var(--text);
-  font: 650 11.5px/1 var(--ofc-mono);
-  cursor: pointer;
-}
-
-.ofc-item:hover {
-  background: color-mix(in srgb, #c9a45c 24%, transparent);
 }
 
 .apl {
