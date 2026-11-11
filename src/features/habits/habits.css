@@ -1,6 +1,15 @@
+:root {
+  --hb-done: #3fa86d;
+  --hb-unmarked: color-mix(in srgb, var(--text) 30%, transparent);
+}
+
+:root[data-scheme='dark'] {
+  --hb-done: #5cc58b;
+}
+
 .hb {
-  --hb-led: #ffb547;
-  --hb-led-dim: color-mix(in srgb, #ffb547 45%, transparent);
+  --hb-led: var(--hb-done);
+  --hb-led-dim: color-mix(in srgb, var(--hb-done) 45%, transparent);
   --hb-plate: color-mix(in srgb, var(--surface-solid) 82%, var(--text) 4%);
   --hb-line: color-mix(in srgb, var(--text) 10%, transparent);
   --hb-metal-1: #f4f5f7;
@@ -221,18 +230,18 @@
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.3), transparent 50%), #4a3a22;
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.3), transparent 50%), #1f3b2b;
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 0 2px color-mix(in srgb, var(--text) 8%, transparent);
   transition: background 200ms ease, box-shadow 300ms ease;
 }
 
 .hb-mod.is-done .hb-led {
-  background: radial-gradient(circle at 35% 30%, #fff6e0, transparent 55%), var(--hb-led);
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.5), transparent 55%), var(--hb-led);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--hb-led) 30%, transparent), 0 0 14px 2px var(--hb-led-dim);
 }
 
 .hb-mod.is-minimum .hb-led {
-  background: radial-gradient(circle at 35% 30%, #fff6e0, transparent 55%), color-mix(in srgb, var(--hb-led) 55%, #4a3a22);
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.5), transparent 55%), color-mix(in srgb, var(--hb-led) 55%, #1f3b2b);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--hb-led) 20%, transparent), 0 0 8px var(--hb-led-dim);
 }
 
@@ -966,8 +975,8 @@
 }
 
 .hs-cats button.is-on {
-  border-color: color-mix(in srgb, #ffb547 60%, transparent);
-  background: color-mix(in srgb, #ffb547 14%, transparent);
+  border-color: color-mix(in srgb, var(--hb-done) 60%, transparent);
+  background: color-mix(in srgb, var(--hb-done) 14%, transparent);
   color: var(--text);
 }
 
@@ -1157,9 +1166,9 @@
 
 .hs-marks li.is-got .hs-medal {
   background:
-    radial-gradient(circle at 35% 30%, #fff3d0, transparent 45%),
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.5), transparent 45%),
     conic-gradient(from 200deg, #a8772a, #f3cf7c, #b8862f, #f6dc95, #a8772a);
-  box-shadow: 0 0 0 2px color-mix(in srgb, #ffb547 30%, transparent), 0 6px 14px -6px rgba(168, 119, 42, 0.8);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--hb-done) 30%, transparent), 0 6px 14px -6px rgba(0, 0, 0, 0.45);
   color: #3a2608;
   animation: hs-medal 520ms cubic-bezier(0.2, 1.4, 0.4, 1) backwards;
   animation-delay: calc(var(--k, 0) * 70ms + 150ms);
@@ -1192,11 +1201,11 @@
 }
 
 .hs-heat i.is-done {
-  background: #ffb547;
+  background: var(--hb-done);
 }
 
 .hs-heat i.is-min {
-  background: linear-gradient(135deg, #ffb547 50%, color-mix(in srgb, #ffb547 25%, transparent) 50%);
+  background: linear-gradient(135deg, var(--hb-done) 50%, color-mix(in srgb, var(--hb-done) 25%, transparent) 50%);
 }
 
 .hs-heat i.is-miss {
@@ -1261,7 +1270,7 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #ffb547;
+  background: var(--hb-done);
 }
 
 .hs-muted {
@@ -1319,7 +1328,7 @@
   font: 600 10px/1 'SF Mono', ui-monospace, Menlo, monospace;
   letter-spacing: 0.26em;
   text-transform: uppercase;
-  color: #ffb547;
+  color: var(--hb-done);
 }
 
 .hc-cel-medal {
@@ -1331,7 +1340,7 @@
   margin: 6px 0 4px;
   border-radius: 50%;
   background:
-    radial-gradient(circle at 35% 28%, #fff3d0, transparent 42%),
+    radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.5), transparent 42%),
     conic-gradient(from 200deg, #a8772a, #f3cf7c, #b8862f, #f6dc95, #a8772a);
   box-shadow: 0 0 0 6px rgba(255, 181, 71, 0.16), 0 0 60px rgba(255, 181, 71, 0.35), inset 0 -6px 12px rgba(0, 0, 0, 0.25);
   color: #3a2608;
@@ -1390,9 +1399,9 @@
 .hb-catch {
   padding: 14px 16px 12px;
   border-radius: calc(var(--radius-lg) + 2px);
-  border: 1px solid color-mix(in srgb, #ffb547 40%, var(--hb-line));
+  border: 1px solid color-mix(in srgb, var(--hb-done) 40%, var(--hb-line));
   background:
-    linear-gradient(90deg, color-mix(in srgb, #ffb547 10%, transparent), transparent 60%),
+    linear-gradient(90deg, color-mix(in srgb, var(--hb-done) 10%, transparent), transparent 60%),
     var(--hb-plate);
   box-shadow: inset 0 1px 0 var(--highlight);
 }
@@ -1418,7 +1427,7 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #ffb547;
+  background: var(--hb-done);
   box-shadow: 0 0 8px rgba(255, 181, 71, 0.8);
   animation: wk-led 1.6s ease-in-out infinite;
 }
@@ -1483,8 +1492,8 @@
 }
 
 .hb-catch-act .is-yes {
-  border-color: color-mix(in srgb, #ffb547 55%, transparent);
-  background: color-mix(in srgb, #ffb547 16%, transparent);
+  border-color: color-mix(in srgb, var(--hb-done) 55%, transparent);
+  background: color-mix(in srgb, var(--hb-done) 16%, transparent);
   color: var(--text);
 }
 
@@ -1503,8 +1512,8 @@
 .hb-legend .is-miss {
   position: relative;
   background: transparent;
-  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, #ffb547 55%, transparent);
-  background-image: repeating-linear-gradient(135deg, transparent 0 3px, color-mix(in srgb, #ffb547 18%, transparent) 3px 4.5px);
+  box-shadow: inset 0 0 0 1.5px var(--hb-unmarked);
+  background-image: repeating-linear-gradient(135deg, transparent 0 3px, color-mix(in srgb, var(--hb-unmarked) 45%, transparent) 3px 4.5px);
 }
 
 .hb-dots .is-fail,
@@ -1537,9 +1546,9 @@
 }
 
 .hs-heat i.is-miss {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, #ffb547 55%, transparent);
+  box-shadow: inset 0 0 0 1px var(--hb-unmarked);
 }
 
 .hs-nums dd.is-warn {
-  color: #ffb547;
+  color: var(--warn);
 }
