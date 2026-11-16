@@ -76,7 +76,7 @@ fn ensure_library(root: &Path) -> R<()> {
     std::fs::create_dir_all(root.join("skills")).map_err(|e| e.to_string())?;
     let manifest = root.join(".claude-plugin/plugin.json");
     if !manifest.exists() {
-        std::fs::write(&manifest, json!({ "name": "alfred", "version": "1.0.0", "description": "Skills carregadas pela Sessão do Shed" }).to_string()).map_err(|e| e.to_string())?;
+        std::fs::write(&manifest, json!({ "name": "alfred", "version": "1.0.0", "description": "Skills carregadas pela Sessão do Yori" }).to_string()).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -103,7 +103,7 @@ pub fn sessao_skills(state: State<AppState>) -> R<Vec<Skill>> {
     }
     let lib = library(&state);
     for d in subdirs(&lib.join("skills")) {
-        if let Some(s) = read_skill(&d, "alfred", Some("alfred"), "Shed") {
+        if let Some(s) = read_skill(&d, "alfred", Some("alfred"), "Yori") {
             out.push(s);
         }
     }
@@ -501,14 +501,14 @@ mod tests {
     }
 }
 
-const APP_NAME: &str = "Shed";
+const APP_NAME: &str = "Yori";
 
 fn alfred_repo(path: &str) -> R<PathBuf> {
     let dir = safe_dir(path)?;
-    let conf = std::fs::read_to_string(dir.join("src-tauri/tauri.conf.json")).map_err(|_| "essa pasta não é o repositório do Shed".to_string())?;
+    let conf = std::fs::read_to_string(dir.join("src-tauri/tauri.conf.json")).map_err(|_| "essa pasta não é o repositório do Yori".to_string())?;
     let v: Value = serde_json::from_str(&conf).map_err(|_| "tauri.conf.json inválido".to_string())?;
     if v.get("productName").and_then(Value::as_str) != Some(APP_NAME) {
-        return Err("essa pasta não é o repositório do Shed".into());
+        return Err("essa pasta não é o repositório do Yori".into());
     }
     Ok(dir)
 }
@@ -582,7 +582,7 @@ pub fn sessao_alfred_build(app: tauri::AppHandle, path: String) -> R<()> {
         if bundle.exists() {
             say("done", bundle.to_string_lossy().to_string());
         } else {
-            say("fail", "a compilação terminou mas o Shed.app não apareceu".into());
+            say("fail", "a compilação terminou mas o Yori.app não apareceu".into());
         }
         BUILDING.store(false, Ordering::SeqCst);
     });
@@ -597,7 +597,7 @@ pub fn sessao_alfred_install(app: tauri::AppHandle, state: State<AppState>, path
         return Err("compile antes de aplicar".into());
     }
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let target = exe.ancestors().find(|p| p.extension().is_some_and(|e| e == "app")).map(Path::to_path_buf).ok_or("o Shed não está rodando de um .app")?;
+    let target = exe.ancestors().find(|p| p.extension().is_some_and(|e| e == "app")).map(Path::to_path_buf).ok_or("o Yori não está rodando de um .app")?;
     if !target.starts_with("/Applications") && !target.starts_with(home()?) {
         return Err("lugar de instalação inesperado".into());
     }

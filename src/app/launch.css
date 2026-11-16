@@ -942,3 +942,7 @@
 .lx-snd.is-on {
   color: var(--ink-2);
 }
+
+/* marca Yori: monocromática, sem brilho */
+.lx-word { display: inline-flex; align-items: center; height: 28px; color: #f6f4ef; }
+.lx-word svg { height: 100%; width: auto; display: block; }

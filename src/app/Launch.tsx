@@ -6,6 +6,7 @@ import { CompanyMark } from '../features/work/brand'
 import { isUnlocked, markUnlocked, setPassword, verifyPassword, warmLocks } from '../shared/lock'
 import '@fontsource/bodoni-moda/700.css'
 import { setSound, sfx, soundOn, wakeAudio } from './sound'
+import yoriLockup from './brand/yori-lockup.svg?raw'
 import './launch.css'
 
 const NEW_COLORS = ['#1F8A5B', '#E07A2E', '#7A4FE0', '#D4373F', '#1A9BB0', '#C9A227']
@@ -402,7 +403,7 @@ export function Launch({ onDone, intoRitual }: { onDone: () => void; intoRitual:
       </div>
 
       <header className="lx-top">
-        <span className="lx-word">Shed</span>
+        <span className="lx-word" role="img" aria-label="Yori" dangerouslySetInnerHTML={{ __html: yoriLockup }} />
         <span className="lx-top-r">
           <button
             type="button"
