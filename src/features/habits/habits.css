@@ -1648,3 +1648,167 @@
   .hb-zap path, .hb-mod.is-heat .hb-bezel, .hb-lever, .hb-mod.heat-3::after, .hb-bolt { animation: none !important; }
   .hb-zap path { opacity: 0.6; }
 }
+
+/* ── v2: marcas por hábito, ver mês, interruptor mais vivo ── */
+.hb-grow { flex: 1; }
+.hb-cal-h { align-items: center; }
+.hb-cal-c { font: 500 11.5px/1 var(--font-mono, 'SF Mono', ui-monospace, monospace); color: var(--text-2); }
+.hb-cal-edit {
+  padding: 3px 8px; border-radius: 999px; font-size: 11px;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.hb-cal-back { display: none; }
+.hb-cal-btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px;
+  border: 1px solid var(--hb-line); border-radius: 8px; background: color-mix(in srgb, var(--text) 3%, transparent);
+  font-size: 12px; color: var(--text-2); cursor: pointer;
+}
+.hb-cal-btn:hover { color: var(--text); background: color-mix(in srgb, var(--text) 7%, transparent); }
+.hb-cal-d i { display: none; }
+
+.hb-marks { display: flex; gap: 2px; height: 4px; justify-content: center; }
+.hb-marks.is-rest { width: 4px; }
+.hb-marks i {
+  display: block !important; width: 6px; height: 4px; border-radius: 2px; transform: none;
+  background: color-mix(in srgb, var(--text) 13%, transparent); box-shadow: none;
+}
+.hb-marks i.is-done { background: var(--accent); }
+.hb-marks i.is-minimum { background: color-mix(in srgb, var(--accent) 45%, transparent); }
+.hb-cal-d.is-full { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.hb-cal-d.is-sel { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 60%, transparent); }
+
+.hb-month-scrim {
+  position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px;
+  background: color-mix(in srgb, #000 28%, transparent); backdrop-filter: blur(6px);
+  animation: hb-fade 0.18s ease-out;
+}
+@keyframes hb-fade { from { opacity: 0; } }
+.hb-month {
+  width: min(440px, 100%); padding: 16px 18px 14px; border-radius: 18px;
+  border: 1px solid var(--hb-line); background: var(--surface-solid, var(--hb-plate));
+  box-shadow: 0 40px 80px -30px rgba(0, 0, 0, 0.5);
+  animation: hb-pop 0.24s cubic-bezier(0.34, 1.4, 0.5, 1);
+}
+@keyframes hb-pop { from { opacity: 0; transform: scale(0.96) translateY(6px); } }
+.hb-month-h { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.hb-month-t { font-size: 15px; font-weight: 600; text-transform: capitalize; min-width: 130px; text-align: center; }
+.hb-month-rate { font: 500 11.5px/1 var(--font-mono, 'SF Mono', ui-monospace, monospace); color: var(--accent); }
+.hb-month-x { width: 26px; height: 26px; border: 0; border-radius: 8px; background: none; font-size: 18px; color: var(--text-2); cursor: pointer; }
+.hb-month-x:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
+.hb-month-wk, .hb-month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.hb-month-wk span { text-align: center; font: 600 9.5px/1 var(--font-mono, 'SF Mono', ui-monospace, monospace); color: var(--text-2); opacity: 0.7; padding-bottom: 6px; }
+.hb-month-d {
+  aspect-ratio: 1; display: grid; align-content: center; justify-items: center; gap: 5px;
+  border: 1px solid transparent; border-radius: 10px; cursor: pointer;
+  background: color-mix(in srgb, var(--accent) calc(var(--f) * 16%), color-mix(in srgb, var(--text) 3%, transparent));
+  transition: transform 0.12s, background 0.15s;
+}
+.hb-month-d:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--hb-line); }
+.hb-month-d.is-full { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.hb-month-d.is-today .hb-cal-n { font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.hb-month-d.is-sel { box-shadow: 0 0 0 1.5px var(--accent); }
+.hb-month-d.is-future { opacity: 0.3; cursor: default; background: none; }
+.hb-month-f { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--hb-line); font-size: 12.5px; }
+.hb-month-f b { display: block; margin-bottom: 6px; }
+.hb-month-f ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.hb-month-f li { display: flex; align-items: center; gap: 7px; color: var(--text-2); }
+.hb-month-f li i { width: 8px; height: 8px; border-radius: 3px; background: color-mix(in srgb, var(--text) 14%, transparent); }
+.hb-month-f li.is-done i { background: var(--accent); }
+.hb-month-f li.is-minimum i { background: color-mix(in srgb, var(--accent) 45%, transparent); }
+.hb-month-f li.is-done, .hb-month-f li.is-minimum { color: var(--text); }
+.hb-month-f li em { margin-left: auto; font-style: normal; font: 500 11px/1 var(--font-mono, 'SF Mono', ui-monospace, monospace); }
+.hb-month-hint { display: block; margin-top: 8px; font-size: 11px; color: var(--text-2); opacity: 0.8; }
+
+/* raios: centrados no aro, desenhando-se como descarga */
+.hb-zap { inset: 50% auto auto 50%; width: 120px; height: 120px; margin: -60px 0 0 -60px; }
+.hb-zap path {
+  stroke-dasharray: 40; stroke-dashoffset: 40;
+  animation-name: hb-arc2; animation-timing-function: ease-out; animation-iteration-count: infinite;
+}
+@keyframes hb-arc2 {
+  0% { opacity: 0; stroke-dashoffset: 40; }
+  3% { opacity: 1; stroke-dashoffset: 0; }
+  7% { opacity: 0.3; }
+  9% { opacity: 1; }
+  14% { opacity: 0; stroke-dashoffset: -40; }
+  100% { opacity: 0; stroke-dashoffset: -40; }
+}
+
+/* faíscas orbitando o aro (1 a 3 conforme a sequência) */
+.hb-orbit {
+  position: absolute; left: 50%; top: 50%; width: 76px; height: 76px; margin: -38px 0 0 -38px;
+  pointer-events: none; z-index: 3;
+}
+.hb-orbit i {
+  position: absolute; inset: 0; border-radius: 50%;
+  animation: hb-spin calc(3.4s - var(--heat) * 0.7s) linear infinite;
+  animation-delay: calc(var(--k) * -1.1s);
+}
+.hb-orbit i::before {
+  content: ''; position: absolute; left: 50%; top: -2px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%;
+  background: #fff; box-shadow: 0 0 4px 1px var(--zap), 0 0 12px 3px var(--zap), -6px 1px 6px -1px var(--zap);
+}
+@keyframes hb-spin { to { transform: rotate(360deg); } }
+
+/* surto ao ligar: anel de choque + estilhaços */
+.hb-surge { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; z-index: 4; }
+.hb-surge::before {
+  content: ''; position: absolute; left: -30px; top: -30px; width: 60px; height: 60px; border-radius: 50%;
+  border: 2px solid var(--zap, var(--accent));
+  box-shadow: 0 0 18px var(--zap, var(--accent)), inset 0 0 12px var(--zap, var(--accent));
+  animation: hb-ring 0.6s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+.hb-surge i {
+  position: absolute; left: -1px; top: -1px; width: 2px; height: 10px; border-radius: 2px;
+  background: var(--zap, var(--accent)); box-shadow: 0 0 6px var(--zap, var(--accent));
+  transform: rotate(var(--a)) translateY(-28px);
+  animation: hb-shard 0.55s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+@keyframes hb-ring { from { transform: scale(0.8); opacity: 1; } to { transform: scale(1.9); opacity: 0; } }
+@keyframes hb-shard {
+  from { transform: rotate(var(--a)) translateY(-26px) scaleY(1); opacity: 1; }
+  to { transform: rotate(var(--a)) translateY(-56px) scaleY(0.2); opacity: 0; }
+}
+.hb-mod:has(.hb-surge) .hb-bezel { animation: hb-kick 0.4s ease-out; }
+@keyframes hb-kick { 30% { filter: brightness(1.8); transform: scale(1.06); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .hb-orbit, .hb-surge { display: none; }
+  .hb-month, .hb-month-scrim { animation: none; }
+}
+
+/* ── v3: mês por cima da tela toda, responsivo, cores legíveis ── */
+.hb-marks i.is-done { background: var(--hb-done); }
+.hb-marks i.is-minimum { background: color-mix(in srgb, var(--hb-done) 50%, transparent); }
+.hb-marks i.is-off { background: color-mix(in srgb, var(--text) 18%, transparent); }
+.hb-cal-d.is-full { background: color-mix(in srgb, var(--hb-done) 10%, transparent); }
+.hb-cal-d.is-sel { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--hb-done) 70%, transparent); }
+.hb-cal-edit { color: var(--hb-done); background: color-mix(in srgb, var(--hb-done) 12%, transparent); }
+
+.hb.hb-month-scrim { position: fixed; inset: 0; z-index: 1000; padding: 16px; overflow-y: auto; display: grid; place-items: center; }
+.hb-month {
+  width: min(380px, 100%); max-height: calc(100dvh - 32px); overflow-y: auto;
+  padding: 14px 14px 12px; border-radius: 16px; background: var(--surface-solid, #fff); color: var(--text);
+}
+.hb-month-h { gap: 4px; }
+.hb-month-t { min-width: 0; flex: 0 1 auto; text-transform: none; font-size: 14.5px; white-space: nowrap; }
+.hb-month-rate { color: var(--hb-done); white-space: nowrap; }
+.hb-month-wk, .hb-month-grid { gap: 3px; }
+.hb-month-d { aspect-ratio: auto; height: clamp(38px, 11vw, 46px); gap: 4px; border-radius: 9px;
+  background: color-mix(in srgb, var(--hb-done) calc(var(--f) * 18%), color-mix(in srgb, var(--text) 3.5%, transparent)); }
+.hb-month-d .hb-cal-n { font-size: 12.5px; }
+.hb-month-d.is-full { background: color-mix(in srgb, var(--hb-done) 24%, transparent); }
+.hb-month-d.is-sel { box-shadow: 0 0 0 1.5px var(--hb-done); }
+.hb-month-f li.is-done i { background: var(--hb-done); }
+.hb-month-f li.is-minimum i { background: color-mix(in srgb, var(--hb-done) 50%, transparent); }
+.hb-month-f li { font-size: 12.5px; }
+
+/* faixa de dias em telas estreitas: mostra só a última semana */
+@media (max-width: 760px) {
+  .hb-cal-strip .hb-cal-d:nth-child(-n + 7 of .hb-cal-d) { display: none; }
+  .hb-cal-h { flex-wrap: wrap; row-gap: 8px; }
+}
+@media (max-width: 520px) {
+  .hb-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+}
+.hb.hb-month-scrim { width: auto; max-width: none; min-height: 0; margin: 0; }

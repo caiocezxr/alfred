@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import { onIntent } from '../../app/router'
-import { addDays, civil, fmtLong, parseCivil } from '../../shared/dates'
+import { addDays, civil, fmtLong, parseCivil, weekday as weekdayOf } from '../../shared/dates'
 import type { Checkin, CheckinStatus, Habit } from '../../shared/db/api'
 import {
   WEEKDAY_LETTERS, createHabit, daysOn, describeDays, isScheduled,
@@ -174,16 +175,12 @@ export default function Habits() {
   )
 }
 
-const ARCS = [
-  'M60 14 L54 30 L64 34 L56 52',
-  'M106 60 L90 54 L86 64 L68 56',
-  'M60 106 L66 90 L56 86 L64 68',
-  'M14 60 L30 66 L34 56 L52 64',
-  'M92 22 L82 38 L90 44 L76 50',
-  'M28 98 L38 82 L30 76 L44 70',
-  'M24 26 L38 36 L32 44 L48 50',
-  'M96 94 L82 84 L88 76 L72 70',
-]
+// raios saindo do aro do interruptor (r 31 → 54, centro 60,60)
+const ARCS = Array.from({ length: 8 }, (_, k) => {
+  const a = (k * 137 + 20) * (Math.PI / 180)
+  const pt = (r: number, j: number) => `${(60 + Math.cos(a + j) * r).toFixed(1)} ${(60 + Math.sin(a + j) * r).toFixed(1)}`
+  return `M${pt(31, 0)} L${pt(39, 0.16)} L${pt(43, -0.1)} L${pt(54, 0.08)}`
+})
 
 function Switch({ habit, n, status, day, today, checkins, onOpen }: { habit: Habit; n: number; status: CheckinStatus | null; day: string; today: string; checkins: Checkin[]; onOpen: () => void }) {
   const m = metaOf(habit)
@@ -192,6 +189,19 @@ function Switch({ habit, n, status, day, today, checkins, onOpen }: { habit: Hab
   const streak = streakOf(habit, map, today)
   const sub = habit.cue ? `depois de ${habit.cue.replace(/^depois de\s*/i, '')}` : habit.timeOfDay ? `às ${habit.timeOfDay}` : describeDays(daysOn(habit, today))
   const heat = streak >= 21 ? 3 : streak >= 7 ? 2 : streak >= 3 ? 1 : 0
+  const [surge, setSurge] = useState(0)
+  const prev = useRef(status)
+  useEffect(() => {
+    if (status && !prev.current) setSurge((x) => x + 1)
+    prev.current = status
+  }, [status])
+  const [surging, setSurging] = useState(false)
+  useEffect(() => {
+    if (!surge) return
+    setSurging(true)
+    const t = window.setTimeout(() => setSurging(false), 700)
+    return () => window.clearTimeout(t)
+  }, [surge])
   return (
     <article className={`hb-mod is-${status ?? 'off'} ${heat ? `is-heat heat-${heat}` : ''}`} style={{ ['--i' as string]: n, ['--heat' as string]: heat } as CSSProperties}>
       <span className="hb-n">
@@ -206,6 +216,11 @@ function Switch({ habit, n, status, day, today, checkins, onOpen }: { habit: Hab
         aria-label={status === 'done' ? `Desmarcar ${habit.name}` : quit ? `Marcar ${habit.name}: hoje limpo` : `Marcar ${habit.name} como feito`}
       >
         <span className="hb-bezel" aria-hidden="true" />
+        {surging && (
+          <span key={surge} className="hb-surge" aria-hidden="true">
+            {Array.from({ length: 10 }, (_, k) => <i key={k} style={{ ['--a' as string]: `${k * 36 + (surge * 17) % 36}deg` } as CSSProperties} />)}
+          </span>
+        )}
         {heat > 0 && (
           <svg className="hb-zap" viewBox="0 0 120 120" aria-hidden="true">
             {Array.from({ length: 2 + heat * 2 }, (_, k) => (
@@ -385,42 +400,152 @@ const dayTitle = (d: string, today: string) => {
   return monthName.format(parseCivil(d))
 }
 
+function useMarks(checkins: Checkin[]) {
+  return useMemo(() => new Map(checkins.map((c) => [`${c.habitId}|${c.date}`, c.status])), [checkins])
+}
+
+function DayMarks({ habits, marks, d }: { habits: Habit[]; marks: Map<string, CheckinStatus>; d: string }) {
+  const due = habits.filter((h) => isScheduled(h, d) && d >= h.startDate)
+  if (!due.length) return <span className="hb-marks is-rest" aria-hidden="true" />
+  return (
+    <span className="hb-marks" aria-hidden="true">
+      {due.map((h) => (
+        <i key={h.id} className={`is-${marks.get(`${h.id}|${d}`) ?? 'off'}`} />
+      ))}
+    </span>
+  )
+}
+
+const countOf = (habits: Habit[], marks: Map<string, CheckinStatus>, d: string) => {
+  const due = habits.filter((h) => isScheduled(h, d) && d >= h.startDate)
+  return { due: due.length, ok: due.filter((h) => marks.has(`${h.id}|${d}`)).length }
+}
+
 function Calendar({ habits, checkins, today, day, onPick }: { habits: Habit[]; checkins: Checkin[]; today: string; day: string; onPick: (d: string) => void }) {
   const [end, setEnd] = useState(today)
+  const [month, setMonth] = useState(false)
+  const marks = useMarks(checkins)
   const days = Array.from({ length: STRIP }, (_, i) => addDays(end, i - STRIP + 1))
-  const marked = useMemo(() => new Set(checkins.map((c) => `${c.habitId}|${c.date}`)), [checkins])
+  useEffect(() => {
+    if (day < days[0] || day > days[days.length - 1]) setEnd(addDays(day, 7) > today ? today : addDays(day, 7))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [day])
+  const c = countOf(habits, marks, day)
   return (
     <div className="hb-cal">
       <div className="hb-cal-h">
         <span className="hb-cal-t">{dayTitle(day, today)}</span>
+        {c.due > 0 && <span className="hb-cal-c">{c.ok} de {c.due}</span>}
+        {day !== today && <span className="hb-cal-edit">marcando um dia que passou</span>}
+        <span className="hb-grow" />
         {day !== today && (
-          <button className="hb-cal-back" onClick={() => (onPick(today), setEnd(today))}>voltar para hoje</button>
+          <button className="hb-cal-btn" onClick={() => (onPick(today), setEnd(today))}>hoje</button>
         )}
+        <button className="hb-cal-btn is-month" onClick={() => setMonth(true)}>
+          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="2" fill="none" stroke="currentColor" strokeWidth="1.3" /><path d="M2 6.5h12M5.5 1.8v2.4M10.5 1.8v2.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>
+          ver mês
+        </button>
       </div>
       <div className="hb-cal-strip">
         <button className="hb-cal-nav" onClick={() => setEnd(addDays(end, -7))} aria-label="Semana anterior">‹</button>
         {days.map((d) => {
-          const due = habits.filter((h) => isScheduled(h, d) && d >= h.startDate)
-          const ok = due.filter((h) => marked.has(`${h.id}|${d}`)).length
-          const frac = due.length ? ok / due.length : 0
-          const future = d > today
+          const k = countOf(habits, marks, d)
           return (
             <button
               key={d}
-              className={`hb-cal-d ${d === day ? 'is-sel' : ''} ${d === today ? 'is-today' : ''} ${future ? 'is-future' : ''} ${due.length && frac === 1 ? 'is-full' : ''}`}
-              disabled={future}
+              className={`hb-cal-d ${d === day ? 'is-sel' : ''} ${d === today ? 'is-today' : ''} ${d > today ? 'is-future' : ''} ${k.due && k.ok === k.due ? 'is-full' : ''}`}
+              disabled={d > today}
               onClick={() => onPick(d)}
-              title={`${dayTitle(d, today)} · ${due.length ? `${ok} de ${due.length}` : 'folga'}`}
-              style={{ ['--f' as string]: frac } as CSSProperties}
+              title={`${dayTitle(d, today)} · ${k.due ? `${k.ok} de ${k.due}` : 'folga'}`}
             >
               <small>{dayName.format(parseCivil(d)).slice(0, 1).toUpperCase()}</small>
               <span className="hb-cal-n">{parseCivil(d).getDate()}</span>
-              <i aria-hidden="true" className={due.length ? '' : 'is-rest'} />
+              <DayMarks habits={habits} marks={marks} d={d} />
             </button>
           )
         })}
         <button className="hb-cal-nav" onClick={() => setEnd(addDays(end, 7) > today ? today : addDays(end, 7))} disabled={end >= today} aria-label="Próxima semana">›</button>
       </div>
+      {month && <MonthView habits={habits} marks={marks} today={today} day={day} onPick={(d) => (onPick(d), setMonth(false))} onClose={() => setMonth(false)} />}
     </div>
+  )
+}
+
+const monthFmt = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' })
+const monthTitle = { format: (d: Date) => { const t = monthFmt.format(d); return t[0].toUpperCase() + t.slice(1) } }
+
+function MonthView({ habits, marks, today, day, onPick, onClose }: { habits: Habit[]; marks: Map<string, CheckinStatus>; today: string; day: string; onPick: (d: string) => void; onClose: () => void }) {
+  const [ym, setYm] = useState(() => day.slice(0, 7))
+  const [hover, setHover] = useState<string | null>(null)
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', k)
+    return () => window.removeEventListener('keydown', k)
+  }, [onClose])
+  const first = `${ym}-01`
+  const lead = weekdayOf(first)
+  const dim = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0).getDate()
+  const cells: (string | null)[] = [...Array(lead).fill(null), ...Array.from({ length: dim }, (_, i) => `${ym}-${String(i + 1).padStart(2, '0')}`)]
+  const shift = (n: number) => {
+    const dt = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 1 + n, 1)
+    setYm(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`)
+  }
+  const inMonth = cells.filter((x): x is string => !!x && x <= today)
+  let due = 0, ok = 0
+  for (const d of inMonth) { const c = countOf(habits, marks, d); due += c.due; ok += c.ok }
+  const focus = hover ?? day
+  const fc = countOf(habits, marks, focus)
+  return createPortal(
+    <div className="hb hb-month-scrim" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="hb-month" role="dialog" aria-label="Calendário do mês">
+        <header className="hb-month-h">
+          <button className="hb-cal-nav" onClick={() => shift(-1)} aria-label="Mês anterior">‹</button>
+          <span className="hb-month-t">{monthTitle.format(parseCivil(first))}</span>
+          <button className="hb-cal-nav" onClick={() => shift(1)} disabled={ym >= today.slice(0, 7)} aria-label="Próximo mês">›</button>
+          <span className="hb-grow" />
+          {due > 0 && <span className="hb-month-rate">{Math.round((ok / due) * 100)}% do mês</span>}
+          <button className="hb-month-x" onClick={onClose} aria-label="Fechar">×</button>
+        </header>
+        <div className="hb-month-wk">{['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((l, i) => <span key={i}>{l}</span>)}</div>
+        <div className="hb-month-grid">
+          {cells.map((d, i) => {
+            if (!d) return <span key={`x${i}`} />
+            const c = countOf(habits, marks, d)
+            const fut = d > today
+            const frac = c.due ? c.ok / c.due : 0
+            return (
+              <button
+                key={d}
+                disabled={fut}
+                className={`hb-month-d ${d === day ? 'is-sel' : ''} ${d === today ? 'is-today' : ''} ${fut ? 'is-future' : ''} ${c.due && frac === 1 ? 'is-full' : ''}`}
+                style={{ ['--f' as string]: frac } as CSSProperties}
+                onPointerEnter={() => setHover(d)}
+                onPointerLeave={() => setHover(null)}
+                onClick={() => onPick(d)}
+              >
+                <span className="hb-cal-n">{Number(d.slice(8))}</span>
+                {!fut && <DayMarks habits={habits} marks={marks} d={d} />}
+              </button>
+            )
+          })}
+        </div>
+        <footer className="hb-month-f">
+          <b>{dayTitle(focus, today)}</b>
+          <ul>
+            {habits.filter((h) => isScheduled(h, focus) && focus >= h.startDate).map((h) => {
+              const st = marks.get(`${h.id}|${focus}`)
+              return (
+                <li key={h.id} className={`is-${st ?? 'off'}`}>
+                  <i /> {h.name} <em>{st === 'done' ? 'feito' : st === 'minimum' ? 'mínimo' : focus > today ? '' : '—'}</em>
+                </li>
+              )
+            })}
+            {fc.due === 0 && <li className="is-off">folga</li>}
+          </ul>
+          <span className="hb-month-hint">clique num dia para marcar nele</span>
+        </footer>
+      </div>
+    </div>,
+    document.body,
   )
 }
