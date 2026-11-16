@@ -1,0 +1,255 @@
+/* ───── Conversa da Sessão (v2) ─────
+   você à direita em balão; cada agente à esquerda com avatar e um trilho na cor dele
+   que amarra resposta, raciocínio e ações. Carregado depois de sessao.css. */
+
+.ss-feed-in {
+  --cv-ava: 30px;
+  --cv-gap: 14px;
+  --cv-in: calc(var(--cv-ava) + var(--cv-gap));
+  gap: 0;
+  padding: 18px 28px 48px;
+  font-family: var(--font-ui);
+}
+
+/* rótulos */
+.ss-feed-in .ss-lbl {
+  gap: 8px;
+  margin-bottom: 6px;
+  font: 500 10.5px/1 var(--ofc-mono);
+  letter-spacing: 0.03em;
+}
+.ss-feed-in .ss-lbl time {
+  margin-left: 0;
+}
+
+/* ── você ── */
+.ss-feed-in .ss-ask,
+.ss-feed-in > .ss-ask:first-child,
+.ss-feed-in > .ofc-more + .ss-ask {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin: 30px 0 4px;
+  padding: 0;
+  border: 0;
+}
+.ss-feed-in > .ss-ask:first-child {
+  margin-top: 6px;
+}
+.ss-feed-in .ss-ask .ss-lbl {
+  justify-content: flex-end;
+  padding-right: 4px;
+}
+.ss-feed-in .ss-ask .ss-lbl em {
+  font-style: normal;
+  opacity: 0.5;
+}
+.ss-feed-in .ss-ask .ss-lbl b {
+  color: var(--ag, var(--ss-mute));
+}
+.ss-feed-in .ss-ask-b {
+  max-width: min(78%, 560px);
+  padding: 11px 15px 12px;
+  border-radius: 18px 18px 6px 18px;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--ag, var(--accent)) 16%, var(--surface-solid)), color-mix(in srgb, var(--ag, var(--accent)) 9%, var(--surface-solid)));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--ag, var(--accent)) 22%, transparent),
+    0 10px 24px -18px color-mix(in srgb, var(--ag, var(--accent)) 70%, transparent);
+  color: var(--text);
+  font: 450 14.5px/1.55 var(--font-ui);
+  letter-spacing: -0.003em;
+}
+.ss-feed-in .ss-ask .ss-x {
+  justify-content: flex-end;
+  margin-top: 8px;
+  color: color-mix(in srgb, var(--text) 55%, transparent);
+}
+
+/* ── agente ── */
+.ss-feed-in .ss-say {
+  position: relative;
+  margin-top: 22px;
+  padding-left: var(--cv-in);
+}
+.ss-feed-in .ss-say.is-cont {
+  margin-top: 10px;
+}
+.ss-ava {
+  position: absolute;
+  left: 0;
+  top: -3px;
+  display: grid;
+  place-items: center;
+  width: var(--cv-ava);
+  height: var(--cv-ava);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ag) 14%, var(--surface-solid));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ag) 30%, transparent), 0 6px 14px -8px color-mix(in srgb, var(--ag) 80%, transparent);
+  color: var(--ag);
+}
+.ss-ava > i {
+  font: 700 12px/1 var(--ofc-mono);
+  font-style: normal;
+}
+.ss-say.is-live .ss-ava {
+  animation: cv-glow 1.6s ease-in-out infinite;
+}
+@keyframes cv-glow {
+  50% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--ag) 60%, transparent), 0 0 18px -2px color-mix(in srgb, var(--ag) 70%, transparent); }
+}
+.ss-feed-in .ss-say .ss-lbl {
+  min-height: 24px;
+  margin-bottom: 4px;
+}
+.ss-feed-in .ss-say .ss-lbl b {
+  color: var(--ag);
+  font: 650 12.5px/1 var(--font-ui);
+  letter-spacing: 0;
+}
+.ss-feed-in .ss-say .ss-lbl b > i {
+  display: none;
+}
+.ss-feed-in .ss-say .ss-lbl span {
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--ss-soft);
+}
+.ss-feed-in .ss-say .ss-lbl time {
+  margin-left: auto;
+}
+.ss-feed-in .ss-say-b {
+  max-width: 640px;
+  color: color-mix(in srgb, var(--text) 90%, transparent);
+  font: 400 14.5px/1.65 var(--font-ui);
+}
+.ss-feed-in .ss-say-b p + p {
+  margin-top: 0.7em;
+}
+
+/* trilho: tudo que é do agente fica pendurado na mesma linha vertical */
+.ss-feed-in .ss-say:not(.is-cont)::before,
+.ss-feed-in .ss-say.is-cont::before,
+.ss-feed-in .ss-tools::before,
+.ss-feed-in .ss-th::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--cv-ava) / 2 - 0.5px);
+  width: 1px;
+  background: linear-gradient(var(--ss-line), var(--ss-line));
+}
+.ss-feed-in .ss-say:not(.is-cont)::before {
+  top: calc(var(--cv-ava) + 2px);
+  bottom: -22px;
+}
+.ss-feed-in .ss-say.is-cont::before,
+.ss-feed-in .ss-tools::before,
+.ss-feed-in .ss-th::before {
+  top: -12px;
+  bottom: -12px;
+}
+.ss-feed-in .ss-say:has(+ .ss-ask)::before,
+.ss-feed-in .ss-tools:has(+ .ss-ask)::before,
+.ss-feed-in .ss-th:has(+ .ss-ask)::before,
+.ss-feed-in .ss-say:last-child::before,
+.ss-feed-in .ss-tools:last-child::before,
+.ss-feed-in .ss-th:last-child::before {
+  bottom: 50%;
+}
+
+/* ── ações e raciocínio: cápsulas no trilho ── */
+.ss-feed-in .ss-tools,
+.ss-feed-in .ss-th {
+  position: relative;
+  margin-top: 10px;
+  margin-left: var(--cv-in);
+}
+.ss-feed-in .ss-th {
+  display: block;
+  width: fit-content;
+  max-width: calc(100% - var(--cv-in));
+  padding: 0;
+}
+.ss-feed-in .ss-tools > button,
+.ss-feed-in .ss-th > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  height: 26px;
+  padding: 0 11px 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--ss-line);
+  background: color-mix(in srgb, var(--text) 2.5%, transparent);
+  color: var(--ss-faint);
+  font: 500 11px/1 var(--ofc-mono);
+  transition: background var(--t-fast) ease, color var(--t-fast) ease, border-color var(--t-fast) ease;
+}
+.ss-feed-in .ss-tools > button:hover,
+.ss-feed-in .ss-th:hover > span {
+  color: var(--ss-ink);
+  background: var(--ss-soft);
+}
+/* ponto no trilho */
+.ss-feed-in .ss-tools::after,
+.ss-feed-in .ss-th::after {
+  content: '';
+  position: absolute;
+  top: 10px;
+  left: calc(-1 * var(--cv-in) + var(--cv-ava) / 2 - 3.5px);
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--surface-solid);
+  box-shadow: 0 0 0 1px var(--ss-line);
+}
+.ss-feed-in .ss-tools.is-running::after,
+.ss-feed-in .ss-th.is-live::after {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  animation: ss-breathe 1s ease-in-out infinite;
+}
+.ss-feed-in .ss-tools > button > i,
+.ss-feed-in .ss-th i {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.6;
+}
+.ss-feed-in .ss-tools > button em {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--wk-red, #d24b4b) 14%, transparent);
+  color: var(--wk-red, #d24b4b);
+}
+.ss-feed-in .ss-tools.is-open .ss-tools-b {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--ss-line);
+  background: color-mix(in srgb, var(--text) 2%, transparent);
+}
+.ss-feed-in .ss-th p {
+  margin: 8px 0 0;
+  padding: 10px 14px;
+  border-left: 2px solid var(--ss-line);
+  border-radius: 0 10px 10px 0;
+  background: color-mix(in srgb, var(--text) 2%, transparent);
+  color: var(--ss-mute);
+  font: italic 400 13px/1.6 var(--font-ui);
+  white-space: pre-wrap;
+}
+
+/* permissões e avisos também no recuo do agente */
+.ss-feed-in .ofc-perm,
+.ss-feed-in .ofc-note {
+  margin-left: var(--cv-in);
+}
+
+@media (max-width: 640px) {
+  .ss-feed-in { --cv-ava: 24px; --cv-gap: 10px; padding: 12px 14px 40px; }
+  .ss-feed-in .ss-ask-b { max-width: 88%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ss-say.is-live .ss-ava { animation: none; }
+}

@@ -59,6 +59,7 @@ import { openItem } from '../work/store'
 import './oficina.css'
 import './arsenal.css'
 import './sessao.css'
+import './conversa.css'
 
 const rel = (iso: string) => {
   const m = Math.round((Date.now() - Date.parse(iso)) / 60000)
@@ -925,10 +926,10 @@ function Row({ it, cont, desk, mesa, fallback }: { it: Item; cont?: boolean; des
     return (
       <div className={`ss-ask is-${it.agent}`}>
         <div className="ss-lbl">
-          <span>
-            para <b>{it.alias ?? AGENT_NAME[it.agent]}</b>
-          </span>
           <time>{clock(it.at)}</time>
+          <span>
+            você <em>→</em> <b>{it.alias ?? AGENT_NAME[it.agent]}</b>
+          </span>
         </div>
         <div className="ss-ask-b">
           <Text text={it.text} />
@@ -952,6 +953,11 @@ function Row({ it, cont, desk, mesa, fallback }: { it: Item; cont?: boolean; des
   if (it.role === 'agent')
     return (
       <article className={`ss-say is-${it.agent} ${it.open ? 'is-live' : ''} ${cont ? 'is-cont' : ''}`}>
+        {!cont && (
+          <span className="ss-ava" aria-hidden="true">
+            {it.agent === 'local' ? <i>L</i> : <ToolMark tool={it.agent as 'claude' | 'codex'} size={14} />}
+          </span>
+        )}
         {!cont && (
           <div className="ss-lbl">
             <b>
@@ -1383,7 +1389,7 @@ function Deck({ desk, agent, setAgent, fallback }: { desk: Mesa; agent: AgentId;
             <button key={o.key} className={i === sel ? 'is-on' : ''} onMouseEnter={() => setSlash(i)} onClick={o.pick}>
               <b>{o.label}</b>
               <span>{o.desc}</span>
-              {o.alfred && <em>Shed</em>}
+              {o.alfred && <em>Yori</em>}
             </button>
           ))}
         </div>
