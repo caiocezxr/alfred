@@ -542,9 +542,12 @@ function Card({ item, company, today, note, attachments, pending, totalChecks, c
                 openTicket(item.id)
               }}
               onPointerDown={(e) => e.stopPropagation()}
-              title="Abrir o chamado"
+              title="Abrir no Zendesk"
             >
               {item.ticket}
+              <svg className="wk-ticket-go" viewBox="0 0 12 12" width="9" height="9" aria-hidden="true">
+                <path d="M4 2h6v6M10 2 3 9" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </button>
           ) : (
             <span className="wk-ticket">{item.ticket}</span>
@@ -555,8 +558,9 @@ function Card({ item, company, today, note, attachments, pending, totalChecks, c
         {item.priority !== 'normal' && <span className={`wk-prio is-${item.priority}`} title={item.priority === 'urgente' ? 'Urgente' : 'Alta'} />}
         <span className="wk-grow" />
         {due && item.dueDate && !live && !item.focusedAt && (
-          <span className={`wk-card-due is-due-${due}`} title={`Prazo: ${dueLabel(item.dueDate, today)}`}>
-            {due === 'late' ? `atrasado · ${dueLabel(item.dueDate, today)}` : dueLabel(item.dueDate, today)}
+          <span className={`wk-card-due is-due-${due}`} title={due === 'late' ? `Atrasado · ${dueLabel(item.dueDate, today)}` : `Prazo: ${dueLabel(item.dueDate, today)}`}>
+            {due === 'late' && <i className="wk-late-dot" aria-hidden="true" />}
+            {dueLabel(item.dueDate, today)}
           </span>
         )}
         {live && (

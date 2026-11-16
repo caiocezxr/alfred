@@ -596,3 +596,18 @@
     animation: none;
   }
 }
+
+/* ficha: nada vaza da largura da coluna */
+.wk-board .wk-card { min-width: 0; max-width: 100%; box-sizing: border-box; overflow: hidden; }
+.wk-board .wk-card-top { display: flex; align-items: center; min-width: 0; }
+.wk-board .wk-card-top > * { min-width: 0; }
+.wk-board .wk-card-due { display: inline-flex; align-items: center; gap: 5px; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; }
+.wk-late-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex: none; }
+.wk-board .wk-card-title { margin: 0; overflow-wrap: anywhere; }
+.wk-board .wk-ticket.is-link {
+  display: inline-flex; align-items: center; gap: 3px; padding: 2px 5px; margin: -2px -1px;
+  border: 0; border-radius: 5px; background: none; cursor: pointer; color: var(--co, var(--ink-2));
+}
+.wk-board .wk-ticket.is-link:hover { background: color-mix(in srgb, var(--co, var(--text)) 12%, transparent); text-decoration: none; }
+.wk-ticket-go { opacity: 0.6; }
+.wk-board .wk-ticket.is-link:hover .wk-ticket-go { opacity: 1; }
