@@ -256,6 +256,7 @@ function finish() {
   window.clearInterval(timer)
   timer = 0
   localStorage.removeItem(RESUME_KEY)
+  void ctx?.suspend()
   set({ status: 'ended', buffering: false, resume: null, line: Math.max(0, (state.program?.lines.length ?? 1) - 1) })
 }
 
@@ -331,7 +332,8 @@ export const briefingPlayer = {
       set({ program: p, date: e.date, total: p.lines.length, chapter: 0, line: 0, status: state.status === 'ended' && state.date === e.date ? 'ended' : 'idle', systemVoice: false })
     }
     voiceEngine.setVoice(voice)
-    voiceEngine.want(p.lines.map((l) => ({ id: l.id, speech: l.speech })))
+    // só a primeira frase fica pronta; o resto é gerado quando der play (gerar tudo travava a CPU)
+    voiceEngine.want(p.lines.slice(0, 1).map((l) => ({ id: l.id, speech: l.speech })))
     countPrepared()
   },
 

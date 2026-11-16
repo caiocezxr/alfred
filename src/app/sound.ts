@@ -1,3 +1,5 @@
+import { wakeCtx } from '../shared/audioNap'
+
 const KEY = 'ps.sound.v1'
 
 let ctx: AudioContext | null = null
@@ -19,7 +21,7 @@ export function setSound(on: boolean) {
 
 export function wakeAudio() {
   if (ctx) {
-    if (ctx.state === 'suspended') void ctx.resume()
+    wakeCtx(ctx)
     return
   }
   const C = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
@@ -31,7 +33,9 @@ export function wakeAudio() {
 }
 
 function ready() {
-  return !!ctx && !!noise && ctx.state === 'running' && soundOn()
+  if (!ctx || !noise || !soundOn() || ctx.state === 'closed') return false
+  wakeCtx(ctx)
+  return true
 }
 
 function burst(freq: number, q: number, gain: number, dur: number, at = 0) {

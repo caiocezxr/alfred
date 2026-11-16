@@ -1,3 +1,4 @@
+import { wakeCtx } from '../../shared/audioNap'
 import { useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
 import { addDays, civil } from '../../shared/dates'
@@ -374,6 +375,7 @@ function chime() {
   if (!readUi().sound) return
   try {
     audio ??= new AudioContext()
+    wakeCtx(audio)
     const t = audio.currentTime
     for (const [f, d] of [
       [880, 0],

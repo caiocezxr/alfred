@@ -1,3 +1,4 @@
+import { wakeCtx } from '../../shared/audioNap'
 import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { GaugeSegment } from './logic'
 import { openItemFrom, readUi, toggleTodo } from './store'
@@ -25,6 +26,7 @@ function thunk() {
   if (!readUi().sound) return
   try {
     audio ??= new AudioContext()
+    wakeCtx(audio)
     const t = audio.currentTime
     const o = audio.createOscillator()
     const g = audio.createGain()
