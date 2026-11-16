@@ -1552,3 +1552,99 @@
 .hs-nums dd.is-warn {
   color: var(--warn);
 }
+
+/* Calendário único (substitui "ficou sem marcar" e o rastro) */
+.hb-catch, .hb-trail { display: none; }
+
+.hb-cal { margin-bottom: 18px; }
+.hb-cal-h { display: flex; align-items: baseline; gap: 12px; margin: 2px 4px 12px; }
+.hb-cal-t { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: var(--text); }
+.hb-cal-back {
+  border: 0; background: none; padding: 0; cursor: pointer;
+  font-size: 12px; color: var(--text-2); text-decoration: underline; text-underline-offset: 3px;
+}
+.hb-cal-back:hover { color: var(--text); }
+.hb-cal-strip { display: flex; align-items: center; gap: 4px; }
+.hb-cal-nav {
+  flex: none; width: 24px; height: 52px; border: 0; background: none; cursor: pointer;
+  font-size: 18px; color: var(--text-2); border-radius: 8px;
+}
+.hb-cal-nav:hover:not(:disabled) { color: var(--text); background: color-mix(in srgb, var(--text) 5%, transparent); }
+.hb-cal-nav:disabled { opacity: 0.25; cursor: default; }
+.hb-cal-d {
+  flex: 1 1 0; min-width: 0; display: grid; justify-items: center; gap: 4px;
+  padding: 7px 0 8px; border: 1px solid transparent; border-radius: 10px;
+  background: none; cursor: pointer; color: var(--text-2);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.hb-cal-d small { font: 600 9.5px/1 var(--font-mono, 'SF Mono', ui-monospace, monospace); letter-spacing: 0.08em; opacity: 0.7; }
+.hb-cal-n { font: 500 13px/1 var(--font-mono, 'SF Mono', ui-monospace, monospace); color: var(--text); }
+.hb-cal-d i {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) calc(var(--f) * 100%), color-mix(in srgb, var(--text) 14%, transparent));
+  transform: scale(calc(0.7 + var(--f) * 0.5));
+}
+.hb-cal-d i.is-rest { background: transparent; }
+.hb-cal-d:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 4%, transparent); }
+.hb-cal-d.is-today .hb-cal-n { font-weight: 700; }
+.hb-cal-d.is-sel { border-color: var(--hb-line); background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text); }
+.hb-cal-d.is-full i { box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 60%, transparent); }
+.hb-cal-d.is-future { opacity: 0.3; cursor: default; }
+
+/* Energia da sequência: 3+ dias faísca, 7+ choque, 21+ em chamas */
+.hb-mod.is-heat { --zap: #7fd8ff; }
+.hb-mod.heat-2 { --zap: #ffd25a; }
+.hb-mod.heat-3 { --zap: #ff7a3d; }
+.hb-toggle { position: relative; }
+.hb-zap {
+  position: absolute; inset: -22%; width: 144%; height: 144%;
+  pointer-events: none; overflow: visible; z-index: 2;
+  filter: drop-shadow(0 0 3px var(--zap)) drop-shadow(0 0 8px var(--zap));
+}
+.hb-zap path {
+  fill: none; stroke: var(--zap); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+  opacity: 0;
+  animation: hb-arc calc(2.6s - var(--heat) * 0.55s) steps(1) infinite;
+  animation-delay: calc(var(--k) * 0.37s);
+}
+.hb-mod.is-done .hb-zap path,
+.hb-mod.is-minimum .hb-zap path { animation-duration: calc(1.6s - var(--heat) * 0.35s); }
+@keyframes hb-arc {
+  0%, 100% { opacity: 0; }
+  4% { opacity: 1; transform: translate(0, 0); }
+  8% { opacity: 0.2; }
+  11% { opacity: 1; transform: translate(1px, -1px); }
+  15% { opacity: 0; }
+}
+/* aura pulsando atrás do interruptor */
+.hb-mod.is-heat .hb-bezel {
+  box-shadow: 0 0 calc(8px + var(--heat) * 8px) calc(var(--heat) * 2px) color-mix(in srgb, var(--zap) 45%, transparent);
+  animation: hb-hum calc(2.4s - var(--heat) * 0.5s) ease-in-out infinite;
+}
+@keyframes hb-hum {
+  0%, 100% { box-shadow: 0 0 calc(6px + var(--heat) * 6px) 0 color-mix(in srgb, var(--zap) 30%, transparent); }
+  50% { box-shadow: 0 0 calc(12px + var(--heat) * 10px) calc(var(--heat) * 2px) color-mix(in srgb, var(--zap) 60%, transparent); }
+}
+/* alavanca treme de leve quando está carregada */
+.hb-mod.heat-2 .hb-lever,
+.hb-mod.heat-3 .hb-lever { animation: hb-jitter 3s steps(1) infinite; }
+@keyframes hb-jitter {
+  0%, 92%, 100% { translate: 0 0; }
+  93% { translate: 0.6px -0.4px; }
+  95% { translate: -0.6px 0.3px; }
+  97% { translate: 0.4px 0.5px; }
+}
+/* em chamas: brasa subindo do card */
+.hb-mod.heat-3::after {
+  content: ''; position: absolute; inset: auto 0 0 0; height: 55%; pointer-events: none;
+  background: radial-gradient(60% 80% at 50% 100%, color-mix(in srgb, var(--zap) 22%, transparent), transparent 70%);
+  animation: hb-ember 1.8s ease-in-out infinite alternate;
+}
+@keyframes hb-ember { from { opacity: 0.55; transform: scaleY(0.92); } to { opacity: 1; transform: scaleY(1.06); } }
+.hb-st.is-hot { color: var(--zap); text-shadow: 0 0 8px color-mix(in srgb, var(--zap) 70%, transparent); }
+.hb-bolt { display: inline-block; margin-right: 2px; font-size: 0.85em; animation: hb-flick 1.2s steps(1) infinite; }
+@keyframes hb-flick { 0%, 70%, 100% { opacity: 1; } 72% { opacity: 0.3; } 76% { opacity: 1; } 80% { opacity: 0.5; } }
+@media (prefers-reduced-motion: reduce) {
+  .hb-zap path, .hb-mod.is-heat .hb-bezel, .hb-lever, .hb-mod.heat-3::after, .hb-bolt { animation: none !important; }
+  .hb-zap path { opacity: 0.6; }
+}

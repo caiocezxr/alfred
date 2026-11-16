@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { fmtShort, parseCivil } from '../../shared/dates'
 import type { Checkin, Habit } from '../../shared/db/api'
-import { daysOn, describeDays, isScheduled, monthGrid } from '../../shared/db/stores'
+import { archiveHabit, daysOn, describeDays, isPausedNow, isScheduled, monthGrid, setHabitPaused } from '../../shared/db/stores'
 import { Odometer } from '../work/Odometer'
 import { CATEGORIES, MILESTONES, generateTips, numbersOf, setMeta, useHabitMeta } from './meta'
 
@@ -15,6 +15,7 @@ export function HabitSheet({ habit, checkins, today, onClose, onEdit }: { habit:
   const grid = useMemo(() => monthGrid(today, 12), [today])
   const map = useMemo(() => new Map(checkins.filter((c) => c.habitId === habit.id).map((c) => [c.date, c.status])), [checkins, habit.id])
   const [busy, setBusy] = useState(false)
+  const [confirmArch, setConfirmArch] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const quit = m.kind === 'largar'
   const next = MILESTONES.find((x) => x > n.streak) ?? null
@@ -161,6 +162,12 @@ export function HabitSheet({ habit, checkins, today, onClose, onEdit }: { habit:
         <footer className="hs-foot">
           <button className="btn quiet sm" onClick={onEdit}>
             Editar hábito
+          </button>
+          <button className="btn quiet sm" onClick={() => void setHabitPaused(habit.id, !isPausedNow(habit))}>
+            {isPausedNow(habit) ? 'Retomar' : 'Pausar'}
+          </button>
+          <button className={`btn quiet sm ${confirmArch ? 'is-danger' : ''}`} onClick={() => (confirmArch ? (void archiveHabit(habit.id), onClose()) : setConfirmArch(true))}>
+            {confirmArch ? 'Confirmar: arquivar' : 'Arquivar'}
           </button>
         </footer>
       </aside>

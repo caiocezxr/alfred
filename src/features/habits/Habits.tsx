@@ -1,18 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { onIntent } from '../../app/router'
-import { addDays, civil, fmtLong, fmtShort, parseCivil, weekday } from '../../shared/dates'
+import { addDays, civil, fmtLong, parseCivil } from '../../shared/dates'
 import type { Checkin, CheckinStatus, Habit } from '../../shared/db/api'
 import {
-  WEEKDAY_LETTERS, archiveHabit, createHabit, daysOn, describeDays, habitStats, isPausedNow, isScheduled,
-  setCheckin, setHabitPaused, updateHabit, useHabits,
+  WEEKDAY_LETTERS, createHabit, daysOn, describeDays, isScheduled,
+  setCheckin, updateHabit, useHabits,
 } from '../../shared/db/stores'
 import { Odometer } from '../work/Odometer'
 import '../work/work.css'
 import { Celebrate, HabitSheet } from './HabitSheet'
-import { CATEGORIES, MILESTONES, clearMissed, guessKind, markMissed, metaOf, numbersOf, pendingDays, setMeta, useHabitMeta, type HabitKind } from './meta'
+import { CATEGORIES, MILESTONES, guessKind, metaOf, numbersOf, setMeta, useHabitMeta, type HabitKind } from './meta'
 import './habits.css'
 
-const TRAIL = 14
 const dayName = new Intl.DateTimeFormat('pt-BR', { weekday: 'short' })
 
 type StatusMap = Map<string, CheckinStatus>
@@ -58,19 +57,21 @@ function allDoneStreak(habits: Habit[], checkins: Checkin[], today: string) {
 }
 
 const next = (s: CheckinStatus | null): CheckinStatus | null => (s === 'done' ? null : 'done')
-const cycle = (s: CheckinStatus | null): CheckinStatus | null => (s === null ? 'done' : s === 'done' ? 'minimum' : null)
 
 export default function Habits() {
   const { habits, checkins } = useHabits()
   const today = civil()
   const [editing, setEditing] = useState<Habit | 'new' | null>(null)
   const [sheet, setSheet] = useState<string | null>(null)
+  const [day, setDay] = useState(today)
   const [cel, setCel] = useState<{ days: number; name: string; quit: boolean } | null>(null)
   useHabitMeta()
   useEffect(() => onIntent((i) => i === 'new-habit' && setEditing('new')), [])
 
   const todays = habits.filter((h) => isScheduled(h, today))
   const statusOf = (id: string) => checkins.find((c) => c.habitId === id && c.date === today)?.status ?? null
+  const dues = habits.filter((h) => isScheduled(h, day) && day >= h.startDate)
+  const dayStatus = (id: string) => checkins.find((c) => c.habitId === id && c.date === day)?.status ?? null
   const done = todays.filter((h) => statusOf(h.id)).length
   const all = todays.length > 0 && done === todays.length
   const streak = useMemo(() => allDoneStreak(habits, checkins, today), [habits, checkins, today])
@@ -94,18 +95,19 @@ export default function Habits() {
     }
   }, [checkins, habits, today])
 
-  const live = useRef({ todays, statusOf })
-  live.current = { todays, statusOf }
+  const live = useRef({ dues, dayStatus, day })
+  live.current = { dues, dayStatus, day }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       const n = Number(e.key)
-      const h = live.current.todays[n - 1]
+      const h = live.current.dues[n - 1]
       if (!h) return
       e.preventDefault()
-      void setCheckin(h.id, civil(), e.shiftKey ? (live.current.statusOf(h.id) === 'minimum' ? null : 'minimum') : next(live.current.statusOf(h.id)))
+      const st = live.current.dayStatus(h.id)
+      void setCheckin(h.id, live.current.day, e.shiftKey ? (st === 'minimum' ? null : 'minimum') : next(st))
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -153,20 +155,11 @@ export default function Habits() {
       )}
       {cel && <Celebrate days={cel.days} name={cel.name} quit={cel.quit} onDone={() => setCel(null)} />}
 
-      <CatchUp habits={habits} checkins={checkins} today={today} />
-
       <section className="hb-panel reveal" style={{ ['--i' as string]: 1 }} aria-label="Hoje">
-        <div className="hb-panel-h">
-          <span className="hb-plate">Hoje</span>
-          {todays.length > 0 && (
-            <span className="hb-panel-hint">
-              clique liga · <kbd>1</kbd>–<kbd>{Math.min(9, todays.length)}</kbd> no teclado · <kbd>⇧</kbd> marca o mínimo
-            </span>
-          )}
-        </div>
+        <Calendar habits={habits} checkins={checkins} today={today} day={day} onPick={setDay} />
         <div className="hb-grid">
-          {todays.map((h, i) => (
-            <Switch key={h.id} habit={h} n={i + 1} status={statusOf(h.id)} today={today} checkins={checkins} onOpen={() => setSheet(h.id)} />
+          {dues.map((h, i) => (
+            <Switch key={h.id} habit={h} n={i + 1} status={dayStatus(h.id)} day={day} today={today} checkins={checkins} onOpen={() => setSheet(h.id)} />
           ))}
           <button className="hb-mod is-add" onClick={() => setEditing('new')}>
             <span className="hb-add-plus" aria-hidden="true">+</span>
@@ -174,48 +167,33 @@ export default function Habits() {
             <span className="hb-sub">pequeno e fácil de começar</span>
           </button>
         </div>
-        {habits.length > 0 && todays.length === 0 && <p className="hb-none">Nenhum hábito marcado para hoje. Aproveita o descanso.</p>}
+        {habits.length > 0 && dues.length === 0 && <p className="hb-none">{day === today ? 'Nenhum hábito marcado para hoje. Aproveita o descanso.' : 'Nada marcado para esse dia.'}</p>}
       </section>
 
-      {habits.length > 0 && (
-        <section className="hb-trail reveal" style={{ ['--i' as string]: 2 }} aria-label="Rastro">
-          <header className="hb-trail-h">
-            <span className="hb-plate">Rastro</span>
-            <span className="hb-days" aria-hidden="true">
-              {Array.from({ length: TRAIL }, (_, i) => {
-                const d = addDays(today, i - TRAIL + 1)
-                return (
-                  <span key={d} className={d === today ? 'is-today' : weekday(d) === 0 || weekday(d) === 6 ? 'is-wk' : ''}>
-                    {dayName.format(parseCivil(d)).slice(0, 1).toUpperCase()}
-                  </span>
-                )
-              })}
-            </span>
-            <span className="hb-cols">
-              <span>Sequência</span>
-              <span>30 dias</span>
-            </span>
-          </header>
-          {habits.map((h, i) => (
-            <TrailRow key={h.id} habit={h} checkins={checkins} today={today} index={i} onEdit={() => setEditing(h)} onOpen={() => setSheet(h.id)} />
-          ))}
-          <p className="hb-legend">
-            <i className="is-done" /> feito <i className="is-minimum" /> mínimo <i className="is-fail" /> não fez <i className="is-miss" /> ficou sem marcar · clique num dia para alternar
-          </p>
-        </section>
-      )}
     </section>
   )
 }
 
-function Switch({ habit, n, status, today, checkins, onOpen }: { habit: Habit; n: number; status: CheckinStatus | null; today: string; checkins: Checkin[]; onOpen: () => void }) {
+const ARCS = [
+  'M60 14 L54 30 L64 34 L56 52',
+  'M106 60 L90 54 L86 64 L68 56',
+  'M60 106 L66 90 L56 86 L64 68',
+  'M14 60 L30 66 L34 56 L52 64',
+  'M92 22 L82 38 L90 44 L76 50',
+  'M28 98 L38 82 L30 76 L44 70',
+  'M24 26 L38 36 L32 44 L48 50',
+  'M96 94 L82 84 L88 76 L72 70',
+]
+
+function Switch({ habit, n, status, day, today, checkins, onOpen }: { habit: Habit; n: number; status: CheckinStatus | null; day: string; today: string; checkins: Checkin[]; onOpen: () => void }) {
   const m = metaOf(habit)
   const quit = m.kind === 'largar'
   const map = useMemo(() => statusMap(checkins, habit.id), [checkins, habit.id])
   const streak = streakOf(habit, map, today)
   const sub = habit.cue ? `depois de ${habit.cue.replace(/^depois de\s*/i, '')}` : habit.timeOfDay ? `às ${habit.timeOfDay}` : describeDays(daysOn(habit, today))
+  const heat = streak >= 21 ? 3 : streak >= 7 ? 2 : streak >= 3 ? 1 : 0
   return (
-    <article className={`hb-mod is-${status ?? 'off'}`} style={{ ['--i' as string]: n } as CSSProperties}>
+    <article className={`hb-mod is-${status ?? 'off'} ${heat ? `is-heat heat-${heat}` : ''}`} style={{ ['--i' as string]: n, ['--heat' as string]: heat } as CSSProperties}>
       <span className="hb-n">
         {String(n).padStart(2, '0')}
         {m.category && <em> · {m.category}</em>}
@@ -223,11 +201,18 @@ function Switch({ habit, n, status, today, checkins, onOpen }: { habit: Habit; n
       <span className="hb-led" aria-hidden="true" />
       <button
         className="hb-toggle"
-        onClick={() => void setCheckin(habit.id, today, next(status))}
+        onClick={() => void setCheckin(habit.id, day, next(status))}
         aria-pressed={status === 'done'}
         aria-label={status === 'done' ? `Desmarcar ${habit.name}` : quit ? `Marcar ${habit.name}: hoje limpo` : `Marcar ${habit.name} como feito`}
       >
         <span className="hb-bezel" aria-hidden="true" />
+        {heat > 0 && (
+          <svg className="hb-zap" viewBox="0 0 120 120" aria-hidden="true">
+            {Array.from({ length: 2 + heat * 2 }, (_, k) => (
+              <path key={k} style={{ ['--k' as string]: k } as CSSProperties} d={ARCS[k % ARCS.length]} />
+            ))}
+          </svg>
+        )}
         <span className="hb-lever" aria-hidden="true">
           <i />
         </span>
@@ -241,106 +226,20 @@ function Switch({ habit, n, status, today, checkins, onOpen }: { habit: Habit; n
       <div className="hb-foot">
         <button
           className={`hb-min ${status === 'minimum' ? 'is-on' : ''}`}
-          onClick={() => void setCheckin(habit.id, today, status === 'minimum' ? null : 'minimum')}
+          onClick={() => void setCheckin(habit.id, day, status === 'minimum' ? null : 'minimum')}
           title={habit.minimum ? `Versão mínima: ${habit.minimum}` : 'Fiz a versão mínima'}
         >
           {habit.minimum ? `mínimo: ${habit.minimum}` : 'só o mínimo'}
         </button>
         {streak > 0 && (
-          <span className="hb-st" title="Sequência atual">
+          <span className={`hb-st ${heat ? 'is-hot' : ''}`} title="Sequência atual">
+            {heat > 0 && <span className="hb-bolt" aria-hidden="true">⚡</span>}
             {streak}
             <small>d</small>
           </span>
         )}
       </div>
     </article>
-  )
-}
-
-function TrailRow({ habit, checkins, today, index, onEdit, onOpen }: { habit: Habit; checkins: Checkin[]; today: string; index: number; onEdit: () => void; onOpen: () => void }) {
-  const [menu, setMenu] = useState(false)
-  const [confirm, setConfirm] = useState(false)
-  const box = useRef<HTMLDivElement>(null)
-  const paused = isPausedNow(habit)
-  const map = useMemo(() => statusMap(checkins, habit.id), [checkins, habit.id])
-  const missed = new Set(metaOf(habit).missed ?? [])
-  const s30 = habitStats(habit, checkins, addDays(today, -29), today)
-  const streak = streakOf(habit, map, today)
-
-  useEffect(() => {
-    if (!menu) return
-    const down = (e: PointerEvent) => {
-      if (box.current && !box.current.contains(e.target as Node)) {
-        setMenu(false)
-        setConfirm(false)
-      }
-    }
-    window.addEventListener('pointerdown', down)
-    return () => window.removeEventListener('pointerdown', down)
-  }, [menu])
-
-  return (
-    <div className={`hb-row ${paused ? 'is-paused' : ''}`} style={{ ['--i' as string]: index } as CSSProperties}>
-      <button className="hb-row-name" onClick={onOpen} title="Abrir a ficha do hábito">
-        <span>{habit.name}</span>
-        <small>
-          {describeDays(daysOn(habit, today) || 127)}
-          {paused && ' · pausado'}
-        </small>
-      </button>
-      <div className="hb-dots">
-        {Array.from({ length: TRAIL }, (_, i) => {
-          const d = addDays(today, i - TRAIL + 1)
-          const st = map.get(d) ?? null
-          const sch = isScheduled(habit, d)
-          const fail = !st && missed.has(d)
-          const cls = st ? `is-${st}` : fail ? 'is-fail' : sch ? (d === today ? 'is-open' : 'is-miss') : 'is-rest'
-          const label = `${fmtShort.format(parseCivil(d)).replace('.', '')}: ${st === 'done' ? 'feito' : st === 'minimum' ? 'mínimo' : fail ? 'não fez' : sch ? (d === today ? 'hoje, em aberto' : 'ficou sem marcar') : 'folga'}`
-          return (
-            <button
-              key={d}
-              className={`${cls} ${d === today ? 'is-today' : ''}`}
-              title={label}
-              aria-label={`${habit.name}, ${label}`}
-              disabled={d < habit.startDate}
-              onClick={() => {
-                if (fail) return clearMissed(habit, d)
-                if (st === 'minimum' && d !== today) {
-                  markMissed(habit, d)
-                  return void setCheckin(habit.id, d, null)
-                }
-                void setCheckin(habit.id, d, cycle(st))
-              }}
-            />
-          )
-        })}
-      </div>
-      <span className="hb-num">{streak ? `${streak} d` : '—'}</span>
-      <span className="hb-num">
-        {s30.rate === null ? '—' : `${Math.round(s30.rate * 100)}%`}
-        <i className="hb-bar" aria-hidden="true">
-          <i style={{ transform: `scaleX(${s30.rate ?? 0})` }} />
-        </i>
-      </span>
-      <div className="hb-more" ref={box}>
-        <button className="hb-more-btn" onClick={() => setMenu((v) => !v)} aria-label={`Opções de ${habit.name}`} aria-expanded={menu}>
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-            <circle cx="3.5" cy="8" r="1.3" />
-            <circle cx="8" cy="8" r="1.3" />
-            <circle cx="12.5" cy="8" r="1.3" />
-          </svg>
-        </button>
-        {menu && (
-          <div className="hb-menu" role="menu">
-            <button role="menuitem" onClick={() => (setMenu(false), onEdit())}>Editar</button>
-            <button role="menuitem" onClick={() => (setMenu(false), void setHabitPaused(habit.id, !paused))}>{paused ? 'Retomar' : 'Pausar'}</button>
-            <button role="menuitem" className={confirm ? 'is-danger' : ''} onClick={() => (confirm ? (setMenu(false), void archiveHabit(habit.id)) : setConfirm(true))}>
-              {confirm ? 'Confirmar: arquivar' : 'Arquivar'}
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
   )
 }
 
@@ -475,47 +374,53 @@ function HabitForm({ habit, onClose }: { habit: Habit | null; onClose: () => voi
   )
 }
 
-const dayWord = (d: string, today: string) => {
+const STRIP = 14
+const monthName = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'long' })
+
+const dayTitle = (d: string, today: string) => {
   const diff = Math.round((parseCivil(today).getTime() - parseCivil(d).getTime()) / 864e5)
+  if (diff === 0) return 'Hoje'
   if (diff === 1) return 'Ontem'
   if (diff === 2) return 'Anteontem'
-  return fmtShort.format(parseCivil(d)).replace('.', '')
+  return monthName.format(parseCivil(d))
 }
 
-function CatchUp({ habits, checkins, today }: { habits: Habit[]; checkins: Checkin[]; today: string }) {
-  useHabitMeta()
-  const list = pendingDays(habits, checkins, today, 3)
-  if (!list.length) return null
+function Calendar({ habits, checkins, today, day, onPick }: { habits: Habit[]; checkins: Checkin[]; today: string; day: string; onPick: (d: string) => void }) {
+  const [end, setEnd] = useState(today)
+  const days = Array.from({ length: STRIP }, (_, i) => addDays(end, i - STRIP + 1))
+  const marked = useMemo(() => new Set(checkins.map((c) => `${c.habitId}|${c.date}`)), [checkins])
   return (
-    <section className="hb-catch reveal" style={{ ['--i' as string]: 1 }} aria-label="Ficou sem marcar">
-      <header>
-        <span className="hb-catch-k">
-          <i aria-hidden="true" />
-          Ficou sem marcar
-        </span>
-        <span className="hb-catch-sub">Responda rápido para o rastro ficar certo.</span>
-      </header>
-      <ul>
-        {list.slice(0, 6).map(({ habit, date }) => {
-          const quit = metaOf(habit).kind === 'largar'
+    <div className="hb-cal">
+      <div className="hb-cal-h">
+        <span className="hb-cal-t">{dayTitle(day, today)}</span>
+        {day !== today && (
+          <button className="hb-cal-back" onClick={() => (onPick(today), setEnd(today))}>voltar para hoje</button>
+        )}
+      </div>
+      <div className="hb-cal-strip">
+        <button className="hb-cal-nav" onClick={() => setEnd(addDays(end, -7))} aria-label="Semana anterior">‹</button>
+        {days.map((d) => {
+          const due = habits.filter((h) => isScheduled(h, d) && d >= h.startDate)
+          const ok = due.filter((h) => marked.has(`${h.id}|${d}`)).length
+          const frac = due.length ? ok / due.length : 0
+          const future = d > today
           return (
-            <li key={`${habit.id}-${date}`}>
-              <span className="hb-catch-when">{dayWord(date, today)}</span>
-              <span className="hb-catch-name">{habit.name}</span>
-              <span className="hb-catch-act">
-                <button className="is-yes" onClick={() => void setCheckin(habit.id, date, 'done')}>
-                  {quit ? 'Fiquei limpo' : 'Fiz'}
-                </button>
-                {!quit && <button onClick={() => void setCheckin(habit.id, date, 'minimum')}>Só o mínimo</button>}
-                <button className="is-no" onClick={() => markMissed(habit, date)}>
-                  {quit ? 'Recaí' : 'Não fiz'}
-                </button>
-              </span>
-            </li>
+            <button
+              key={d}
+              className={`hb-cal-d ${d === day ? 'is-sel' : ''} ${d === today ? 'is-today' : ''} ${future ? 'is-future' : ''} ${due.length && frac === 1 ? 'is-full' : ''}`}
+              disabled={future}
+              onClick={() => onPick(d)}
+              title={`${dayTitle(d, today)} · ${due.length ? `${ok} de ${due.length}` : 'folga'}`}
+              style={{ ['--f' as string]: frac } as CSSProperties}
+            >
+              <small>{dayName.format(parseCivil(d)).slice(0, 1).toUpperCase()}</small>
+              <span className="hb-cal-n">{parseCivil(d).getDate()}</span>
+              <i aria-hidden="true" className={due.length ? '' : 'is-rest'} />
+            </button>
           )
         })}
-      </ul>
-      {list.length > 6 && <p className="hb-catch-more">e mais {list.length - 6} no rastro abaixo</p>}
-    </section>
+        <button className="hb-cal-nav" onClick={() => setEnd(addDays(end, 7) > today ? today : addDays(end, 7))} disabled={end >= today} aria-label="Próxima semana">›</button>
+      </div>
+    </div>
   )
 }
